@@ -1,0 +1,25 @@
+{
+  "name": "aranna-playcanvas-experiment",
+  "version": "0.1.0",
+  "description": "ARPG web 3D inspirado em Dungeon Siege: Legends of Aranna (esqueleto base)",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "vite --host 0.0.0.0 --port 5174",
+    "build": "tsc --noEmit && vite build",
+    "probe:ws": "node scripts/probe-backend-ws.mjs",
+    "verify:movement": "node scripts/verify-keyboard-move.mjs",
+    "optimize:assets": "node scripts/optimize-assets.mjs",
+    "optimize:models": "node scripts/optimize-models.mjs",
+    "preview": "vite preview",
+    "start": "node scripts/write-runtime-config.mjs && vite preview --host 0.0.0.0 --port 5174"
+  },
+  "dependencies": {
+    "playcanvas": "^2.20.2"
+  },
+  "devDependencies": {
+    "sharp": "^0.35.2",
+    "typescript": "^5.4.5",
+    "vite": "^5.2.0"
+  }
+}
