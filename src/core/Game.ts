@@ -1,4 +1,5 @@
 import * as pc from 'playcanvas';
+
 import { Sfx } from '../audio/Sfx';
 import type { NetworkClient } from '../net/NetworkClient';
 import type { PlayerProfile } from '../shared/playerProfile';
@@ -65,16 +66,22 @@ interface View {
   zombieFailed?: boolean;
   equippedWeaponKey?: string | null;
   weapon?: pc.Entity;
+  /** Contorno fino aditivo com o formato da arma (shell interno). */
   weaponGlow?: pc.Entity;
   weaponGlowMaterial?: pc.StandardMaterial;
+  /** Halo largo e suave em volta da arma (shell externo, niveis 7+). */
+  weaponAura?: pc.Entity;
+  weaponAuraMaterial?: pc.StandardMaterial;
   weaponLight?: pc.Entity;
   weaponAnchor?: pc.Entity;
   weaponAttachedToBone?: boolean;
   weaponGlowLength?: number;
   /** Efeito de fogo da arma (client-side, so quando element === 'fire'). */
   weaponFire?: pc.Entity;
-  /** Fator 0..1 de intensidade do brilho derivado do nivel/raridade da arma. */
-  weaponGlowFactor?: number;
+  /** Todos os sistemas de particulas do glow (sparkles/plasma/feixes/fogo). */
+  weaponFx?: pc.Entity[];
+  /** Config do estagio Mu 99B derivada do nivel/raridade (dirige o pulso). */
+  weaponStage?: WeaponGlowStage;
   /** Materiais clonados da arma com emissivo turbinado (para o item brilhar). */
   weaponBoostMaterials?: pc.StandardMaterial[];
   anim?: PcClipController;
@@ -125,6 +132,17 @@ const CHEST_MODEL_URLS = {
   open: '/items/Chest_Open.glb',
 } as const;
 
+// Predicao local do click-to-move (espelha walkSpeed/runSpeed e o stopDistance
+// de sim/entity.go + movement.go do backend). O heroi anda NA HORA em direcao ao
+// ponto clicado, como ja acontece com o teclado; o servidor segue autoritativo e
+// as correcoes usam as mesmas margens da predicao de teclado.
+const CLICK_MOVE_WALK_SPEED = 4.2;
+const CLICK_MOVE_RUN_SPEED = 7.8;
+const CLICK_MOVE_STOP_DISTANCE = 0.35;
+// Carencia (s) antes de aceitar um 'idle' do servidor como fim do trajeto — cobre
+// o RTT do comando; sem isso o snapshot antigo (ainda idle) cancelaria o clique.
+const CLICK_MOVE_SERVER_IDLE_GRACE = 0.6;
+
 const MARKER_DURATION = 0.6;
 const CLOSE_TARGET_RADIUS = 3.4;
 const CLOSE_CLICK_RADIUS = 2.8;
@@ -144,15 +162,42 @@ const LOCAL_PLAYER_IGNORE_CORRECTION_DISTANCE = 0.85;
 const LOCAL_PLAYER_SNAP_CORRECTION_DISTANCE = 3;
 const RENDER_QUALITY_STORAGE_KEY = 'aranna:render-quality:v1:playcanvas';
 const RENDER_QUALITY_MODES: readonly RenderQualityMode[] = ['auto', 'high', 'medium', 'low'];
-
-const RENDER_QUALITY_PRESETS: Record<RenderQualityLevel, RenderQualityPreset> = {
-  high: { bloom: false, bloomStrength: 0, pixelRatioCap: 1, shadows: true, shadowMapSize: 1024 },
-  medium: { bloom: false, bloomStrength: 0, pixelRatioCap: 0.85, shadows: false, shadowMapSize: 1024 },
-  low: { bloom: false, bloomStrength: 0, pixelRatioCap: 0.65, shadows: false, shadowMapSize: 512 },
+// Quantidade de decoracao do pacote nature (grama/flores/arbustos) por preset.
+// Definida no boot (preload); trocar o preset depois nao re-espalha a decoracao.
+// Valores altos sao viaveis porque a decoracao usa batching estatico (as malhas
+// sao fundidas por material em poucos draw calls).
+const NATURE_DECOR_COUNTS: Record<RenderQualityLevel, number> = {
+  high: 1000,
+  medium: 550,
+  low: 220,
 };
 
-function shouldForceWeaponGlowPreview(): boolean {
-  return new URLSearchParams(window.location.search).has('weaponGlow');
+// Bloom + MSAA entram na alta/media (e o que faz o glow da arma "estourar" como
+// nos renders do Mu Online); a baixa desliga o pos-processamento inteiro.
+const RENDER_QUALITY_PRESETS: Record<RenderQualityLevel, RenderQualityPreset> = {
+  high: { bloom: true, bloomStrength: 0.04, samples: 4, pixelRatioCap: 1, shadows: true, shadowMapSize: 2048 },
+  medium: { bloom: true, bloomStrength: 0.028, samples: 1, pixelRatioCap: 0.85, shadows: true, shadowMapSize: 1024 },
+  low: { bloom: false, bloomStrength: 0, samples: 1, pixelRatioCap: 0.65, shadows: false, shadowMapSize: 512 },
+};
+
+/**
+ * Preview do glow via URL, so para o heroi local (teste visual rapido):
+ *   `?weaponGlow`         -> espada +15
+ *   `?weaponGlow=8`       -> espada +8 (qualquer nivel 0..15)
+ *   `?weaponGlow=11,fire` -> espada +11 com elemento fogo
+ */
+function weaponGlowPreviewFromUrl(): EquippedWeaponVisualState | null {
+  const raw = new URLSearchParams(window.location.search).get('weaponGlow');
+  if (raw === null) return null;
+  const parts = raw.split(',').map((part) => part.trim().toLowerCase());
+  const level = Number.parseInt(parts[0] ?? '', 10);
+  return {
+    kind: 'sword',
+    rarity: 'lendario',
+    upgradeLevel: Number.isFinite(level) ? Math.max(0, Math.min(15, level)) : 15,
+    glowGem: 'soul',
+    element: parts.includes('fire') ? 'fire' : undefined,
+  };
 }
 
 function clamp01(value: number): number {
@@ -373,18 +418,165 @@ const WEAPON_FIRE_COLOR = '#ff4f12';
 const WEAPON_FIRE_TEXTURE_URL = '/particle/unity-fire/fire-mask.png';
 // Suaviza a rotacao de mira do heroi durante o ataque (rad/s aproximados).
 const ATTACK_AIM_TURN_RATE = 18;
+// O servidor alterna attack -> idle (curto) -> attack entre golpes (actionTimer
+// expira a ~90% do cooldown). A mira local segura o yaw por esta janela para o
+// heroi NAO virar para o rotationY do servidor entre um golpe e outro.
+const ATTACK_AIM_HOLD_SECONDS = 1.2;
 
-// Converte nivel de melhoria + raridade num fator 0..1 controlado. Espelha a
-// progressao do Three.js (WeaponGlow.enhancementFactor): brilho discreto em
-// niveis baixos, crescendo de forma suave ate o maximo, sem estourar.
-function weaponGlowFactor(level: number, rarity: ItemRarity | undefined, element: WeaponElement | undefined): number {
+// ---------------------------------------------------------------------------
+// Glow estilo Mu Online 99B, dirigido pelo NIVEL da arma (+0..+15) como no
+// classico — a gema aplicada NAO muda a cor. Rampa: prata -> rosa -> vermelho
+// -> plasma -> fogo dourado, com camadas que vao ligando por estagio:
+//   +1..+2   reflexo metalico sutil na lamina
+//   +3..+4   lamina tingida de vermelho + contorno fino
+//   +5..+7   brilho forte + estrelas cintilantes (sparkles)
+//   +8..+10  aura de plasma envolvendo a lamina + feixes verticais de luz
+//   +11..+15 nucleo branco-quente, halo largo e sparkles dourados densos
+// ---------------------------------------------------------------------------
+
+/** Cor por nivel (indice = nivel). Interpolada para niveis intermediarios. */
+const MU_GLOW_RAMP = [
+  '#aeb9c8', '#cdd9e8', '#f4c6c4', '#ff9184', '#ff6250', '#ff4a34', '#ff3d24',
+  '#ff3626', '#ff3050', '#ff2e5e', '#ff5230', '#ff7526', '#ff8c30', '#ffa440',
+  '#ffbe54', '#ffd66b',
+] as const;
+
+interface WeaponGlowStage {
+  /** Cor principal do estagio (rampa Mu). */
+  color: pc.Color;
+  /** Emissivo da propria lamina (clareia para branco-quente nos niveis altos). */
+  coreColor: pc.Color;
+  /** Intensidade geral 0..1 — dirige pulso, luz e escala dos efeitos. */
+  factor: number;
+  /** Forca do emissivo somado ao material da arma. */
+  boost: number;
+  shellOpacity: number;
+  auraOpacity: number;
+  auraScale: number;
+  /** Estrelas por segundo (0 = sem sparkles). */
+  sparkleRate: number;
+  /** 0..1 quanto os sparkles puxam para dourado (niveis 10+). */
+  sparkleGold: number;
+  /** Particulas da aura de plasma (0 = sem plasma). */
+  wispCount: number;
+  /** Feixes verticais por segundo (0 = sem feixes). */
+  streakRate: number;
+  lightIntensity: number;
+  lightRange: number;
+}
+
+function mixColor(a: pc.Color, b: pc.Color, t: number): pc.Color {
+  return new pc.Color(a.r + (b.r - a.r) * t, a.g + (b.g - a.g) * t, a.b + (b.b - a.b) * t);
+}
+
+function sampleGlowRamp(level: number): pc.Color {
+  const t = Math.max(0, Math.min(MU_GLOW_RAMP.length - 1, level));
+  const lo = Math.floor(t);
+  const hi = Math.min(MU_GLOW_RAMP.length - 1, lo + 1);
+  return mixColor(colorFromCss(MU_GLOW_RAMP[lo]), colorFromCss(MU_GLOW_RAMP[hi]), t - lo);
+}
+
+function weaponGlowStageFor(
+  level: number,
+  rarity: ItemRarity | undefined,
+  element: WeaponElement | undefined,
+): WeaponGlowStage | null {
+  const isFire = element === 'fire';
+  const lv = Math.max(0, Math.min(15, Math.floor(level)));
+  if (lv <= 0 && !isFire) return null;
+  // Arma de fogo brilha como um estagio medio mesmo em nivel baixo (paridade
+  // com o antigo elementFactor, que garantia um brilho-base visivel).
+  const ilv = isFire ? Math.max(lv, 6) : lv;
+  const p = ilv / 15;
   const rarityScale = rarity ? RARITY_GLOW_SCALE[rarity] : 1;
-  const progress = clamp01(level / 15);
-  let factor = Math.pow(progress, 1.35) * (0.9 + (rarityScale - 0.92) * 0.55);
-  // Armas de fogo tem um brilho-base visivel mesmo sem upgrade (como o
-  // elementFactor do Three.js, que garante min ~0.72 quando ha flameColor).
-  if (element === 'fire') factor = Math.max(factor, 0.5);
-  return clamp01(factor);
+  const rarityMul = 0.86 + (rarityScale - 0.92) * 0.45;
+
+  let color = sampleGlowRamp(ilv);
+  if (isFire) color = mixColor(color, colorFromCss(WEAPON_FIRE_COLOR), 0.45);
+  const whiteHot = ilv >= 11 ? ((ilv - 11) / 4) * 0.55 : 0;
+  const coreColor = mixColor(color, new pc.Color(1, 0.97, 0.9), 0.2 + whiteHot);
+
+  return {
+    color,
+    coreColor,
+    factor: clamp01(Math.pow(p, 1.15) * rarityMul),
+    boost: 0.12 + Math.pow(p, 1.45) * 1.05 * rarityMul,
+    shellOpacity: ilv >= 3 || isFire ? 0.1 + 0.4 * Math.pow(p, 1.2) : 0,
+    auraOpacity: ilv >= 7 ? 0.05 + 0.17 * clamp01((ilv - 7) / 8) : 0,
+    auraScale: 1.05 + 0.055 * clamp01((ilv - 7) / 8),
+    sparkleRate: ilv >= 5 ? 2 + (ilv - 5) * 1.1 : 0,
+    sparkleGold: ilv >= 10 ? clamp01((ilv - 10) / 5) : 0,
+    wispCount: ilv >= 8 ? 8 + (ilv - 8) : 0,
+    streakRate: ilv >= 8 ? 1.2 + (ilv - 8) * 0.5 : 0,
+    lightIntensity: (isFire ? 0.5 : 0.22) + Math.pow(p, 1.35) * (isFire ? 2.3 : 2.0),
+    lightRange: 2.2 + 2.2 * p,
+  };
+}
+
+// Texturas procedurais dos VFX (estrela, brilho suave, feixe), geradas uma vez
+// via canvas 2D — nenhum asset novo no bundle. Sao brancas de proposito: a cor
+// final vem do colorGraph de cada sistema de particulas.
+
+/** Lobulo radial esticado; base de todos os desenhos (estrela/brilho/feixe). */
+function paintFlareLobe(ctx: CanvasRenderingContext2D, size: number, scaleX: number, scaleY: number, alpha: number): void {
+  const half = size / 2;
+  ctx.save();
+  ctx.translate(half, half);
+  ctx.scale(Math.max(scaleX, 0.0001), Math.max(scaleY, 0.0001));
+  const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, half - 1);
+  gradient.addColorStop(0, `rgba(255,255,255,${alpha})`);
+  gradient.addColorStop(0.35, `rgba(255,255,255,${alpha * 0.45})`);
+  gradient.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = gradient;
+  ctx.fillRect(-half / scaleX, -half / scaleY, size / scaleX, size / scaleY);
+  ctx.restore();
+}
+
+/** Estrela de 4 pontas (o "spark" classico dos renders do Mu). */
+function paintSparkle(ctx: CanvasRenderingContext2D, size: number): void {
+  ctx.globalCompositeOperation = 'lighter';
+  paintFlareLobe(ctx, size, 1, 0.16, 1);
+  paintFlareLobe(ctx, size, 0.16, 1, 1);
+  paintFlareLobe(ctx, size, 0.45, 0.45, 0.9);
+}
+
+/** Circulo suave (plasma/fumaca luminosa). */
+function paintSoftGlow(ctx: CanvasRenderingContext2D, size: number): void {
+  paintFlareLobe(ctx, size, 1, 1, 0.85);
+}
+
+/** Feixe vertical de luz. */
+function paintStreak(ctx: CanvasRenderingContext2D, size: number): void {
+  ctx.globalCompositeOperation = 'lighter';
+  paintFlareLobe(ctx, size, 0.14, 1, 0.95);
+}
+
+function createFxTexture(
+  app: pc.Application,
+  name: string,
+  paint: (ctx: CanvasRenderingContext2D, size: number) => void,
+): pc.Texture | null {
+  const size = 64;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+  ctx.clearRect(0, 0, size, size);
+  paint(ctx, size);
+  const texture = new pc.Texture(app.graphicsDevice, {
+    name,
+    width: size,
+    height: size,
+    format: pc.PIXELFORMAT_RGBA8,
+    mipmaps: true,
+    minFilter: pc.FILTER_LINEAR_MIPMAP_LINEAR,
+    magFilter: pc.FILTER_LINEAR,
+    addressU: pc.ADDRESS_CLAMP_TO_EDGE,
+    addressV: pc.ADDRESS_CLAMP_TO_EDGE,
+  });
+  texture.setSource(canvas);
+  return texture;
 }
 
 function normalizedName(value: string): string {
@@ -625,7 +817,7 @@ export class Game {
   private readonly keyboardMove = new KeyboardMoveController();
   private readonly clientMovement = new ClientMovementPredictor();
   private readonly targetMarker: pc.Entity;
-  private readonly forceWeaponGlowPreview = shouldForceWeaponGlowPreview();
+  private readonly weaponGlowPreview = weaponGlowPreviewFromUrl();
   private markerTimer = 0;
   private elapsed = 0;
   private zone: WorldZone = 'overworld';
@@ -640,8 +832,20 @@ export class Game {
   private lastFrameNow = performance.now();
   /** Textura compartilhada das chamas (carregada uma vez, client-side). */
   private weaponFireTexture: pc.Texture | null = null;
+  /** Texturas procedurais do glow Mu (estrela/brilho/feixe), criadas sob demanda. */
+  private weaponSparkleTexture: pc.Texture | null = null;
+  private weaponSoftTexture: pc.Texture | null = null;
+  private weaponStreakTexture: pc.Texture | null = null;
   /** Ultimo alvo/direcao de ataque, usado para mirar o heroi no inimigo. */
   private lastAttackAimPoint: Vec3Like | null = null;
+  /**
+   * Alvo do click-to-move para PREDICAO local (espelha o comando enviado).
+   * Enquanto ativo, o heroi anda client-side ate o ponto, igual ao teclado —
+   * mesmo que os snapshots atrasem, ele nunca fica "andando parado".
+   */
+  private clickMoveTarget: { x: number; z: number; run: boolean; sentAt: number } | null = null;
+  /** Ate quando (elapsed) a mira local e dona do yaw — cobre o vao entre golpes. */
+  private localAimHoldUntil = 0;
   /** Cache do inventario: o servidor manda `null` quando nao muda (delta). */
   private cachedInventory: InventoryItem[] = [];
 
@@ -699,6 +903,9 @@ export class Game {
       this.world.models.preload([...PRELOAD_LOOT_MODEL_URLS, CHEST_MODEL_URLS.closed, CHEST_MODEL_URLS.open]),
       preloadHudIcons([...Object.values(ITEM_ICON_URLS), ...Object.values(HUD_SKILL_ICON_URLS)]),
       this.loadWeaponFireTexture(),
+      // Mundo com o pacote de natureza (Quaternius): quantidade de decoracao
+      // (grama/flores/arbustos, sem colisao) escala com o preset de qualidade.
+      this.world.preloadEnvironment(NATURE_DECOR_COUNTS[this.effectiveRenderQualityLevel()]),
     ];
     let done = 0;
     await Promise.all(batches.map((promise) => promise.finally(() => {
@@ -861,6 +1068,8 @@ export class Game {
       direction,
     });
     if (decision.type === 'none') return;
+    // O teclado assumiu o controle do movimento: qualquer trajeto de clique morre.
+    this.clickMoveTarget = null;
     this.net.send({ type: 'move', entityId: this.net.playerId, target: decision.target, run: decision.run });
   }
 
@@ -869,7 +1078,10 @@ export class Game {
     this.localPlayerRunning = false;
     const view = this.views.get(this.net.playerId);
     const state = this.latestEntities.get(this.net.playerId);
-    if (!view || (state && !state.alive)) return;
+    if (!view || (state && !state.alive)) {
+      this.clickMoveTarget = null;
+      return;
+    }
 
     const axes = this.input.getMoveAxes();
     const direction = this.world.rig.getMoveDirection(axes.strafe, axes.forward);
@@ -882,12 +1094,48 @@ export class Game {
       terrain: this.terrain,
       zone: this.zone,
     });
-    if (!prediction) return;
+    if (prediction) {
+      setEntityPosition(view.entity, prediction.position);
+      setYaw(view.entity, prediction.rotationY);
+      this.localPlayerMoving = true;
+      this.localPlayerRunning = prediction.running;
+      return;
+    }
 
-    setEntityPosition(view.entity, prediction.position);
-    setYaw(view.entity, prediction.rotationY);
+    this.applyClickMovePrediction(view, state, dt);
+  }
+
+  /**
+   * Predicao local do click-to-move: anda em linha reta ate o ponto clicado na
+   * mesma velocidade do servidor, ajustando a altura pelo terreno. Igual ao
+   * teclado, o servidor continua autoritativo: as correcoes do reconcile (rate
+   * suave, ignore curto, snap longo) puxam para a rota real (ex.: desvios do
+   * pathfinding). Sem isso, o heroi dependia 100% dos snapshots e ficava
+   * "andando parado" quando eles atrasavam.
+   */
+  private applyClickMovePrediction(view: View, state: EntityState | undefined, dt: number): void {
+    const target = this.clickMoveTarget;
+    if (!target) return;
+    if (state?.jumping) return;
+
+    const p = entityPosition(view.entity);
+    const dx = target.x - p.x;
+    const dz = target.z - p.z;
+    const distance = Math.hypot(dx, dz);
+    if (distance <= CLICK_MOVE_STOP_DISTANCE) {
+      this.clickMoveTarget = null;
+      return;
+    }
+
+    const speed = target.run ? CLICK_MOVE_RUN_SPEED : CLICK_MOVE_WALK_SPEED;
+    const step = Math.min(speed * Math.min(Math.max(dt, 0), 0.05), distance - CLICK_MOVE_STOP_DISTANCE * 0.5);
+    const nx = Math.max(-this.terrain.half, Math.min(this.terrain.half, p.x + (dx / distance) * step));
+    const nz = Math.max(-this.terrain.half, Math.min(this.terrain.half, p.z + (dz / distance) * step));
+    const ny = this.zone === 'dungeon' ? this.terrain.heightAt(0, 0) : this.terrain.heightAt(nx, nz);
+    setEntityPosition(view.entity, { x: nx, y: ny, z: nz });
+    setYaw(view.entity, Math.atan2(dx, dz));
     this.localPlayerMoving = true;
-    this.localPlayerRunning = prediction.running;
+    this.localPlayerRunning = !!target.run;
   }
 
   /**
@@ -900,8 +1148,13 @@ export class Game {
   private aimLocalPlayerDuringAttack(dt: number): void {
     const view = this.views.get(this.net.playerId);
     const state = this.latestEntities.get(this.net.playerId);
-    if (!view || !state || !state.alive || state.action !== 'attack') return;
+    if (!view || !state || !state.alive) return;
+    // Mira ativa durante o attack E na janela de retencao (idle curto entre
+    // golpes) — sem a janela, o heroi virava para o rotationY velho do servidor
+    // entre um golpe e outro e parecia atacar "de lado".
+    if (state.action !== 'attack' && this.elapsed >= this.localAimHoldUntil) return;
     if (this.isKeyboardMovementActive()) return;
+    if (this.clickMoveTarget) return;
 
     const aim = this.currentAttackAimPoint();
     if (!aim) return;
@@ -932,6 +1185,7 @@ export class Game {
     const portal = this.world.pickPortal(ray);
     if (portal) {
       this.setSelectedEnemy(null);
+      this.clickMoveTarget = null;
       this.sfx.play('arcane-nova');
       this.net.send({ type: portal, entityId: this.net.playerId });
       return;
@@ -983,6 +1237,7 @@ export class Game {
     if (enemyPick) {
       const [id, enemyView] = enemyPick;
       this.setSelectedEnemy(id);
+      this.clickMoveTarget = null;
       const ep = entityPosition(enemyView.entity);
       this.lastAttackAimPoint = { x: ep.x, y: ep.y, z: ep.z };
       this.net.send({ type: 'attack', entityId: this.net.playerId, targetId: id });
@@ -1003,6 +1258,7 @@ export class Game {
     const playerPos = player ? entityPosition(player) : undefined;
     if (closeTarget && playerPos && Math.hypot(ground.point.x - playerPos.x, ground.point.z - playerPos.z) <= CLOSE_CLICK_RADIUS) {
       this.setSelectedEnemy(closeTarget);
+      this.clickMoveTarget = null;
       const targetPos = this.latestEntities.get(closeTarget)?.position ?? ground.point;
       this.lastAttackAimPoint = { x: targetPos.x, y: targetPos.y, z: targetPos.z };
       this.net.send({ type: 'attack', entityId: this.net.playerId, targetId: closeTarget });
@@ -1010,6 +1266,10 @@ export class Game {
     }
 
     this.setSelectedEnemy(null);
+    this.localAimHoldUntil = 0;
+    // Predicao local: o heroi comeca a andar JA NESTE frame; o servidor confirma
+    // e corrige pelo reconcile (mesmas margens da predicao de teclado).
+    this.clickMoveTarget = { x: ground.point.x, z: ground.point.z, run: this.input.running, sentAt: this.elapsed };
     this.net.send({
       type: 'move',
       entityId: this.net.playerId,
@@ -1033,6 +1293,23 @@ export class Game {
       setEntityVisible(view.entity, e.kind === 'player' ? e.alive : e.alive || e.action === 'dead');
 
       const isLocalPlayer = e.id === this.net.playerId;
+      // Enquanto o servidor reporta attack, renova a janela em que a MIRA LOCAL
+      // e dona do yaw (cobre o idle curto entre golpes; ver ATTACK_AIM_HOLD_SECONDS).
+      // Andar/correr (inclusive a perseguicao ate o alvo) encerra a janela: nesses
+      // estados o rotationY do servidor ja aponta certo e deve mandar no yaw.
+      if (isLocalPlayer && e.alive && e.action === 'attack') {
+        this.localAimHoldUntil = this.elapsed + ATTACK_AIM_HOLD_SECONDS;
+      } else if (isLocalPlayer && (e.action === 'walk' || e.action === 'run')) {
+        this.localAimHoldUntil = 0;
+      }
+      // Fim do trajeto de clique pelo lado autoritativo: se o servidor ja esta
+      // idle/dead depois da carencia de RTT, ele chegou (ou o anti-stuck parou) —
+      // encerra a predicao e deixa a correcao normal convergir para a posicao real.
+      if (isLocalPlayer && snapshotChanged && this.clickMoveTarget
+        && (e.action === 'idle' || e.action === 'dead' || !e.alive)
+        && this.elapsed - this.clickMoveTarget.sentAt > CLICK_MOVE_SERVER_IDLE_GRACE) {
+        this.clickMoveTarget = null;
+      }
       if (!view.initialized || dt === 0) {
         setEntityPosition(view.entity, e.position);
         setYaw(view.entity, e.rotationY);
@@ -1042,17 +1319,25 @@ export class Game {
       } else {
         const current = entityPosition(view.entity);
         const correctionDistance = Math.hypot(e.position.x - current.x, e.position.y - current.y, e.position.z - current.z);
-        const localKeyboardActive = isLocalPlayer && this.isKeyboardMovementActive();
-        const rate = localKeyboardActive ? LOCAL_PLAYER_CORRECTION_RATE : REMOTE_RECONCILE_RATE;
+        // Predicao local ativa (teclado OU click-to-move): correcoes suaves, com
+        // zona morta curta para nao "tremer" e snap quando divergir demais.
+        const localPredictionActive = isLocalPlayer && (this.isKeyboardMovementActive() || this.clickMoveTarget != null);
+        const rate = localPredictionActive ? LOCAL_PLAYER_CORRECTION_RATE : REMOTE_RECONCILE_RATE;
         const alpha = 1 - Math.exp(-rate * dt);
         if (isLocalPlayer && correctionDistance > LOCAL_PLAYER_SNAP_CORRECTION_DISTANCE) {
           setEntityPosition(view.entity, e.position);
-        } else if (localKeyboardActive && correctionDistance <= LOCAL_PLAYER_IGNORE_CORRECTION_DISTANCE) {
+        } else if (localPredictionActive && correctionDistance <= LOCAL_PLAYER_IGNORE_CORRECTION_DISTANCE) {
           // Mantem a pose prevista para evitar tremidinha.
         } else {
           lerpEntityPosition(view.entity, e.position, alpha);
         }
-        if (!localKeyboardActive) {
+        // Yaw do servidor NAO se aplica ao player local quando: (1) predicao de
+        // movimento ativa (a predicao dita a direcao) ou (2) em engajamento de
+        // ataque (inclui o idle curto entre golpes) — quem gira e o
+        // aimLocalPlayerDuringAttack, senao os dois brigam e o heroi ataca "de lado".
+        const localAimOwnsYaw = isLocalPlayer && e.alive
+          && (e.action === 'attack' || this.elapsed < this.localAimHoldUntil);
+        if (!localPredictionActive && !localAimOwnsYaw) {
           const delta = Math.atan2(Math.sin(e.rotationY - entityYaw(view.entity)), Math.cos(e.rotationY - entityYaw(view.entity)));
           setYaw(view.entity, entityYaw(view.entity) + delta * alpha);
         }
@@ -1098,14 +1383,18 @@ export class Game {
   private clearViewVisual(view: View): void {
     view.weaponGlowMaterial?.destroy();
     view.weaponGlowMaterial = undefined;
+    view.weaponAuraMaterial?.destroy();
+    view.weaponAuraMaterial = undefined;
     for (const material of view.weaponBoostMaterials ?? []) material.destroy();
     view.weaponBoostMaterials = undefined;
     clearChildren(view.visual);
     view.weapon = undefined;
     view.weaponGlow = undefined;
+    view.weaponAura = undefined;
     view.weaponLight = undefined;
     view.weaponFire = undefined;
-    view.weaponGlowFactor = undefined;
+    view.weaponFx = undefined;
+    view.weaponStage = undefined;
     view.weaponAnchor = undefined;
     view.weaponAttachedToBone = undefined;
     view.weaponGlowLength = undefined;
@@ -1260,30 +1549,34 @@ export class Game {
       );
     }
 
-    if (view.weaponGlowMaterial) {
-      // Pulso suave do halo (aura) por cima da base escalada pelo nivel.
-      const factor = view.weaponGlowFactor ?? 0.5;
-      const isFire = view.weaponFire != null;
-      const pulse = 0.8 + Math.sin(time * 6) * 0.15 + (attacking ? 0.15 : 0);
-      view.weaponGlowMaterial.opacity = Math.min(0.72, ((isFire ? 0.22 : 0.18) + factor * 0.32) * pulse);
-      view.weaponGlowMaterial.emissiveIntensity = (0.5 + factor * 1.3) * (0.8 + pulse * 0.3);
+    const stage = view.weaponStage;
+    if (view.weaponGlowMaterial && stage) {
+      // Pulso do contorno: respiracao rapida escalada pelo estagio do nivel.
+      const pulse = 0.85 + Math.sin(time * 5.4) * 0.15 + (attacking ? 0.18 : 0);
+      view.weaponGlowMaterial.opacity = Math.min(0.85, stage.shellOpacity * pulse);
+      view.weaponGlowMaterial.emissiveIntensity = (0.7 + stage.factor * 1.6) * (0.82 + pulse * 0.28);
       view.weaponGlowMaterial.update();
     }
-    if (view.weaponLight?.light) {
-      const factor = view.weaponGlowFactor ?? 0.5;
+    if (view.weaponAuraMaterial && stage) {
+      // Halo externo respira mais devagar e em contrafase — energia "viva".
+      const breathe = 0.9 + Math.sin(time * 3.2 + 1.9) * 0.24 + (attacking ? 0.2 : 0);
+      view.weaponAuraMaterial.opacity = Math.min(0.6, stage.auraOpacity * breathe);
+      view.weaponAuraMaterial.update();
+    }
+    if (view.weaponLight?.light && stage) {
       const isFire = view.weaponFire != null;
-      const flicker = 0.78 + Math.max(0, Math.sin(time * (isFire ? 13 : 10))) * 0.32;
-      view.weaponLight.light.intensity = ((isFire ? 0.35 : 0.12) + factor * (isFire ? 1.2 : 1.0)) * flicker + (attacking ? 0.3 : 0);
+      const flicker = 0.8 + Math.max(0, Math.sin(time * (isFire ? 13 : 9.5))) * 0.3;
+      view.weaponLight.light.intensity = stage.lightIntensity * flicker + (attacking ? 0.35 : 0);
     }
 
-    // Luz e fogo vivem no view.visual (escala 1) para ficarem CONTIDOS — sob o osso
-    // (escala ~0.01) o range/tamanho estouravam. Aqui sincronizamos a POSICAO DE
-    // MUNDO deles com o centro da lamina (o cilindro de brilho acompanha a espada),
-    // entao o efeito segue a arma como um buff, sem herdar a escala do osso.
-    if (view.weaponAnchor && (view.weaponLight || view.weaponFire)) {
-      // Centro da lamina = punho (posicao do anchor) + direcao da lamina (anchor.up)
-      // * distancia. A orientacao do fogo segue o anchor (seu +Y aponta na lamina),
-      // para as chamas cobrirem a espada inteira, nao um ponto.
+    // Luz e particulas vivem no view.visual (escala 1) para ficarem CONTIDAS — sob
+    // o osso (escala ~0.01) o range/tamanho estouravam. Aqui sincronizamos a
+    // POSICAO DE MUNDO delas com o centro da lamina, entao os efeitos seguem a
+    // arma como um buff, sem herdar a escala do osso.
+    if (view.weaponAnchor && (view.weaponLight || view.weaponFx?.length)) {
+      // Centro da lamina = punho (posicao do anchor) + direcao da lamina
+      // (anchor.up) * distancia. Os emissores seguem a rotacao do anchor (+Y ao
+      // longo da lamina), para os efeitos cobrirem a espada inteira.
       const anchor = view.weaponAnchor;
       const hand = anchor.getPosition();
       const dir = anchor.up;
@@ -1291,9 +1584,10 @@ export class Game {
       const cy = hand.y + dir.y * WEAPON_BLADE_CENTER;
       const cz = hand.z + dir.z * WEAPON_BLADE_CENTER;
       view.weaponLight?.setPosition(cx, cy, cz);
-      if (view.weaponFire) {
-        view.weaponFire.setPosition(cx, cy, cz);
-        view.weaponFire.setRotation(anchor.getRotation());
+      const rotation = anchor.getRotation();
+      for (const fx of view.weaponFx ?? []) {
+        fx.setPosition(cx, cy, cz);
+        fx.setRotation(rotation);
       }
     }
   }
@@ -1408,11 +1702,139 @@ export class Game {
     return fire;
   }
 
+  /** Garante as texturas procedurais dos VFX do glow (criadas uma unica vez). */
+  private ensureWeaponFxTextures(): void {
+    if (!this.weaponSparkleTexture) this.weaponSparkleTexture = createFxTexture(this.world.app, 'weapon-sparkle', paintSparkle);
+    if (!this.weaponSoftTexture) this.weaponSoftTexture = createFxTexture(this.world.app, 'weapon-soft-glow', paintSoftGlow);
+    if (!this.weaponStreakTexture) this.weaponStreakTexture = createFxTexture(this.world.app, 'weapon-streak', paintStreak);
+  }
+
+  /**
+   * Estrelas cintilantes (o "spark" classico do Mu): pontos em forma de estrela
+   * de 4 pontas que piscam ao longo da lamina. Nos niveis 10+ puxam pro dourado.
+   */
+  private createWeaponSparkles(parent: pc.Entity, stage: WeaponGlowStage): pc.Entity | null {
+    if (!this.weaponSparkleTexture || stage.sparkleRate <= 0) return null;
+    const sparkles = makeEntity('weapon-sparkles', this.world.app);
+    const tip = mixColor(stage.color, new pc.Color(1, 0.86, 0.55), stage.sparkleGold);
+    const colorGraph = new pc.CurveSet([
+      [0, 1, 1, tip.r],
+      [0, 1, 1, tip.g],
+      [0, 0.95, 1, tip.b],
+    ]);
+    const alphaGraph = new pc.Curve([0, 0, 0.15, 1, 0.55, 0.85, 1, 0]);
+    const scaleGraph = new pc.Curve([0, 0.015, 0.3, 0.085 + stage.factor * 0.05, 1, 0.01]);
+    sparkles.addComponent('particlesystem', {
+      numParticles: Math.min(14, 4 + Math.ceil(stage.sparkleRate * 0.6)),
+      lifetime: 0.5,
+      rate: 1 / stage.sparkleRate,
+      rate2: 1.6 / stage.sparkleRate,
+      startAngle: 0,
+      startAngle2: 360,
+      loop: true,
+      preWarm: true,
+      emitterShape: pc.EMITTERSHAPE_BOX,
+      emitterExtents: new pc.Vec3(0.08, 0.6, 0.08),
+      colorMap: this.weaponSparkleTexture,
+      blendType: pc.BLEND_ADDITIVE,
+      depthWrite: false,
+      lighting: false,
+      intensity: 1.5,
+      colorGraph,
+      alphaGraph,
+      scaleGraph,
+    });
+    parent.addChild(sparkles);
+    return sparkles;
+  }
+
+  /**
+   * Aura de plasma (niveis 8+): fumaca luminosa lenta que envolve a lamina e
+   * sobe, como nos renders de arma +8/+9 do Mu.
+   */
+  private createWeaponWisps(parent: pc.Entity, stage: WeaponGlowStage): pc.Entity | null {
+    if (!this.weaponSoftTexture || stage.wispCount <= 0) return null;
+    const wisps = makeEntity('weapon-wisps', this.world.app);
+    const deep = new pc.Color(stage.color.r * 0.9, stage.color.g * 0.35, stage.color.b * 0.55);
+    const colorGraph = new pc.CurveSet([
+      [0, stage.color.r, 1, deep.r],
+      [0, stage.color.g, 1, deep.g],
+      [0, stage.color.b, 1, deep.b],
+    ]);
+    const alphaGraph = new pc.Curve([0, 0, 0.25, 0.38, 0.7, 0.26, 1, 0]);
+    const scaleGraph = new pc.Curve([0, 0.05, 0.4, 0.15 + stage.factor * 0.09, 1, 0.03]);
+    // Deriva suave: um pouco ao longo da lamina (local) + subida no mundo, para o
+    // plasma escorrer da arma como fumaca de energia.
+    const localVelocityGraph = new pc.CurveSet([[0, 0, 1, 0], [0, 0.12, 1, 0.3], [0, 0, 1, 0]]);
+    const velocityGraph = new pc.CurveSet([[0, 0, 1, 0], [0, 0.16, 1, 0.3], [0, 0, 1, 0]]);
+    wisps.addComponent('particlesystem', {
+      numParticles: Math.min(16, stage.wispCount),
+      lifetime: 1.05,
+      rate: 0.85 / stage.wispCount,
+      rate2: 1.3 / stage.wispCount,
+      startAngle: 0,
+      startAngle2: 360,
+      loop: true,
+      preWarm: true,
+      emitterShape: pc.EMITTERSHAPE_BOX,
+      emitterExtents: new pc.Vec3(0.16, 0.62, 0.16),
+      colorMap: this.weaponSoftTexture,
+      blendType: pc.BLEND_ADDITIVE,
+      depthWrite: false,
+      lighting: false,
+      intensity: 0.55,
+      colorGraph,
+      alphaGraph,
+      scaleGraph,
+      localVelocityGraph,
+      velocityGraph,
+    });
+    parent.addChild(wisps);
+    return wisps;
+  }
+
+  /**
+   * Feixes verticais de luz (niveis 8+): flashes finos e altos que aparecem e
+   * somem na lamina, como os raios de luz dos renders +8..+11 do Mu.
+   */
+  private createWeaponStreaks(parent: pc.Entity, stage: WeaponGlowStage): pc.Entity | null {
+    if (!this.weaponStreakTexture || stage.streakRate <= 0) return null;
+    const streaks = makeEntity('weapon-streaks', this.world.app);
+    const colorGraph = new pc.CurveSet([
+      [0, 1, 1, stage.color.r],
+      [0, 0.98, 1, stage.color.g],
+      [0, 0.92, 1, stage.color.b],
+    ]);
+    const alphaGraph = new pc.Curve([0, 0, 0.2, 0.5 + stage.factor * 0.2, 1, 0]);
+    const scaleGraph = new pc.Curve([0, 0.1, 0.35, 0.34 + stage.factor * 0.18, 1, 0.06]);
+    streaks.addComponent('particlesystem', {
+      numParticles: 6,
+      lifetime: 0.7,
+      rate: 1 / stage.streakRate,
+      rate2: 1.8 / stage.streakRate,
+      // Sem rotacao: o feixe fica SEMPRE vertical na tela, como no Mu.
+      startAngle: 0,
+      startAngle2: 0,
+      loop: true,
+      preWarm: true,
+      emitterShape: pc.EMITTERSHAPE_BOX,
+      emitterExtents: new pc.Vec3(0.06, 0.62, 0.06),
+      colorMap: this.weaponStreakTexture,
+      blendType: pc.BLEND_ADDITIVE,
+      depthWrite: false,
+      lighting: false,
+      intensity: 1.2,
+      colorGraph,
+      alphaGraph,
+      scaleGraph,
+    });
+    parent.addChild(streaks);
+    return streaks;
+  }
+
   private visibleWeaponFor(entity: EntityState): EquippedWeaponVisualState | null {
     if (entity.id !== this.net.playerId) return entity.equippedWeapon ?? null;
-    return this.forceWeaponGlowPreview
-      ? { kind: 'sword', rarity: 'lendario', upgradeLevel: 15, glowGem: 'soul', element: 'fire' }
-      : entity.equippedWeapon ?? null;
+    return this.weaponGlowPreview ?? entity.equippedWeapon ?? null;
   }
 
   private syncViewEquipment(view: View, weapon: EquippedWeaponVisualState | null): void {
@@ -1420,17 +1842,21 @@ export class Game {
     if (key === view.equippedWeaponKey) return;
     view.equippedWeaponKey = key;
     view.weaponGlowMaterial?.destroy();
+    view.weaponAuraMaterial?.destroy();
     for (const material of view.weaponBoostMaterials ?? []) material.destroy();
     view.weaponBoostMaterials = undefined;
     destroyEntity(view.weaponAnchor);
     destroyEntity(view.weaponLight);
-    destroyEntity(view.weaponFire);
+    for (const fx of view.weaponFx ?? []) destroyEntity(fx);
     view.weapon = undefined;
     view.weaponGlow = undefined;
     view.weaponGlowMaterial = undefined;
+    view.weaponAura = undefined;
+    view.weaponAuraMaterial = undefined;
     view.weaponLight = undefined;
     view.weaponFire = undefined;
-    view.weaponGlowFactor = undefined;
+    view.weaponFx = undefined;
+    view.weaponStage = undefined;
     view.weaponAnchor = undefined;
     view.weaponAttachedToBone = undefined;
     view.weaponGlowLength = undefined;
@@ -1460,53 +1886,82 @@ export class Game {
       fitWeaponToGrip(model, WEAPON_WORLD_LENGTH, WEAPON_GRIP_FROM_BOTTOM, inheritedScale);
       anchor.addChild(model);
       view.weapon = model;
-      if (weapon.upgradeLevel > 0 || weapon.element === 'fire') {
+      const stage = weaponGlowStageFor(weapon.upgradeLevel, weapon.rarity, weapon.element);
+      if (stage) {
         const isFire = weapon.element === 'fire';
-        // Brilho escalado pelo nivel/raridade: discreto em niveis baixos, sem
-        // estourar no maximo (espelha a progressao por estagios do Three.js).
-        const factor = weaponGlowFactor(weapon.upgradeLevel, weapon.rarity, weapon.element);
-        view.weaponGlowFactor = factor;
-        const glowColor = colorFromCss(glowColorForGem(weapon.glowGem));
-        // (1) O PROPRIO item brilha: clona os materiais da arma e turbina o emissivo
-        // na cor da gema. E isso que faz o glow FUNDIR com a textura, em vez de uma
-        // cor chapada por cima. (espelha o cloneAndGlowWeaponMaterials do Three.js)
-        view.weaponBoostMaterials = this.boostWeaponEmissive(model, glowColor, 0.12 + factor * 0.5);
-        // (2) Aura estilo Mu: shell = contorno FINO (clone levemente maior, faces de
-        // tras, aditivo). Fino de proposito (~1.02-1.04) — a 1.12 virava um bloco
-        // gordo maior que a arma.
-        const material = createMaterial(glowColor, {
-          emissive: glowColor,
-          emissiveIntensity: 0.4 + factor * 0.9,
-          opacity: (isFire ? 0.12 : 0.1) + factor * 0.16,
-          additive: true,
-          unlit: true,
-        });
-        material.cull = pc.CULLFACE_FRONT;
-        material.update();
-        const glow = this.createWeaponShell(model, material, 1.02 + factor * 0.02, anchor);
-        // Luz da arma fica no view.visual (escala 1) para o range ficar em unidades
-        // de mundo CONTIDAS — sob o osso (escala ~0.01) o alcance estourava na tela.
-        // A posicao de mundo e sincronizada com a lamina a cada frame
-        // (updateWeaponPose), entao a luz acompanha a arma como um buff.
+        this.ensureWeaponFxTextures();
+        // Particulas sao puladas na qualidade baixa para poupar GPU (o contorno,
+        // o emissivo da lamina e a luz ficam — o glow nunca some por completo).
+        const quality = this.effectiveRenderQualityLevel();
+        view.weaponStage = stage;
+        // (1) A PROPRIA lamina brilha: clona os materiais e soma emissivo na cor
+        // do ESTAGIO (rampa Mu 99B por nivel; nos niveis 11+ o nucleo clareia
+        // para branco-quente). E o que faz o glow FUNDIR com a textura da arma.
+        view.weaponBoostMaterials = this.boostWeaponEmissive(model, stage.coreColor, stage.boost);
+        // (2) Contorno estilo Mu: clone levemente maior, faces de tras, aditivo —
+        // um contorno FINO que segue o formato exato da arma.
+        if (stage.shellOpacity > 0) {
+          const material = createMaterial(stage.color, {
+            emissive: stage.color,
+            emissiveIntensity: 0.7 + stage.factor * 1.6,
+            opacity: stage.shellOpacity,
+            additive: true,
+            unlit: true,
+          });
+          material.cull = pc.CULLFACE_FRONT;
+          material.update();
+          view.weaponGlow = this.createWeaponShell(model, material, 1.02 + stage.factor * 0.025, anchor);
+          view.weaponGlowMaterial = material;
+        }
+        // (3) Halo externo (niveis 7+): segundo shell maior e bem mais suave — a
+        // "aura de energia" larga dos renders do Mu, que o bloom transforma em halo.
+        if (stage.auraOpacity > 0) {
+          const auraMaterial = createMaterial(stage.color, {
+            emissive: mixColor(stage.color, new pc.Color(1, 1, 1), 0.15),
+            emissiveIntensity: 0.5 + stage.factor * 1.1,
+            opacity: stage.auraOpacity,
+            additive: true,
+            unlit: true,
+          });
+          auraMaterial.cull = pc.CULLFACE_FRONT;
+          auraMaterial.update();
+          view.weaponAura = this.createWeaponShell(model, auraMaterial, stage.auraScale, anchor);
+          view.weaponAuraMaterial = auraMaterial;
+        }
+        // (4) Luz da arma fica no view.visual (escala 1) para o range ficar em
+        // unidades de mundo CONTIDAS — sob o osso (escala ~0.01) o alcance
+        // estourava na tela. A posicao de mundo e sincronizada com a lamina a
+        // cada frame (updateWeaponPose), entao a luz acompanha a arma.
         const light = makeEntity('weapon-light', this.world.app);
-        const lightColor = isFire ? colorFromCss('#ff6a1a') : glowColor;
         light.addComponent('light', {
           type: 'omni',
-          color: lightColor,
-          intensity: (isFire ? 0.55 : 0.22) + factor * (isFire ? 1.4 : 1.0),
-          range: 2.2 + factor * 1.2,
+          color: isFire ? colorFromCss('#ff6a1a') : stage.color,
+          intensity: stage.lightIntensity,
+          range: stage.lightRange,
           falloffMode: pc.LIGHTFALLOFF_INVERSESQUARED,
         });
         view.visual.addChild(light);
-        view.weaponGlow = glow;
-        view.weaponGlowMaterial = material;
         view.weaponLight = light;
 
-        // Fogo da lamina: VFX client-side (PlayCanvas particles), so para armas
-        // de elemento fogo. Nunca depende do WebSocket.
-        if (isFire && this.weaponFireTexture) {
-          view.weaponFire = this.createWeaponFire(view.visual);
+        // (5) Particulas por estagio: estrelas (+5), plasma e feixes (+8). Vivem
+        // no view.visual e sao sincronizadas com a lamina a cada frame.
+        const fx: pc.Entity[] = [];
+        if (quality !== 'low') {
+          const sparkles = this.createWeaponSparkles(view.visual, stage);
+          if (sparkles) fx.push(sparkles);
+          const wisps = this.createWeaponWisps(view.visual, stage);
+          if (wisps) fx.push(wisps);
+          const streaks = this.createWeaponStreaks(view.visual, stage);
+          if (streaks) fx.push(streaks);
         }
+        // Fogo da lamina: VFX client-side, so para armas de elemento fogo.
+        // Nunca depende do WebSocket.
+        if (isFire && this.weaponFireTexture) {
+          const fire = this.createWeaponFire(view.visual);
+          view.weaponFire = fire;
+          fx.push(fire);
+        }
+        view.weaponFx = fx;
       }
     }).catch((error) => {
       console.warn('[Game] falha ao equipar espada PlayCanvas:', error);
@@ -1830,6 +2285,8 @@ export class Game {
   private syncZone(zone: WorldZone): void {
     if (zone === this.zone) return;
     this.zone = zone;
+    // Trocar de zona teleporta o jogador: qualquer trajeto de clique morre aqui.
+    this.clickMoveTarget = null;
     this.world.setZone(zone);
   }
 
@@ -1865,6 +2322,9 @@ export class Game {
     const level = this.effectiveRenderQualityLevel();
     this.world.setRenderQuality(RENDER_QUALITY_PRESETS[level]);
     this.hud.setRenderQuality(this.renderQualityMode, level);
+    // Forca o reequip visual das armas no proximo frame: as particulas do glow
+    // sao puladas na qualidade baixa, entao trocar de preset exige rebuild.
+    for (const view of this.views.values()) view.equippedWeaponKey = undefined;
   }
 
   private resize(): void {

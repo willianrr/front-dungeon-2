@@ -1,4 +1,6 @@
 import * as pc from 'playcanvas';
+
+import { mulberry32 } from '../shared/rng';
 import type { Terrain } from '../shared/Terrain';
 import type { PropInstance, PropKind, WorldData } from '../shared/worldgen';
 import type { WorldZone } from '../shared/types';
@@ -28,6 +30,8 @@ export interface WorldRay {
 export interface RenderQualityPreset {
   bloom: boolean;
   bloomStrength: number;
+  /** MSAA do render target interno do CameraFrame (1 = sem). */
+  samples: number;
   pixelRatioCap: number;
   shadows: boolean;
   shadowMapSize: number;
@@ -45,6 +49,63 @@ const DEG = 180 / Math.PI;
 const RAD = Math.PI / 180;
 const PORTAL_RADIUS = 4.2;
 const DUNGEON_EXIT_RADIUS = 4;
+// Luz ambiente por zona: fora mais clara; na dungeon bem mais escura para o
+// clima de masmorra (tochas, cristais e o glow das armas passam a POP como no Mu).
+// Nota: o glow da arma e unlit/emissivo — NAO e afetado por estes valores, entao
+// da pra escurecer o mundo a vontade sem mexer no efeito.
+const AMBIENT_OVERWORLD = 0x475467;
+const AMBIENT_DUNGEON = 0x333c4e;
+// Intensidades do sol e da luz de preenchimento no overworld (a dungeon reduz).
+const SUN_INTENSITY = 1.75;
+const FILL_INTENSITY = 0.26;
+// Ceu/nevoa do overworld: tom mais escuro e dessaturado — o antigo 0xaac4d6
+// (azul bem claro) "leiteava" a cena inteira com a camera afastada, porque a
+// nevoa EXP2 mistura tudo em direcao a essa cor.
+const SKY_OVERWORLD = 0x7b8fa4;
+const FOG_DENSITY_OVERWORLD = 0.0052;
+
+// ---------------------------------------------------------------------------
+// Pacote de natureza (Quaternius, public/nature). As POSICOES dos props vem do
+// worldgen COMPARTILHADO com o servidor (colisao/blockers!) — aqui trocamos
+// apenas o VISUAL: tree -> Maple/Birch, rock -> Rock, ruin -> arvore morta.
+// A decoracao extra (grama/flores/arbustos) e client-side, sem colisao,
+// espalhada por seed. Se qualquer arquivo faltar, cai nos props primitivos.
+// ---------------------------------------------------------------------------
+const NATURE_TREE_URLS = [
+  '/nature/glTF/MapleTree_1.gltf',
+  '/nature/glTF/MapleTree_2.gltf',
+  '/nature/glTF/MapleTree_5.gltf',
+  '/nature/glTF/BirchTree_1.gltf',
+  '/nature/glTF/BirchTree_4.gltf',
+] as const;
+const NATURE_RUIN_URLS = [
+  '/nature/glTF/DeadTree_2.gltf',
+  '/nature/glTF/DeadTree_5.gltf',
+] as const;
+// Convertida de OBJ (o pacote nao traz rocks em glTF); cinza chapado de proposito.
+const NATURE_ROCK_URLS = ['/nature/glb/Rock_1.gltf'] as const;
+// Decoracao sem colisao, colocada em MANCHAS (clusters) para dar a sensacao de
+// campo gramado do pacote — pontos isolados somem no mapa de 200x200.
+const NATURE_GRASS_URL = '/nature/glTF/Grass_Large_Extruded.gltf';
+const NATURE_BUSH_URLS = ['/nature/glTF/Bush.gltf', '/nature/glTF/Bush_Flowers.gltf'] as const;
+const NATURE_FLOWER_URLS = [
+  '/nature/glTF/Flower_1_Clump.gltf',
+  '/nature/glTF/Flower_2_Clump.gltf',
+  '/nature/glTF/Flower_4_Clump.gltf',
+] as const;
+// Trilha de terra spawn -> portal (visual, sem gameplay): largura e afastamento
+// que a decoracao respeita para o caminho ficar sempre limpo.
+const NATURE_PATH_WIDTH = 2.4;
+const NATURE_PATH_CLEARANCE = 2.8;
+// Cinza levemente esverdeado e mais escuro para as pedras (o 0.64 chapado do
+// OBJ estourava branco com ACES+bloom; a referencia do pacote e mais escura).
+const NATURE_ROCK_TINT = { r: 0.52, g: 0.56, b: 0.52 };
+// Alturas/tamanhos-alvo em unidades de mundo na escala 1 do prop (o worldgen
+// multiplica por prop.scale 0.6..1.7). Espelham o volume dos primitivos antigos
+// para a silhueta continuar proxima do blocker de colisao do servidor.
+const NATURE_TREE_HEIGHT = 4.6;
+const NATURE_RUIN_HEIGHT = 3.4;
+const NATURE_ROCK_LARGEST = 2.1;
 
 function hexColor(hex: number, alpha = 1): pc.Color {
   return new pc.Color(
@@ -278,7 +339,7 @@ export class PcCameraRig {
       fov: 50,
       nearClip: 0.1,
       farClip: 2000,
-      clearColor: hexColor(0xaac4d6),
+      clearColor: hexColor(SKY_OVERWORLD),
     });
     this.resize(aspect);
   }
@@ -361,8 +422,18 @@ export class PcWorld {
   readonly models: ModelCache;
 
   private readonly materials = new Map<string, pc.StandardMaterial>();
+  /** Bounds cacheados por URL dos modelos do pacote nature (normalizacao). */
+  private readonly natureBounds = new Map<string, EntityBounds>();
+  /** Pontos (XZ) da trilha spawn -> portal; decoracao mantem distancia deles. */
+  private naturePathPoints: Array<{ x: number; z: number }> = [];
+  /** Grupo de batching estatico da decoracao (grama/flores/arbustos). */
+  private decorBatchGroupId: number | null = null;
+  private rockTintApplied = false;
   private readonly sun: pc.Entity;
+  private readonly fill: pc.Entity;
   private readonly sunDir = new pc.Vec3();
+  /** Pos-processamento (bloom + tonemapping). null se a criacao falhar. */
+  private frame: pc.CameraFrame | null = null;
   private zone: WorldZone = 'overworld';
   private width = window.innerWidth;
   private height = window.innerHeight;
@@ -381,15 +452,18 @@ export class PcWorld {
     });
     this.app.setCanvasFillMode(pc.FILLMODE_FILL_WINDOW);
     this.app.setCanvasResolution(pc.RESOLUTION_AUTO);
-    this.app.scene.ambientLight = hexColor(0x7f8ca3);
+    this.app.scene.ambientLight = hexColor(AMBIENT_OVERWORLD);
+    // Compensa o tonemapping ACES (escurece os meios-tons) mantendo o nivel geral.
+    this.app.scene.exposure = 1.18;
     this.app.scene.fog.type = pc.FOG_EXP2;
-    this.app.scene.fog.color = hexColor(0xaac4d6);
-    this.app.scene.fog.density = 0.0062;
+    this.app.scene.fog.color = hexColor(SKY_OVERWORLD);
+    this.app.scene.fog.density = FOG_DENSITY_OVERWORLD;
 
     this.root = new pc.Entity('world-root', this.app);
     this.exterior = new pc.Entity('overworld', this.app);
     this.dungeon = new pc.Entity('dungeon', this.app);
     this.sun = new pc.Entity('sun', this.app);
+    this.fill = new pc.Entity('fill-light', this.app);
     this.models = new ModelCache(this.app);
     this.rig = new PcCameraRig(this.app, window.innerWidth / window.innerHeight);
     this.app.root.addChild(this.root);
@@ -400,12 +474,46 @@ export class PcWorld {
     this.sun.addComponent('light', {
       type: 'directional',
       color: hexColor(0xfff1d6),
-      intensity: 2.3,
+      intensity: SUN_INTENSITY,
       castShadows: true,
       shadowResolution: 1024,
-      normalOffsetBias: 0.04,
+      // PCF5 = sombra com bordas suaves (a PCF3 padrao fica serrilhada/"crua").
+      shadowType: pc.SHADOW_PCF5_32F,
+      shadowDistance: 62,
+      shadowIntensity: 0.9,
+      normalOffsetBias: 0.05,
     });
     this.root.addChild(this.sun);
+
+    // Luz de preenchimento fria vinda do lado oposto ao sol, sem sombras: tira o
+    // aspecto chapado/"cru" dos lados nao iluminados sem custo relevante de GPU.
+    this.fill.addComponent('light', {
+      type: 'directional',
+      color: hexColor(0x8fa5c8),
+      intensity: FILL_INTENSITY,
+      castShadows: false,
+    });
+    this.fill.setPosition(-40, 46, -52);
+    this.fill.lookAt(0, 0, 0);
+    this.root.addChild(this.fill);
+
+    // Pipeline de pos-processamento: tonemapping filmico + bloom (o bloom e o que
+    // faz o brilho da arma "estourar" como no Mu Online). Intensidade/MSAA vem do
+    // preset de qualidade em setRenderQuality; na qualidade baixa fica desligado.
+    const cameraComponent = this.rig.entity.camera;
+    if (cameraComponent) {
+      cameraComponent.toneMapping = pc.TONEMAP_ACES;
+      try {
+        this.frame = new pc.CameraFrame(this.app, cameraComponent);
+        this.frame.rendering.toneMapping = pc.TONEMAP_ACES;
+        this.frame.rendering.samples = 1;
+        this.frame.bloom.intensity = 0;
+        this.frame.update();
+      } catch (error) {
+        this.frame = null;
+        console.warn('[PcWorld] CameraFrame indisponivel; seguindo sem bloom:', error);
+      }
+    }
 
     const elevation = 28 * RAD;
     const azimuth = 155 * RAD;
@@ -442,6 +550,18 @@ export class PcWorld {
       light.castShadows = preset.shadows;
       light.shadowResolution = preset.shadowMapSize;
     }
+    if (this.frame) {
+      const bloomOn = preset.bloom && preset.bloomStrength > 0;
+      // Sem bloom e sem MSAA nao ha motivo para pagar o custo do render pass:
+      // desliga o CameraFrame inteiro (o tonemapping ACES continua via camera).
+      const frameOn = bloomOn || preset.samples > 1;
+      this.frame.enabled = frameOn;
+      if (frameOn) {
+        this.frame.bloom.intensity = bloomOn ? preset.bloomStrength : 0;
+        this.frame.rendering.samples = Math.max(1, preset.samples);
+        this.frame.update();
+      }
+    }
     this.resize(this.width, this.height);
   }
 
@@ -461,9 +581,14 @@ export class PcWorld {
     const outside = zone === 'overworld';
     this.exterior.enabled = outside;
     this.dungeon.enabled = !outside;
-    this.app.scene.fog.color = hexColor(outside ? 0xaac4d6 : 0x0b1016);
-    this.app.scene.fog.density = outside ? 0.0062 : 0.045;
-    if (this.rig.entity.camera) this.rig.entity.camera.clearColor = hexColor(outside ? 0xaac4d6 : 0x05070b);
+    this.app.scene.ambientLight = hexColor(outside ? AMBIENT_OVERWORLD : AMBIENT_DUNGEON);
+    // Na dungeon o sol nao entra e a luz fria de preenchimento cai pra nao lavar
+    // a escuridao (o clima passa a vir das tochas/cristais, como no Mu).
+    if (this.sun.light) this.sun.light.intensity = outside ? SUN_INTENSITY : 0.35;
+    if (this.fill.light) this.fill.light.intensity = outside ? FILL_INTENSITY : 0.18;
+    this.app.scene.fog.color = hexColor(outside ? SKY_OVERWORLD : 0x0b1016);
+    this.app.scene.fog.density = outside ? FOG_DENSITY_OVERWORLD : 0.045;
+    if (this.rig.entity.camera) this.rig.entity.camera.clearColor = hexColor(outside ? SKY_OVERWORLD : 0x05070b);
   }
 
   updateSun(x: number, y: number, z: number): void {
@@ -591,8 +716,293 @@ export class PcWorld {
       { x: this.world.size, y: 0.06, z: this.world.size },
       this.exterior,
     );
-    this.buildProps();
+    // Props (arvores/pedras/ruinas) entram via preloadEnvironment(): modelos do
+    // pacote nature carregados no loading; primitivos so como fallback.
+    this.buildNaturePath();
     this.buildDungeonEntrance();
+  }
+
+  /**
+   * Trilha de terra do spawn ate o portal da dungeon: uma fita de malha drapejada
+   * no terreno, com ondulacao suave e DESVIO dos blockers (arvores/pedras tem
+   * colisao no servidor — a trilha contorna em vez de atravessar). Puramente
+   * visual; a decoracao respeita o corredor (NATURE_PATH_CLEARANCE).
+   */
+  private buildNaturePath(): void {
+    const spawn = this.world.spawn;
+    const portal = this.world.dungeon;
+    const dx = portal.x - spawn.x;
+    const dz = portal.z - spawn.z;
+    const length = Math.hypot(dx, dz);
+    if (length < 1) return;
+    const lateralX = -dz / length;
+    const lateralZ = dx / length;
+
+    // 1) Pontos-base com ondulacao (zero nas pontas) + repulsao dos blockers.
+    const segments = 72;
+    const points: Array<{ x: number; z: number }> = [];
+    for (let i = 0; i <= segments; i++) {
+      const t = i / segments;
+      const wobble = Math.sin(t * Math.PI * 2.3) * 3.4 * Math.sin(t * Math.PI);
+      let x = spawn.x + dx * t + lateralX * wobble;
+      let z = spawn.z + dz * t + lateralZ * wobble;
+      for (let iteration = 0; iteration < 3; iteration++) {
+        for (const blocker of this.world.blockers) {
+          const bx = x - blocker.x;
+          const bz = z - blocker.z;
+          const min = blocker.radius + NATURE_PATH_WIDTH * 0.5 + 0.6;
+          const distSq = bx * bx + bz * bz;
+          if (distSq >= min * min || distSq === 0) continue;
+          const dist = Math.sqrt(distSq);
+          x = blocker.x + (bx / dist) * min;
+          z = blocker.z + (bz / dist) * min;
+        }
+      }
+      points.push({ x, z });
+    }
+    // 2) Suaviza as quinas deixadas pela repulsao (media movel, pontas fixas).
+    for (let pass = 0; pass < 2; pass++) {
+      for (let i = 1; i < points.length - 1; i++) {
+        points[i] = {
+          x: points[i - 1].x * 0.25 + points[i].x * 0.5 + points[i + 1].x * 0.25,
+          z: points[i - 1].z * 0.25 + points[i].z * 0.5 + points[i + 1].z * 0.25,
+        };
+      }
+    }
+    this.naturePathPoints = points;
+
+    // 3) Fita: dois vertices por ponto, largura levemente variavel, colada no
+    // terreno (+0.05 contra z-fighting). Normais para cima (estilo low-poly).
+    const positions: number[] = [];
+    const normals: number[] = [];
+    const indices: number[] = [];
+    for (let i = 0; i < points.length; i++) {
+      const previous = points[Math.max(0, i - 1)];
+      const next = points[Math.min(points.length - 1, i + 1)];
+      let tx = next.x - previous.x;
+      let tz = next.z - previous.z;
+      const tl = Math.hypot(tx, tz) || 1;
+      tx /= tl;
+      tz /= tl;
+      const halfWidth = (NATURE_PATH_WIDTH / 2) * (0.85 + 0.3 * Math.abs(Math.sin(i * 0.7)));
+      const leftX = points[i].x - tz * halfWidth;
+      const leftZ = points[i].z + tx * halfWidth;
+      const rightX = points[i].x + tz * halfWidth;
+      const rightZ = points[i].z - tx * halfWidth;
+      positions.push(leftX, this.world.terrain.heightAt(leftX, leftZ) + 0.05, leftZ);
+      positions.push(rightX, this.world.terrain.heightAt(rightX, rightZ) + 0.05, rightZ);
+      normals.push(0, 1, 0, 0, 1, 0);
+      if (i > 0) {
+        const a = (i - 1) * 2;
+        indices.push(a, a + 2, a + 1, a + 1, a + 2, a + 3);
+      }
+    }
+    const mesh = pc.createMesh(this.app.graphicsDevice, positions, { indices, normals });
+    const material = this.material('nature-path', 0x8a6a44);
+    const meshInstance = new pc.MeshInstance(mesh, material);
+    meshInstance.castShadow = false;
+    const entity = new pc.Entity('nature-path', this.app);
+    entity.addComponent('render', { meshInstances: [meshInstance], receiveShadows: true, castShadows: false });
+    this.exterior.addChild(entity);
+  }
+
+  /** Distancia (XZ) de um ponto ate a trilha (aproximada pelos pontos amostrados). */
+  private distanceToPath(x: number, z: number): number {
+    let best = Infinity;
+    for (const point of this.naturePathPoints) {
+      const d = Math.hypot(point.x - x, point.z - z);
+      if (d < best) best = d;
+    }
+    return best;
+  }
+
+  /**
+   * Carrega o pacote de natureza e monta o mundo: substitui os primitivos pelos
+   * modelos (mesmas posicoes/escalas do worldgen — colisao do servidor intacta)
+   * e espalha decoracao sem colisao por seed. `decorCount` vem do preset de
+   * qualidade. Se algo falhar (arquivo faltando), volta aos props primitivos.
+   */
+  async preloadEnvironment(decorCount: number): Promise<void> {
+    try {
+      const urls = [
+        ...NATURE_TREE_URLS,
+        ...NATURE_RUIN_URLS,
+        ...NATURE_ROCK_URLS,
+        NATURE_GRASS_URL,
+        ...NATURE_BUSH_URLS,
+        ...NATURE_FLOWER_URLS,
+      ];
+      await this.models.preload(urls);
+      await this.buildNatureProps();
+      await this.scatterNatureDecor(decorCount);
+    } catch (error) {
+      console.warn('[PcWorld] pacote nature indisponivel; usando props primitivos:', error);
+      this.buildProps();
+    }
+  }
+
+  /**
+   * Instancia um modelo do pacote normalizado: escala para o tamanho-alvo e
+   * alinha a base (minY) no y=0 local, centrado em XZ. O chamador poe num grupo
+   * com a posicao/rotacao/escala do prop.
+   */
+  private async instantiateNature(
+    url: string,
+    target: { height?: number; largest?: number },
+    castShadows: boolean,
+  ): Promise<pc.Entity | null> {
+    const model = await this.models.instantiate(url, { castShadows, receiveShadows: true });
+    let bounds = this.natureBounds.get(url) ?? null;
+    if (!bounds) {
+      bounds = computeEntityBounds(model);
+      if (!bounds) {
+        destroyEntity(model);
+        return null;
+      }
+      this.natureBounds.set(url, bounds);
+    }
+    const scale = target.height !== undefined
+      ? target.height / Math.max(bounds.size.y, 0.001)
+      : (target.largest ?? 1) / bounds.largest;
+    model.setLocalScale(scale, scale, scale);
+    model.setLocalPosition(-bounds.center.x * scale, -bounds.minY * scale, -bounds.center.z * scale);
+    return model;
+  }
+
+  private async buildNatureProps(): Promise<void> {
+    // Sorteios visuais (variante/squash) deterministicos por seed — todo mundo
+    // que entra no mesmo mundo ve as mesmas arvores.
+    const rand = mulberry32(this.world.seed ^ 0x5eed);
+    for (const prop of this.world.props) {
+      const group = new pc.Entity(`nature-${prop.kind}`, this.app);
+      group.setLocalPosition(prop.x, prop.y, prop.z);
+      group.setLocalEulerAngles(0, prop.rotationY * DEG, 0);
+
+      let model: pc.Entity | null = null;
+      if (prop.kind === 'tree') {
+        const url = NATURE_TREE_URLS[Math.floor(rand() * NATURE_TREE_URLS.length)];
+        model = await this.instantiateNature(url, { height: NATURE_TREE_HEIGHT * prop.scale }, true);
+      } else if (prop.kind === 'ruin') {
+        const url = NATURE_RUIN_URLS[Math.floor(rand() * NATURE_RUIN_URLS.length)];
+        model = await this.instantiateNature(url, { height: NATURE_RUIN_HEIGHT * prop.scale }, true);
+      } else {
+        const url = NATURE_ROCK_URLS[Math.floor(rand() * NATURE_ROCK_URLS.length)];
+        model = await this.instantiateNature(url, { largest: NATURE_ROCK_LARGEST * prop.scale }, true);
+        // So temos 1 malha de pedra: squash nao-uniforme + rotacao dao a variedade
+        // (os primitivos antigos tambem eram uma unica esfera achatada).
+        group.setLocalScale(0.85 + rand() * 0.5, 0.55 + rand() * 0.6, 0.85 + rand() * 0.45);
+        if (model) this.tintRockMaterials(model);
+      }
+      if (!model) {
+        destroyEntity(group);
+        continue;
+      }
+      group.addChild(model);
+      // Pedras semi-enterradas assentam melhor no terreno inclinado.
+      if (prop.kind === 'rock') model.translateLocal(0, -0.08 * NATURE_ROCK_LARGEST * prop.scale, 0);
+      this.exterior.addChild(group);
+    }
+  }
+
+  /** Escurece o material da pedra (compartilhado por todas as instancias). */
+  private tintRockMaterials(model: pc.Entity): void {
+    if (this.rockTintApplied) return;
+    this.rockTintApplied = true;
+    const renders = model.findComponents('render') as unknown as Array<{
+      meshInstances?: Array<{ material: pc.Material }>;
+    }>;
+    for (const render of renders) {
+      for (const meshInstance of render.meshInstances ?? []) {
+        const material = meshInstance.material;
+        if (!(material instanceof pc.StandardMaterial)) continue;
+        material.diffuse = new pc.Color(NATURE_ROCK_TINT.r, NATURE_ROCK_TINT.g, NATURE_ROCK_TINT.b);
+        material.update();
+      }
+    }
+  }
+
+  /** Marca todos os renders da entidade para o batching estatico da decoracao. */
+  private assignDecorBatchGroup(entity: pc.Entity): void {
+    if (this.decorBatchGroupId === null) return;
+    const renders = entity.findComponents('render') as unknown as Array<{ batchGroupId: number }>;
+    for (const render of renders) render.batchGroupId = this.decorBatchGroupId;
+  }
+
+  /**
+   * Decoracao pura (sem colisao): grama, flores e arbustos em MANCHAS por seed.
+   * Tudo entra num grupo de batching estatico — o PlayCanvas funde as malhas por
+   * material, entao ~1000 tufos de grama viram poucos draw calls. A trilha e a
+   * entrada da dungeon ficam limpas.
+   */
+  private async scatterNatureDecor(count: number): Promise<void> {
+    if (count <= 0) return;
+    const batcher = (this.app as unknown as { batcher?: pc.BatchManager }).batcher;
+    if (batcher && this.decorBatchGroupId === null) {
+      this.decorBatchGroupId = batcher.addGroup('nature-decor', false, 64).id;
+    }
+    const rand = mulberry32(this.world.seed ^ 0xdec0);
+    const half = this.world.terrain.half - 8;
+    let placed = 0;
+    let guard = 0;
+
+    const canPlace = (x: number, z: number): boolean => {
+      if (Math.abs(x) > half || Math.abs(z) > half) return false;
+      if (Math.hypot(x - this.world.dungeon.x, z - this.world.dungeon.z) < 11) return false;
+      if (this.distanceToPath(x, z) < NATURE_PATH_CLEARANCE) return false;
+      if (this.world.terrain.heightAt(x, z) < this.world.waterLevel + 0.5) return false;
+      return this.world.terrain.slopeAt(x, z) <= 0.85;
+    };
+
+    while (placed < count && guard++ < count * 6) {
+      const cx = (rand() * 2 - 1) * half;
+      const cz = (rand() * 2 - 1) * half;
+      if (!canPlace(cx, cz)) continue;
+
+      // Tipo da mancha: grama domina; flores e arbustos pontuam o campo.
+      const roll = rand();
+      let urls: readonly string[];
+      let clusterSize: number;
+      let spread: number;
+      let sizeMin: number;
+      let sizeMax: number;
+      if (roll < 0.62) {
+        urls = [NATURE_GRASS_URL];
+        clusterSize = 4 + Math.floor(rand() * 5);
+        spread = 2.7;
+        sizeMin = 1.15;
+        sizeMax = 1.8;
+      } else if (roll < 0.84) {
+        urls = NATURE_FLOWER_URLS;
+        clusterSize = 3 + Math.floor(rand() * 3);
+        spread = 1.9;
+        sizeMin = 0.7;
+        sizeMax = 1.1;
+      } else {
+        urls = NATURE_BUSH_URLS;
+        clusterSize = 1 + Math.floor(rand() * 2);
+        spread = 1.7;
+        sizeMin = 1.1;
+        sizeMax = 1.7;
+      }
+
+      for (let i = 0; i < clusterSize && placed < count; i++) {
+        const x = cx + (rand() * 2 - 1) * spread;
+        const z = cz + (rand() * 2 - 1) * spread;
+        if (!canPlace(x, z)) continue;
+        const url = urls[Math.floor(rand() * urls.length)];
+        const size = sizeMin + rand() * (sizeMax - sizeMin);
+        const model = await this.instantiateNature(url, { largest: size }, false);
+        if (!model) continue;
+        const group = new pc.Entity('nature-decor', this.app);
+        group.setLocalPosition(x, this.world.terrain.heightAt(x, z), z);
+        group.setLocalEulerAngles(0, rand() * 360, 0);
+        group.addChild(model);
+        this.exterior.addChild(group);
+        this.assignDecorBatchGroup(group);
+        placed++;
+      }
+    }
+    if (batcher && this.decorBatchGroupId !== null) batcher.generate([this.decorBatchGroupId]);
   }
 
   private createTerrainEntity(terrain: Terrain): pc.Entity {
@@ -659,7 +1069,8 @@ export class PcWorld {
     }
 
     const mesh = pc.createMesh(this.app.graphicsDevice, positions, { indices, normals });
-    const material = this.material('terrain', 0x4a6a39);
+    // Verde mais escuro e rico (o antigo 0x4a6a39 ficava pastel com ACES+bloom).
+    const material = this.material('terrain', 0x3a5a2c);
     const meshInstance = new pc.MeshInstance(mesh, material);
     meshInstance.castShadow = false;
     const entity = new pc.Entity('ground', this.app);

@@ -255,3 +255,152 @@ skinned mesh). Constantes ajustáveis no topo do arquivo.
   de criar/destruir, se muitas armas de fogo/efeitos aparecerem juntos.
 - **Snapshot — mais deltas:** aplicar a mesma ideia do inventário a `equipment`/`quest`
   e aos campos "lentos" do player (atributos/skills), que também vão a cada tick.
+
+---
+
+## 6. Visual "Mu Online 99B" — glow por nível (+0..+15) e pipeline de render
+
+Reforma do brilho da arma (que estava "cru") + pós-processamento e iluminação.
+Arquivos: `src/core/Game.ts` e `src/playcanvas/PcWorld.ts`. Nada trafega pela rede;
+tudo é derivado de `upgradeLevel`/`rarity`/`element` que o snapshot já manda.
+
+### Pipeline (PcWorld.ts)
+
+- **`pc.CameraFrame`** (nativo do engine 2.x): tonemapping **ACES** + **bloom** +
+  MSAA. O bloom é o que faz o glow aditivo "estourar" como nos renders do Mu.
+  Presets (`RENDER_QUALITY_PRESETS` no Game.ts): alta = bloom 0.04 + MSAA 4x +
+  sombra 2048; média = bloom 0.028 + sombra 1024; baixa = CameraFrame desligado.
+- **Sombras:** `SHADOW_PCF5_32F` (bordas suaves), `shadowDistance 62`,
+  `shadowIntensity 0.9`. Média agora TEM sombra (1024).
+- **Fill light:** direcional fria fraca do lado oposto ao sol, sem sombras — tira o
+  aspecto chapado dos lados não iluminados.
+- **Ambiente por zona:** overworld `0x525f74`; dungeon `0x333c4e` com sol/fill
+  reduzidos — o clima vem das tochas/cristais e o glow da arma domina no escuro.
+- `scene.exposure = 1.18` compensa o escurecimento de meios-tons do ACES.
+- Ajustes pos-feedback (mundo claro demais; arma unlit/emissiva NAO afetada):
+  1ª rodada: sol `2.05`, fill `0.32`, ambiente mais escuro. 2ª rodada (zoom out
+  revelou a nevoa "leiteando" tudo): ceu/nevoa `0xaac4d6 → 0x7b8fa4` + densidade
+  `0.0052` (`SKY_OVERWORLD`/`FOG_DENSITY_OVERWORLD`), sol `1.75`, fill `0.26`,
+  ambiente `0x475467` e grama `0x4a6a39 → 0x3a5a2c`. Todas as constantes ficam
+  no topo do `PcWorld.ts` para calibrar rapido.
+
+### Glow da arma (Game.ts) — rampa 99B dirigida pelo NÍVEL
+
+A gema **não** define mais a cor (fiel ao 99B); `MU_GLOW_RAMP` mapeia nível → cor:
+prata (+1) → rosa (+2..3) → vermelho (+4..7) → plasma magenta (+8..9) → fogo
+laranja (+10..11) → dourado incandescente (+12..15). `weaponGlowStageFor()` devolve
+o "estágio" com todas as intensidades; camadas por faixa:
+
+| Nível | Camadas ativas |
+| --- | --- |
+| +1..+2 | reflexo metálico sutil (emissivo fraco na lâmina) |
+| +3..+4 | lâmina tingida + contorno fino (shell aditivo, cull front) |
+| +5..+7 | brilho forte + **estrelas cintilantes** (sparkles de 4 pontas) |
+| +7..+10 | **halo externo** (2º shell suave) + **aura de plasma** + **feixes verticais** |
+| +11..+15 | núcleo **branco-quente**, sparkles dourados, tudo mais denso/intenso |
+
+- Texturas dos VFX (estrela/brilho/feixe) são **procedurais** (canvas 2D, 64px,
+  geradas 1x) — zero assets novos. A cor vem do `colorGraph` de cada emissor.
+- Partículas vivem no `view.visual` (escala 1) e são sincronizadas com o centro da
+  lâmina todo frame (`updateWeaponPose`), igual ao fogo — nada herda a escala do osso.
+- Pulso: contorno respira rápido; halo respira lento em contrafase; luz com flicker.
+- **Qualidade baixa** pula as partículas (contorno + emissivo + luz ficam);
+  `applyRenderQuality` força reequip visual ao trocar preset.
+- Arma de **fogo** mantém as chamas e entra na rampa com estágio mínimo ~+6.
+
+### Preview rápido (sem depender de drop)
+
+- `?weaponGlow` → espada +15 · `?weaponGlow=8` → +8 · `?weaponGlow=11,fire` → +11 de fogo.
+
+### Verificação
+
+- `tsc --noEmit` ✓ (rodado em ambiente isolado com playcanvas 2.20.2).
+- Conferir no jogo: `npm run dev` e abrir `http://localhost:5174/?weaponGlow=5`,
+  depois 8, 11, 15 — comparar com a referência do 99B nível a nível. Tecla de
+  qualidade: confirmar que na baixa o glow segue visível (sem partículas).
+
+---
+
+## 7. Click-to-move "andando parado" + mira no ataque
+
+**Sintomas:** (1) mover por clique a uma distância maior tocava a animação de andar
+mas o personagem ficava parado (WASD funcionava); (2) atacando, o herói não
+encarava o alvo corretamente.
+
+**Causa raiz (comum às duas):** o commit `fix: lag moviment` do backend passou a
+**suprimir snapshots quando "ocioso"** com `IDLE_BROADCAST_HZ` default **0** (zero
+snapshot em idle), confiando na janela de 2 s pós-input + `PlayerNeedsRealtime-
+Snapshot`. O WASD reenvia `move` a cada ≤0,35 s e nunca sai da janela; o clique
+envia **um** comando — quando o fluxo de snapshots morre no meio do trajeto, o
+cliente fica com a última `action` (walk) e nenhuma posição nova → anda parado.
+No ataque, inimigo/rotação congelavam do mesmo jeito → mira "velha". Havia ainda
+uma briga de yaw: o reconcile aplicava o `rotationY` do servidor (rate 28)
+enquanto o `aimLocalPlayerDuringAttack` girava para o alvo (rate 18).
+
+**Correções:**
+
+- **Front — predição do click-to-move (`Game.ts`):** ao clicar no chão, o cliente
+  guarda `clickMoveTarget` e o herói **anda imediatamente** em direção ao ponto
+  (mesmos 4.2/7.8 u/s do servidor, altura pelo terreno), como já era com o
+  teclado. O reconcile trata a predição de clique com as MESMAS margens da de
+  teclado (rate 4, zona morta 0,85, snap 3) — o servidor segue autoritativo
+  (desvios do pathfinding puxam a rota). O trajeto morre em: teclado assumir,
+  clique de ataque/baú/loot/portal, morte, troca de zona, chegada, ou `idle`
+  autoritativo após carência de 0,6 s (RTT).
+- **Front — yaw do ataque (`Game.ts`, reconcile):** o `rotationY` do servidor não
+  é mais aplicado ao player local durante `attack` (nem com predição de movimento
+  ativa) — quem gira no ataque é só o `aimLocalPlayerDuringAttack`, eliminando a
+  briga que deixava o boneco olhando errado.
+- **Front — janela de retenção da mira (`ATTACK_AIM_HOLD_SECONDS`, 1,2 s):** o
+  servidor alterna `attack → idle (curto) → attack` entre golpes (o `actionTimer`
+  expira a ~90% do cooldown). Nesse idle a condição `action === 'attack'` caía e o
+  yaw velho do servidor virava o boneco de lado (foto do bug: atacando para cima
+  olhando para a direita). A mira local agora segue dona do yaw por 1,2 s após o
+  último `attack`; andar/correr (perseguição) ou clicar no chão encerra a janela.
+- **Back — piso de snapshots (`config/config.go`):** `IDLE_BROADCAST_HZ` default
+  `0 → 5`. Em idle o cliente segue enxergando o mundo (zumbis se aproximando,
+  fim de trajetos) a 5 Hz, barato e à prova de falha na detecção de realtime.
+  ⚠️ **Recompilar/reiniciar o backend Go** para valer.
+
+**Como testar:** com o backend REINICIADO, (1) clique longe: o herói parte na
+hora e chega ao ponto (sem "esteira"); (2) WASD segue igual; (3) ataque um zumbi
+que circula você: o herói encara o alvo o golpe inteiro; (4) fique parado perto
+de zumbis: eles continuam se movendo (não congelam mais entre inputs).
+
+---
+
+## 8. Mundo com o pacote de natureza (Quaternius, `public/nature`)
+
+O overworld deixou de usar primitivos (cones/esferas/caixas) e passou a usar os
+modelos do pacote. **Regra de ouro:** as POSIÇÕES/escalas de árvore/pedra/ruína
+vêm do worldgen compartilhado com o servidor (colisão/blockers) — só o VISUAL
+mudou; nada de gameplay foi tocado.
+
+- **Mapeamento:** `tree` → Maple 1/2/5 + Birch 1/4 (sorteio determinístico por
+  seed); `rock` → `Rock_1` (convertida de OBJ→glTF embutido em
+  `public/nature/glb/`, com squash não-uniforme por instância para variar);
+  `ruin` → DeadTree 2/5. Alvos de tamanho espelham os primitivos antigos
+  (`NATURE_*` no topo do PcWorld.ts) para casar com o raio de colisão.
+- **Decoração sem colisão** (client-side, seed própria): Grass_Large_Extruded,
+  Bush/Bush_Flowers e Flower clumps espalhados fora d'água/encostas/entrada da
+  dungeon. Quantidade por preset (`NATURE_DECOR_COUNTS`): alta 220 / média 130 /
+  baixa 50. Decoração não projeta sombra (perf).
+- **Grama densa em manchas + batching:** a decoração é colocada em CLUSTERS
+  (manchas de 4–8 tufos de grama, 3–5 flores, 1–2 arbustos) e toda ela entra num
+  grupo de **batching estático** (`app.batcher`) — o engine funde as malhas por
+  material, então ~1000 tufos viram poucos draw calls. Contagens
+  (`NATURE_DECOR_COUNTS`): alta 1000 / média 550 / baixa 220.
+- **Trilha até o portal (`buildNaturePath`):** fita de malha drapejada no
+  terreno do spawn até a entrada da dungeon, com ondulação suave e **desvio dos
+  blockers** (a trilha contorna árvores/pedras que têm colisão no servidor,
+  nunca passa por dentro). A decoração respeita o corredor
+  (`NATURE_PATH_CLEARANCE`). Puramente visual.
+- **Pedras escurecidas** (`NATURE_ROCK_TINT`): o cinza 0.64 do OBJ estourava
+  branco com ACES+bloom; agora é cinza-esverdeado como na referência do pacote.
+- **Carregamento:** `world.preloadEnvironment()` entra nos batches do preload
+  (barra de loading cobre). Se qualquer arquivo do pacote faltar, cai no
+  fallback dos props primitivos com aviso no console.
+- Apenas a pasta `glTF/` (e `glb/`) é usada em runtime; `FBX/OBJ/Blends` podem
+  sair do deploy no futuro (~99 MB no total do pacote; o runtime usa ~3 MB).
+- Futuro: converter os .gltf usados para .glb+KTX2 (hook pronto no pipeline de
+  otimização) e instancing/batching para a grama se a densidade subir.
