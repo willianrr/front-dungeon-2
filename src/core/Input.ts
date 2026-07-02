@@ -45,6 +45,10 @@ export class Input {
       { passive: false },
     );
 
+    // Bloqueia o menu de contexto do navegador na pagina inteira: botao direito
+    // nao abre menu em cima da acao (comportamento padrao de ARPG web).
+    window.addEventListener('contextmenu', (e) => e.preventDefault());
+
     window.addEventListener('keydown', (e) => {
       if (e.key === 'q' || e.key === 'Q') this.rotateDir = -1;
       if (e.key === 'e' || e.key === 'E') this.rotateDir = 1;

@@ -2,6 +2,7 @@ import { Game } from './core/Game';
 import type { NetworkClient } from './net/NetworkClient';
 import { ServerClient } from './net/ServerClient';
 import { createWarriorProfile, type PlayerProfile } from './shared/playerProfile';
+import { installCustomCursors } from './ui/cursor';
 import { showServerEntry } from './ui/ServerEntry';
 import './styles.css';
 
@@ -12,6 +13,9 @@ const uiLayer = document.getElementById('ui-layer') as HTMLElement;
 const loading = document.getElementById('loading') as HTMLElement | null;
 const loadingBar = document.getElementById('loading-bar') as HTMLElement | null;
 const loadingPct = document.getElementById('loading-pct') as HTMLElement | null;
+
+// Cursor customizado desde o PRIMEIRO pixel (login, loading, jogo, menus).
+void installCustomCursors();
 
 void bootstrap();
 
