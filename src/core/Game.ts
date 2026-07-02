@@ -21,10 +21,12 @@ import type {
   DamageKind,
   EntityAction,
   EntityState,
+  EquipmentState,
   EquippedWeaponVisualState,
   InventoryItem,
   ItemRarity,
   LootState,
+  QuestState,
   WeaponElement,
   WorldSnapshot,
   WorldZone,
@@ -142,9 +144,19 @@ const CLICK_MOVE_STOP_DISTANCE = 0.35;
 // Carencia (s) antes de aceitar um 'idle' do servidor como fim do trajeto — cobre
 // o RTT do comando; sem isso o snapshot antigo (ainda idle) cancelaria o clique.
 const CLICK_MOVE_SERVER_IDLE_GRACE = 0.6;
+// Raio para interagir com loot/bau ao chegar (MENOR que o do servidor — 3.1 do
+// collectLoot e 4.0 do openChest — para a predicao nunca disparar cedo demais).
+const LOOT_INTERACT_RANGE = 2.6;
+const CHEST_INTERACT_RANGE = 3.4;
+// Espacamento minimo entre comandos 'move' (coalescing): spam de clique vira no
+// maximo ~11 pacotes/s, sempre enviando o alvo MAIS RECENTE (trailing send).
+const MOVE_COMMAND_MIN_INTERVAL = 0.09;
 
 const MARKER_DURATION = 0.6;
 const CLOSE_TARGET_RADIUS = 3.4;
+// Cone (meia-abertura 60 graus) NA DIRECAO DO CLIQUE para converter clique de
+// chao em ataque. Clicar atras do personagem = recuo, NUNCA vira ataque.
+const CLOSE_ATTACK_CONE_COS = Math.cos(Math.PI / 3);
 const CLOSE_CLICK_RADIUS = 2.8;
 const LOOT_CLICK_RADIUS = 1.25;
 const CHEST_CLICK_RADIUS = 1.45;
@@ -568,7 +580,9 @@ function createFxTexture(
     name,
     width: size,
     height: size,
-    format: pc.PIXELFORMAT_RGBA8,
+    // SRGBA8: cores de canvas 2D sao sRGB; sem isso o engine avisa e o blend
+    // aditivo das particulas sai levemente errado.
+    format: pc.PIXELFORMAT_SRGBA8,
     mipmaps: true,
     minFilter: pc.FILTER_LINEAR_MIPMAP_LINEAR,
     magFilter: pc.FILTER_LINEAR,
@@ -846,8 +860,24 @@ export class Game {
   private clickMoveTarget: { x: number; z: number; run: boolean; sentAt: number } | null = null;
   /** Ate quando (elapsed) a mira local e dona do yaw — cobre o vao entre golpes. */
   private localAimHoldUntil = 0;
+  /** Interacao adiada (clique distante em loot/bau): anda ate la e executa. */
+  private pendingInteraction: { kind: 'loot' | 'chest'; id: string; x: number; y: number; z: number; range: number } | null = null;
+  /** Coalescing de comandos 'move' (ultimo alvo vence; ver MOVE_COMMAND_MIN_INTERVAL). */
+  private lastMoveCommandAt = -Infinity;
+  private queuedMoveCommand: { target: Vec3Like; run: boolean } | null = null;
   /** Cache do inventario: o servidor manda `null` quando nao muda (delta). */
   private cachedInventory: InventoryItem[] = [];
+  /**
+   * Caches de quest e equipamento — mesmo padrao de delta do inventario.
+   * Defaults SEGUROS (nunca null): o 1o snapshot completo pode ser substituido
+   * no buffer por um delta durante o preload dos assets; o HUD nao pode quebrar
+   * nesse vao (o reenvio periodico de ~2s preenche os dados reais).
+   */
+  private cachedQuest: QuestState = { title: '', objective: '', progress: 0, goal: 0, completed: false };
+  private cachedEquipment: EquipmentState = {
+    head: null, chest: null, hands: null, legs: null, feet: null, weapon: null, offhand: null, trinket: null,
+  };
+  private cachedEquippedWeapon: EquippedWeaponVisualState | null = null;
 
   constructor(canvas: HTMLCanvasElement, private readonly uiLayer: HTMLElement, net: NetworkClient, profile: PlayerProfile) {
     this.net = net;
@@ -969,6 +999,20 @@ export class Game {
     }
     snapshot.inventory = this.cachedInventory;
 
+    // Quest e equipamento com DELTA (null = nao mudou), mesmo padrao acima.
+    // Equipment e equippedWeapon viajam juntos sob o mesmo rev no servidor:
+    // `equipment != null` e o gate para atualizar o cache dos dois.
+    const incomingQuest = snapshot.quest as QuestState | null | undefined;
+    if (incomingQuest != null) this.cachedQuest = incomingQuest;
+    snapshot.quest = this.cachedQuest;
+    const incomingEquipment = snapshot.equipment as EquipmentState | null | undefined;
+    if (incomingEquipment != null) {
+      this.cachedEquipment = incomingEquipment;
+      this.cachedEquippedWeapon = snapshot.equippedWeapon ?? null;
+    }
+    snapshot.equipment = this.cachedEquipment;
+    snapshot.equippedWeapon = this.cachedEquippedWeapon;
+
     for (const loot of snapshot.loot) {
       if (!loot.icon) loot.icon = itemIconFor(loot.kind);
       if (!loot.name) loot.name = itemDisplayName(loot);
@@ -1000,6 +1044,8 @@ export class Game {
 
     this.reconcile(snapshot.entities, dt, snapshotChanged);
     this.applyLocalPlayerMovement(dt);
+    this.flushQueuedMoveCommand();
+    this.updatePendingInteraction();
     this.aimLocalPlayerDuringAttack(dt);
     this.updateLootViews();
     this.updateCameraAndMarker(dt);
@@ -1068,9 +1114,11 @@ export class Game {
       direction,
     });
     if (decision.type === 'none') return;
-    // O teclado assumiu o controle do movimento: qualquer trajeto de clique morre.
+    // O teclado assumiu o controle do movimento: trajeto de clique e interacao
+    // pendente morrem aqui.
     this.clickMoveTarget = null;
-    this.net.send({ type: 'move', entityId: this.net.playerId, target: decision.target, run: decision.run });
+    this.pendingInteraction = null;
+    this.sendMoveCommand(decision.target, decision.run);
   }
 
   private applyLocalPlayerMovement(dt: number): void {
@@ -1080,6 +1128,7 @@ export class Game {
     const state = this.latestEntities.get(this.net.playerId);
     if (!view || (state && !state.alive)) {
       this.clickMoveTarget = null;
+      this.pendingInteraction = null;
       return;
     }
 
@@ -1170,6 +1219,85 @@ export class Game {
     setYaw(view.entity, current + delta * alpha);
   }
 
+  /**
+   * Envia 'move' com coalescing: garante espacamento minimo entre pacotes e, se
+   * o jogador spammar clique, guarda apenas o alvo MAIS RECENTE para enviar
+   * quando a janela abrir (trailing). Reduz trafego sem perder responsividade —
+   * a predicao local ja faz o heroi reagir no mesmo frame.
+   */
+  private sendMoveCommand(target: Vec3Like, run: boolean): void {
+    if (this.elapsed - this.lastMoveCommandAt >= MOVE_COMMAND_MIN_INTERVAL) {
+      this.lastMoveCommandAt = this.elapsed;
+      this.queuedMoveCommand = null;
+      this.net.send({ type: 'move', entityId: this.net.playerId, target, run });
+      return;
+    }
+    this.queuedMoveCommand = { target, run };
+  }
+
+  private flushQueuedMoveCommand(): void {
+    if (!this.queuedMoveCommand) return;
+    if (this.elapsed - this.lastMoveCommandAt < MOVE_COMMAND_MIN_INTERVAL) return;
+    // Durante o pulo o servidor descarta 'move'; espera aterrissar para nao perder o alvo.
+    if (this.latestEntities.get(this.net.playerId)?.jumping) return;
+    this.lastMoveCommandAt = this.elapsed;
+    const { target, run } = this.queuedMoveCommand;
+    this.queuedMoveCommand = null;
+    this.net.send({ type: 'move', entityId: this.net.playerId, target, run });
+  }
+
+  /** Anda ate um loot/bau distante e executa a interacao ao entrar no raio. */
+  private beginPendingInteraction(interaction: NonNullable<Game['pendingInteraction']>): void {
+    this.pendingInteraction = interaction;
+    this.setSelectedEnemy(null);
+    this.localAimHoldUntil = 0;
+    this.clickMoveTarget = { x: interaction.x, z: interaction.z, run: this.input.running, sentAt: this.elapsed };
+    this.sendMoveCommand({ x: interaction.x, y: 0, z: interaction.z }, this.input.running);
+    this.showMarker(interaction.x, interaction.y, interaction.z);
+  }
+
+  /** Executa a interacao pendente quando o heroi chega perto do alvo. */
+  private updatePendingInteraction(): void {
+    const pending = this.pendingInteraction;
+    if (!pending) return;
+    const view = this.views.get(this.net.playerId);
+    const state = this.latestEntities.get(this.net.playerId);
+    if (!view || (state && !state.alive)) {
+      this.pendingInteraction = null;
+      return;
+    }
+    // Alvo sumiu (loot coletado por outro / bau aberto)? Cancela em silencio.
+    if (pending.kind === 'loot' && !this.lootViews.has(pending.id)) {
+      this.pendingInteraction = null;
+      return;
+    }
+    if (pending.kind === 'chest') {
+      const chest = this.chestViews.get(pending.id);
+      if (!chest || chest.opened) {
+        this.pendingInteraction = null;
+        return;
+      }
+    }
+    const p = entityPosition(view.entity);
+    if (Math.hypot(pending.x - p.x, pending.z - p.z) > pending.range) return;
+    this.pendingInteraction = null;
+    if (pending.kind === 'loot') {
+      this.sfx.play('pickup');
+      this.net.send({ type: 'collect', entityId: this.net.playerId, lootId: pending.id });
+    } else {
+      this.sfx.play('chest');
+      this.net.send({ type: 'open-chest', entityId: this.net.playerId, chestId: pending.id });
+    }
+  }
+
+  /** Distancia XZ do heroi local a um ponto (Infinity sem view). */
+  private localPlayerDistanceTo(x: number, z: number): number {
+    const view = this.views.get(this.net.playerId);
+    if (!view) return Infinity;
+    const p = entityPosition(view.entity);
+    return Math.hypot(x - p.x, z - p.z);
+  }
+
   /** Posicao do alvo atual do ataque: inimigo selecionado vivo, senao o ultimo clique. */
   private currentAttackAimPoint(): Vec3Like | null {
     if (this.selectedEnemyId) {
@@ -1186,6 +1314,8 @@ export class Game {
     if (portal) {
       this.setSelectedEnemy(null);
       this.clickMoveTarget = null;
+      this.pendingInteraction = null;
+      this.queuedMoveCommand = null;
       this.sfx.play('arcane-nova');
       this.net.send({ type: portal, entityId: this.net.playerId });
       return;
@@ -1201,8 +1331,15 @@ export class Game {
       () => CHEST_CLICK_RADIUS,
     );
     if (chestPick) {
-      const [id] = chestPick;
+      const [id, chestView] = chestPick;
       this.setSelectedEnemy(null);
+      const chestPos = entityPosition(chestView.entity);
+      // Longe do bau: anda ate ele e abre ao chegar (o servidor ignora alem de 4.0).
+      if (this.localPlayerDistanceTo(chestPos.x, chestPos.z) > CHEST_INTERACT_RANGE) {
+        this.beginPendingInteraction({ kind: 'chest', id, x: chestPos.x, y: chestPos.y, z: chestPos.z, range: CHEST_INTERACT_RANGE });
+        return;
+      }
+      this.pendingInteraction = null;
       this.sfx.play('chest');
       this.net.send({ type: 'open-chest', entityId: this.net.playerId, chestId: id });
       return;
@@ -1218,8 +1355,15 @@ export class Game {
       () => LOOT_CLICK_RADIUS,
     );
     if (lootPick) {
-      const [id] = lootPick;
+      const [id, lootView] = lootPick;
       this.setSelectedEnemy(null);
+      const lootPos = entityPosition(lootView.entity);
+      // Longe do item: anda ate ele e coleta ao chegar (o servidor ignora alem de 3.1).
+      if (this.localPlayerDistanceTo(lootPos.x, lootPos.z) > LOOT_INTERACT_RANGE) {
+        this.beginPendingInteraction({ kind: 'loot', id, x: lootPos.x, y: lootPos.y, z: lootPos.z, range: LOOT_INTERACT_RANGE });
+        return;
+      }
+      this.pendingInteraction = null;
       this.sfx.play('pickup');
       this.net.send({ type: 'collect', entityId: this.net.playerId, lootId: id });
       return;
@@ -1238,6 +1382,8 @@ export class Game {
       const [id, enemyView] = enemyPick;
       this.setSelectedEnemy(id);
       this.clickMoveTarget = null;
+      this.pendingInteraction = null;
+      this.queuedMoveCommand = null;
       const ep = entityPosition(enemyView.entity);
       this.lastAttackAimPoint = { x: ep.x, y: ep.y, z: ep.z };
       this.net.send({ type: 'attack', entityId: this.net.playerId, targetId: id });
@@ -1249,16 +1395,25 @@ export class Game {
     const closeLoot = this.findLootNear(ground.point);
     if (closeLoot) {
       this.setSelectedEnemy(null);
+      const lootView = this.lootViews.get(closeLoot);
+      const lootPos = lootView ? entityPosition(lootView.entity) : ground.point;
+      if (this.localPlayerDistanceTo(lootPos.x, lootPos.z) > LOOT_INTERACT_RANGE) {
+        this.beginPendingInteraction({ kind: 'loot', id: closeLoot, x: lootPos.x, y: lootPos.y, z: lootPos.z, range: LOOT_INTERACT_RANGE });
+        return;
+      }
+      this.pendingInteraction = null;
       this.sfx.play('pickup');
       this.net.send({ type: 'collect', entityId: this.net.playerId, lootId: closeLoot });
       return;
     }
-    const closeTarget = this.findCloseEnemy();
+    const closeTarget = this.findCloseEnemyToward(ground.point);
     const player = this.views.get(this.net.playerId)?.entity;
     const playerPos = player ? entityPosition(player) : undefined;
     if (closeTarget && playerPos && Math.hypot(ground.point.x - playerPos.x, ground.point.z - playerPos.z) <= CLOSE_CLICK_RADIUS) {
       this.setSelectedEnemy(closeTarget);
       this.clickMoveTarget = null;
+      this.pendingInteraction = null;
+      this.queuedMoveCommand = null;
       const targetPos = this.latestEntities.get(closeTarget)?.position ?? ground.point;
       this.lastAttackAimPoint = { x: targetPos.x, y: targetPos.y, z: targetPos.z };
       this.net.send({ type: 'attack', entityId: this.net.playerId, targetId: closeTarget });
@@ -1267,15 +1422,11 @@ export class Game {
 
     this.setSelectedEnemy(null);
     this.localAimHoldUntil = 0;
+    this.pendingInteraction = null;
     // Predicao local: o heroi comeca a andar JA NESTE frame; o servidor confirma
     // e corrige pelo reconcile (mesmas margens da predicao de teclado).
     this.clickMoveTarget = { x: ground.point.x, z: ground.point.z, run: this.input.running, sentAt: this.elapsed };
-    this.net.send({
-      type: 'move',
-      entityId: this.net.playerId,
-      target: { x: ground.point.x, y: 0, z: ground.point.z },
-      run: this.input.running,
-    });
+    this.sendMoveCommand({ x: ground.point.x, y: 0, z: ground.point.z }, this.input.running);
     this.showMarker(ground.point.x, ground.point.y, ground.point.z);
   }
 
@@ -1338,7 +1489,19 @@ export class Game {
         const localAimOwnsYaw = isLocalPlayer && e.alive
           && (e.action === 'attack' || this.elapsed < this.localAimHoldUntil);
         if (!localPredictionActive && !localAimOwnsYaw) {
-          const delta = Math.atan2(Math.sin(e.rotationY - entityYaw(view.entity)), Math.cos(e.rotationY - entityYaw(view.entity)));
+          // Anti-moonwalk: para entidades REMOTAS andando/correndo, o heading vem
+          // do DESLOCAMENTO REAL na tela (para onde o corpo foi neste frame), nao
+          // do rotationY do snapshot — rotacao velha/latente nunca mais deixa o
+          // personagem andar de costas. Parado/atacando, vale o yaw do servidor.
+          let targetYaw = e.rotationY;
+          if (!isLocalPlayer && e.alive && (e.action === 'walk' || e.action === 'run')) {
+            const after = entityPosition(view.entity);
+            const movedX = after.x - current.x;
+            const movedZ = after.z - current.z;
+            const moved = Math.hypot(movedX, movedZ);
+            if (moved > Math.max(0.6 * dt, 0.004)) targetYaw = Math.atan2(movedX, movedZ);
+          }
+          const delta = Math.atan2(Math.sin(targetYaw - entityYaw(view.entity)), Math.cos(targetYaw - entityYaw(view.entity)));
           setYaw(view.entity, entityYaw(view.entity) + delta * alpha);
         }
       }
@@ -2207,19 +2370,34 @@ export class Game {
     for (const view of this.lootViews.values()) view.label.update(this.world);
   }
 
-  private findCloseEnemy(): string | null {
+  /**
+   * Inimigo proximo NA DIRECAO do clique (cone de +-60 graus a partir do
+   * heroi). Antes era 360: clicar ATRAS do personagem atacava o inimigo da
+   * FRENTE. Agora o clique so vira ataque se apontar para o inimigo; clique
+   * para tras e ordem de movimento (recuo). Clique colado nos pes (sem direcao
+   * clara) mantem o comportamento antigo de atacar o mais proximo.
+   */
+  private findCloseEnemyToward(point: Vec3Like): string | null {
     const player = this.views.get(this.net.playerId);
     if (!player) return null;
     const playerPos = entityPosition(player.entity);
+    const clickX = point.x - playerPos.x;
+    const clickZ = point.z - playerPos.z;
+    const clickDistance = Math.hypot(clickX, clickZ);
     let id: string | null = null;
     let best = CLOSE_TARGET_RADIUS;
     for (const entity of this.latestEntities.values()) {
       if (entity.kind !== 'enemy' || !entity.alive) continue;
-      const distance = Math.hypot(entity.position.x - playerPos.x, entity.position.z - playerPos.z);
-      if (distance < best) {
-        best = distance;
-        id = entity.id;
+      const enemyX = entity.position.x - playerPos.x;
+      const enemyZ = entity.position.z - playerPos.z;
+      const distance = Math.hypot(enemyX, enemyZ);
+      if (distance >= best) continue;
+      if (clickDistance > 0.35 && distance > 0.001) {
+        const dot = (clickX * enemyX + clickZ * enemyZ) / (clickDistance * distance);
+        if (dot < CLOSE_ATTACK_CONE_COS) continue;
       }
+      best = distance;
+      id = entity.id;
     }
     return id;
   }
@@ -2285,8 +2463,11 @@ export class Game {
   private syncZone(zone: WorldZone): void {
     if (zone === this.zone) return;
     this.zone = zone;
-    // Trocar de zona teleporta o jogador: qualquer trajeto de clique morre aqui.
+    // Trocar de zona teleporta o jogador: trajeto de clique, interacao pendente
+    // e comando de move enfileirado morrem aqui.
     this.clickMoveTarget = null;
+    this.pendingInteraction = null;
+    this.queuedMoveCommand = null;
     this.world.setZone(zone);
   }
 

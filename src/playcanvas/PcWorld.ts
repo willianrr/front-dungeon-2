@@ -323,8 +323,10 @@ export class PcCameraRig {
   private yaw = Math.PI * 0.25;
   private readonly pitch = 52 * RAD;
   private distance = 20;
+  // Campo de visao estilo Diablo: zoom out capado (38 mostrava mundo demais e
+  // exigia AOI maior no servidor). O raio do AOI (sim/entity.go) acompanha.
   private readonly minDist = 10;
-  private readonly maxDist = 38;
+  private readonly maxDist = 28;
   private readonly target = new pc.Vec3();
   private readonly desired = new pc.Vec3();
   private readonly shakeOffset = new pc.Vec3();

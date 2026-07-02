@@ -404,3 +404,153 @@ mudou; nada de gameplay foi tocado.
   sair do deploy no futuro (~99 MB no total do pacote; o runtime usa ~3 MB).
 - Futuro: converter os .gltf usados para .glb+KTX2 (hook pronto no pipeline de
   otimização) e instancing/batching para a grama se a densidade subir.
+
+---
+
+## 9. Multiplayer — auditoria de arquitetura + moonwalk + clique distante
+
+Auditoria feita a partir de um prompt de refatoração; conclusão: **a arquitetura
+pedida já existe em boa parte**, e o pedaço que pedia "cliente envia posição a
+10–20 Hz" foi **rejeitado de propósito** — seria um retrocesso.
+
+### O que JÁ estava certo (verificado no código)
+
+- **Ticks no servidor:** `room.go` drena a fila de comandos 1x por tick (30 Hz de
+  simulação) e envia **um snapshot consolidado** por cliente a 20 Hz
+  (`BROADCAST_HZ`), com piso de 5 Hz em idle e delta de inventário. Exatamente o
+  modelo "fila + tick + mensagem única" pedido.
+- **Cliente por intenção (e não por estado):** o cliente envia INTENÇÕES
+  (`move` para um alvo, `attack`, `collect`) — poucas mensagens por segundo — e
+  NUNCA posição/rotação próprias. Isso mantém o **servidor autoritativo**
+  (anti-cheat, mundo único). Cliente mandando posição a 20 Hz seria MAIS
+  tráfego e abriria mão da autoridade: recusado.
+- **Apresentação fora do fio:** glow/fogo/partículas/sons/nome/ícone/modelo de
+  loot são 100% derivados no cliente (seções 6 e 8); o WebSocket só carrega
+  gameplay (posições, ações, HP, eventos de combate).
+- **WS antes do load:** o `ServerClient` guarda apenas o ÚLTIMO snapshot bruto e
+  só faz parse dentro do loop do jogo (que começa após o preload) — mensagens
+  antecipadas não são processadas, são substituídas. Buffer pedido já existia.
+
+### Bug 1 — Moonwalk (corrigido)
+
+Personagem remoto andava "de costas": a rotação vinha do `rotationY` do
+snapshot, que pode chegar velho/latente em relação à posição interpolada.
+**Fix (reconcile):** para entidades remotas em `walk/run`, o yaw agora segue a
+direção do **deslocamento real na tela** naquele frame (para onde o corpo foi);
+o `rotationY` do servidor vale só para idle/ataque. Moonwalk fica impossível
+por construção.
+
+### Bug 2 — Clique distante em item/baú (corrigido)
+
+O servidor exige proximidade (`collectLoot` ≤ 3.1, `openChest` ≤ 4.0) e
+ignorava o comando de longe — clicar longe "não fazia nada".
+**Fix:** clique distante vira **interação pendente**: o herói anda até o alvo
+(comando `move` + predição local, marker no chão) e, ao entrar no raio
+(2.6/3.4 — margem sob o limite do servidor), o `collect`/`open-chest` é enviado
+sozinho. Cancela em: outro clique (chão/inimigo/portal), teclado, morte, troca
+de zona, alvo sumir (coletado por outro).
+
+### Extra — coalescing de `move` (menos tráfego)
+
+`sendMoveCommand` espaça envios em ≥90 ms com *trailing send* (spam de clique
+vira ~11 pacotes/s no máximo, sempre com o alvo mais recente; durante pulo o
+envio espera aterrissar porque o servidor descarta `move` no ar). A resposta
+visual continua instantânea — a predição local anda no mesmo frame.
+
+Verificação: `tsc --noEmit` ✓. Teste no jogo: (1) dois clientes, um andando —
+o outro deve ver o boneco sempre de frente pro movimento; (2) clique num loot
+do outro lado do mapa — anda e coleta ao chegar; (3) idem baú na dungeon;
+(4) spam de clique no chão — herói responde liso e o console de stats do
+ServerClient mostra ~≤11 move/s.
+
+---
+
+## 10. Dieta do WebSocket — AOI, floats curtos e mais deltas (sem trocar de formato)
+
+Otimizações de wire ANTES de partir para msgpack/protobuf. ⚠️ **Recompilar o Go**
+(`go build ./... && go test ./...`).
+
+- **AOI / interest management (`SnapshotFor`):** cada cliente só recebe inimigos,
+  loot e eventos de combate num raio de **70** da própria posição (`aoiRadius`
+  em `sim/entity.go`; a câmera enxerga ~50 e o culling do cliente corta em 100).
+  Jogadores sempre vão (são poucos e importam para presença). Eventos que
+  envolvem o próprio jogador também vão sempre. É O corte que faz 10 players
+  escalar: o custo por cliente vira função da vizinhança, não do mapa.
+  O cliente já lidava com entidade entrando/saindo do snapshot (reconcile).
+- **Floats arredondados (`Round2/Round3/RoundV3` em `sim/mathx.go`):** posição
+  com 2 casas, rotação/velocidades com 3 — float64 inteiro imprime até 17
+  dígitos no JSON e era o maior peso por byte. 1 cm de precisão é invisível
+  (o cliente interpola). Aplicado em entidades, loot, baús, eventos, mana/stats.
+- **Delta de quest + equipment/equippedWeapon:** mesmo padrão do inventário —
+  revs fnv (`hashQuest`/`hashEquipment`) e `null` no wire quando não mudou, com
+  reenvio periódico de segurança (janela do inventário). `equipment` e
+  `equippedWeapon` viajam juntos sob o mesmo rev; no cliente,
+  `hydrateSnapshotPresentation` cacheia os três (Game.ts).
+- **Log de compressão (`ws.go`):** na conexão, loga se o navegador ofertou
+  `permessage-deflate` (com `EnableCompression: true` a oferta é aceita e o
+  JSON vai ~5x menor no fio — o DevTools mostra o tamanho DESCOMPRIMIDO).
+
+Estimativa no cenário atual (2 players + horda espalhada): snapshot de ~15 KB →
+~3–4 KB antes da compressão; ~1 KB no fio. A 20 Hz ≈ 20 KB/s por cliente; 10
+players ≈ 200 KB/s de egress total. Segunda onda (se precisar): encoding
+binário (msgpack/protobuf) e delta por entidade com keyframes.
+
+**Ajustes pós-feedback (cone de ataque + campo de visão Diablo):**
+
+- **Clique atrás não ataca mais:** o clique de chão perto do herói só vira
+  ataque se o inimigo estiver num **cone de ±60° na direção do clique**
+  (`findCloseEnemyToward`, `CLOSE_ATTACK_CONE_COS`). Clicar para trás = recuo.
+  Clique colado nos pés (sem direção clara) mantém o ataque no mais próximo.
+- **Zoom out capado em 28** (era 38, mostrava mundo demais) e **AOI 55** (era
+  70) — o servidor manda ainda menos entidades por snapshot, casado com o raio
+  visível (~40) + margem para spawn fora da tela. ⚠️ Recompilar o Go.
+
+### Idle de verdade: skip de snapshot idêntico + reenvio lento sob demanda
+
+Observado no DevTools: parado e sozinho, o cliente recebia 2 KB a 5 Hz (piso de
+idle) + **14 KB a cada 2 s** (reenvio de segurança do inventário completo).
+Correções:
+
+- **`WorldRev`**: hash do estado visível (entidades/loot/baús/eventos — XOR de
+  hashes individuais, porque iteração de map em Go tem ordem aleatória). Se
+  nada mudou desde o último envio àquele cliente, o Room **pula o snapshot**;
+  um heartbeat de ~1 s mantém o fluxo mínimo. Parado sem ação por perto, o
+  wire fica em ~2 KB/s → **quase zero**.
+- **Reenvio de estado lento** (inventário/quest/equipamento): de 2 s fixos para
+  **10 s OU imediatamente após descarte real de snapshot** (contador cumulativo
+  `totalDroppedSnapshots` por sessão) — o 14 KB periódico praticamente some.
+
+### Zonas por jogador (dungeon deixa de teleportar todo mundo)
+
+A zona era um estado GLOBAL da sala (`s.zone`): entrar na dungeon limpava o
+mundo e teleportava TODOS os jogadores juntos (`movePlayersToZoneSpawn`).
+Refatorado para **zona por entidade** (`SimEntity.zone`), com os dois mapas
+simulados ao mesmo tempo:
+
+- `enterDungeon`/`leaveDungeon` movem SÓ o jogador que clicou no portal; quem
+  ficou no overworld continua lá, caçando normalmente.
+- **Snapshot filtra por zona + AOI para TODO MUNDO** (agora inclusive outros
+  jogadores): amigo em outro mapa ou fora do raio de 55 não trafega no seu
+  WebSocket. Eventos de combate ganharam tag interna de zona (os mapas
+  compartilham coordenadas; AOI sozinho não separava).
+- IA/aggro/boss/nova/ataques só interagem com a MESMA zona; perseguição é
+  cancelada se o alvo trocar de mapa; pathfinding usa blockers da zona do ator.
+- Loot nasce com a zona de quem dropou; coleta exige mesma zona; baús só vão a
+  quem está na dungeon. Bônus de drop/nível usam a zona do inimigo morto.
+- Spawner mantém população POR zona (overworld sempre; dungeon só com jogador
+  dentro); boss + leva inicial garantidos na 1ª entrada (`ensureDungeonPopulated`),
+  sem resetar o mapa a cada visita. Respawn de jogador morto → overworld.
+- Quest mostra o texto da SUA zona. Radar do HUD lista só a vizinhança (zona+AOI).
+
+Cliente não precisou de mudança: o `reconcile` já cria/destrói views conforme o
+snapshot e o `syncZone` já troca o cenário. ⚠️ **Recompilar o Go**
+(`go build ./... && go test ./...`) — mudança grande no `sim/`.
+
+**Correção pós-deploy (baseline do delta):** o 1º snapshot (completo) chega
+durante o preload dos assets e é SUBSTITUÍDO no buffer pelos deltas seguintes
+(`quest`/`equipment` = null) — o boot quebrava com `null.title` no HUD. Os
+caches do cliente agora nascem com defaults seguros (quest vazia / slots null)
+e os dados reais entram em ≤2 s pelo reenvio periódico. Também: texturas
+procedurais dos VFX agora em `PIXELFORMAT_SRGBA8` (warnings de sRGB no console).
+Avisos restantes e inofensivos: `pc.createMesh` deprecated (terreno/trilha,
+migrar depois p/ `Mesh.fromGeometry`) e sRGB do `fire-mask.png` (pré-existente).

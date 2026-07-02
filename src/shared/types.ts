@@ -224,11 +224,16 @@ export interface WorldSnapshot {
    * (em runtime pode chegar `null`; o cliente injeta o cache antes de consumir.)
    */
   inventory: InventoryItem[];
-  /** Slots de equipamento do personagem. */
+  /**
+   * Slots de equipamento. DELTA igual ao inventário: em runtime pode chegar
+   * `null` (= não mudou) e o cliente injeta o cache antes de consumir. Quando
+   * `equipment` vem preenchido, `equippedWeapon` acompanha (mesmo rev).
+   */
   equipment: EquipmentState;
   /** Arma que o herói está exibindo/empunhando. */
   equippedWeapon: EquippedWeaponVisualState | null;
   combatEvents: CombatEvent[];
+  /** Quest guia. DELTA: em runtime pode chegar `null` (= não mudou). */
   quest: QuestState;
 }
 
