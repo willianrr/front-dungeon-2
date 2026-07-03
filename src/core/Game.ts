@@ -4,6 +4,7 @@ import { Sfx } from '../audio/Sfx';
 import type { NetworkClient } from '../net/NetworkClient';
 import type { PlayerProfile } from '../shared/playerProfile';
 import type { Terrain } from '../shared/Terrain';
+import type { Blocker } from '../shared/worldgen';
 import {
   GEM_DEFINITIONS,
   ITEM_ICON_URLS,
@@ -24,14 +25,17 @@ import type {
   EquipmentState,
   EquippedWeaponVisualState,
   InventoryItem,
+  ItemKind,
   ItemRarity,
   LootState,
+  NpcState,
+  PlayerAttribute,
   QuestState,
   WeaponElement,
   WorldSnapshot,
   WorldZone,
 } from '../shared/types';
-import { HUD, HUD_SKILL_ICON_URLS, preloadHudIcons } from '../ui/HUD';
+import { HUD, HUD_SKILL_ICON_URLS, preloadHudIcons, type HudMinimapNpc, type HudNpcDestination, type HudNpcPrompt, type HudNpcTarget, type HudStashItem } from '../ui/HUD';
 import { PerfOverlay } from '../ui/PerfOverlay';
 import {
   PcWorld,
@@ -54,7 +58,50 @@ import {
 } from '../playcanvas/PcWorld';
 import { Input, type PointerNdc } from './Input';
 import { KeyboardMoveController } from './KeyboardMoveController';
+import { autorunMoveState } from './AutorunMove';
 import { ClientMovementPredictor } from './ClientMovementPredictor';
+import { canStartClickAutomove, canStartNpcDestinationAutomove } from './ClickAutomovePolicy';
+import { clickMoveArrivalStep } from './ClickMoveArrival';
+import { turnYawToward, yawTowardPoint } from './Facing';
+import { npcActionLabel } from './NpcActionLabel';
+import { npcApproachPreviewTargetId, shouldShowNpcApproachPreview } from './NpcApproachPreview';
+import { chooseNpcApproachPoint, npcApproachTriggerRange } from './NpcApproachPoint';
+import { npcFacingFocusTargetId } from './NpcFacingFocus';
+import { npcGuideTargetNpcId } from './NpcGuideTarget';
+import {
+  findLocalPath,
+  furthestClearPathIndex,
+  resolveCircularCollisions,
+  walkableGoalNear,
+  type MovementBlocker,
+  type MovementPoint,
+} from './MovementCollision';
+import { createNpcDefinitions, npcDefinitionsFromSnapshot, type NpcDefinition, type VendorShopItem } from './Npc';
+import { npcNameplateModel, type NpcNameplateModel } from './NpcNameplate';
+import { npcInteractionTargetDecision } from './NpcInteractionTarget';
+import {
+  npcServicePropBlockers,
+  npcServicePropPartVisualState,
+  npcServicePropParts,
+  npcServicePropVisualState,
+  type NpcServicePropPart,
+} from './NpcServiceProp';
+import { sortNpcServiceDestinations } from './NpcServiceDirectory';
+import { npcServiceGlyph } from './NpcServiceIdentity';
+import { npcServicePriorityScore } from './NpcServicePriority';
+import { nextNpcSelectionId } from './NpcSelectionCycle';
+import { npcQuestMarkerModel } from './NpcQuestMarker';
+import { npcServiceStatusLabel as buildNpcServiceStatusLabel } from './NpcServiceStatus';
+import { npcServiceAccentCss, npcServiceAccentHex } from './NpcServiceVisual';
+import { npcTargetFrameModel, npcTargetFrameRenderKey } from './NpcTargetFrame';
+import { npcTargetFrameInteractionDecision } from './NpcTargetFrameInteraction';
+import { npcHoverFocusTargetId, npcInteractionRingState, npcVisualFocusState, shouldCloseNpcServicePanel } from './NpcVisualFocus';
+import { samplePathGuidancePoints, type PathGuidancePoint } from './PathGuidance';
+import { pendingInteractionDecision, pendingInteractionRetryDecision } from './PendingInteraction';
+import { playerIntentCancelPlan } from './PlayerIntentCancel';
+import { questDialogueActionDecision, questDialogueActionLabel as buildQuestDialogueActionLabel } from './QuestDialogueAction';
+import { questNavigationHoverNpcId, questNavigationTargetNpcId } from './QuestNavigation';
+import { questTrackerRouteLabel } from './QuestTrackerRoute';
 
 interface View {
   entity: pc.Entity;
@@ -107,8 +154,80 @@ interface ChestView {
   opened: boolean;
 }
 
+interface NpcView {
+  definition: NpcDefinition;
+  entity: pc.Entity;
+  visual: pc.Entity;
+  label: WorldLabel;
+  markerLabel: WorldLabel;
+  ring: pc.Entity;
+  destinationRing: pc.Entity;
+  /**
+   * Ancora do cenario de servico no mundo, fixada na posicao/rotacao BASE do
+   * NPC. Nao e filha da entidade do NPC de proposito: quando o NPC gira para
+   * encarar o jogador, o cenario (balcao, bigorna, portal...) fica parado —
+   * e continua batendo com os blockers de npcServicePropBlockers, que usam a
+   * rotacao base.
+   */
+  servicePropsAnchor: pc.Entity;
+  serviceProps: pc.Entity;
+  servicePropParts: NpcServicePropEntity[];
+  loading?: boolean;
+  failed?: boolean;
+  anim?: PcClipController;
+  animTime?: number;
+  nameplateKey?: string;
+}
+
+interface NpcServicePropEntity {
+  entity: pc.Entity;
+  part: NpcServicePropPart;
+}
+
+interface ClickMoveTarget {
+  x: number;
+  z: number;
+  run: boolean;
+  sentAt: number;
+  path: MovementPoint[];
+}
+
+interface NpcServiceActionState {
+  label: string;
+  disabled: boolean;
+  status?: string;
+  item?: ItemKind;
+}
+
+interface VendorBuyPending {
+  vendorId: string;
+  itemId: string;
+  price: number;
+  beforeCoins: number;
+  beforeStock?: number;
+}
+
+interface VendorSellPending {
+  beforeCoins: number;
+  beforeCount: number;
+  beforeValue: number;
+}
+
+interface StashTransferPending {
+  kind: ItemKind;
+  itemId: string;
+  stackable: boolean;
+  action: 'deposit' | 'withdraw';
+  beforeBagCount: number;
+  beforeStashCount: number;
+  beforeBagPresent: boolean;
+  beforeStashPresent: boolean;
+}
+
 type RenderQualityLevel = 'high' | 'medium' | 'low';
 type RenderQualityMode = RenderQualityLevel | 'auto';
+type TargetMarkerKind = 'move' | 'interact';
+type PathGuidanceKind = TargetMarkerKind | 'preview';
 
 const HERO_MODEL_URL = '/models/warrior.glb';
 const EQUIPPED_SWORD_MODEL_URL = '/items/Sword_Golden.glb';
@@ -144,15 +263,25 @@ const CLICK_MOVE_STOP_DISTANCE = 0.35;
 // Carencia (s) antes de aceitar um 'idle' do servidor como fim do trajeto — cobre
 // o RTT do comando; sem isso o snapshot antigo (ainda idle) cancelaria o clique.
 const CLICK_MOVE_SERVER_IDLE_GRACE = 0.6;
+const LOCAL_PLAYER_COLLISION_RADIUS = 0.5;
 // Raio para interagir com loot/bau ao chegar (MENOR que o do servidor — 3.1 do
 // collectLoot e 4.0 do openChest — para a predicao nunca disparar cedo demais).
 const LOOT_INTERACT_RANGE = 2.6;
 const CHEST_INTERACT_RANGE = 3.4;
+const NPC_APPROACH_ARRIVAL_RANGE = CLICK_MOVE_STOP_DISTANCE + 0.22;
+const HEALER_SERVICE_COST = 18;
+const BLACKSMITH_BLESS_MAX_LEVEL = 6;
+const BLACKSMITH_MAX_LEVEL = 15;
+const NPC_TURN_RATE = 8.5;
+const NPC_INTERACTION_TURN_RATE = 12;
 // Espacamento minimo entre comandos 'move' (coalescing): spam de clique vira no
 // maximo ~11 pacotes/s, sempre enviando o alvo MAIS RECENTE (trailing send).
 const MOVE_COMMAND_MIN_INTERVAL = 0.09;
 
 const MARKER_DURATION = 0.6;
+const PATH_GUIDANCE_SPACING = 2.35;
+const PATH_GUIDANCE_MAX_POINTS = 12;
+const NPC_APPROACH_PREVIEW_MAX_POINTS = 8;
 const CLOSE_TARGET_RADIUS = 3.4;
 // Cone (meia-abertura 60 graus) NA DIRECAO DO CLIQUE para converter clique de
 // chao em ataque. Clicar atras do personagem = recuo, NUNCA vira ataque.
@@ -815,12 +944,17 @@ class PcClipController {
 export class Game {
   private readonly net: NetworkClient;
   private readonly terrain: Terrain;
+  private readonly moveBound: number;
+  private readonly worldBlockers: Blocker[];
   private readonly world: PcWorld;
   private readonly input: Input;
   private readonly hud: HUD;
+  private npcs: NpcDefinition[];
+  private npcCatalogKey = '';
   private readonly sfx = new Sfx();
   private readonly perf = new PerfOverlay();
   private readonly views = new Map<string, View>();
+  private readonly npcViews = new Map<string, NpcView>();
   private readonly latestEntities = new Map<string, EntityState>();
   private readonly lootViews = new Map<string, LootView>();
   private readonly chestViews = new Map<string, ChestView>();
@@ -830,14 +964,38 @@ export class Game {
   private readonly seenCombatEvents = new Set<string>();
   private readonly keyboardMove = new KeyboardMoveController();
   private readonly clientMovement = new ClientMovementPredictor();
+  private autorunActive = false;
   private readonly targetMarker: pc.Entity;
+  private readonly npcApproachPreviewMarker: pc.Entity;
+  private readonly pathGuidanceMarkers: pc.Entity[] = [];
+  private targetMarkerKind: TargetMarkerKind = 'move';
   private readonly weaponGlowPreview = weaponGlowPreviewFromUrl();
   private markerTimer = 0;
   private elapsed = 0;
   private zone: WorldZone = 'overworld';
   private zombieClipConfigs?: Promise<Partial<Record<VisualAnimState, ClipConfig>>>;
   private selectedEnemyId: string | null = null;
+  private selectedNpcId: string | null = null;
+  private hoveredNpcId: string | null = null;
+  private serviceDirectoryHoveredNpcId: string | null = null;
+  private targetFrameHoveredNpcId: string | null = null;
+  private questTrackerHovered = false;
+  private activeVendorId: string | null = null;
+  private activeStashNpcId: string | null = null;
+  private activeQuestNpcId: string | null = null;
+  private trainingNpcId: string | null = null;
+  private nearbyNpcPromptKey = '';
+  private readonly vendorBuyLocks = new Map<string, VendorBuyPending>();
+  private vendorSellPending: VendorSellPending | null = null;
+  private readonly stashTransferLocks = new Map<string, StashTransferPending>();
+  private questAcceptPending = false;
+  private questRewardClaimPending = false;
+  private healerServicePending = false;
+  private blacksmithUpgradePending = false;
+  private travelServicePending = false;
+  private jewelerServicePending = false;
   private hudDirty = true;
+  private npcTargetHudKey = '';
   private lastSnapshotTick = -1;
   private localPlayerMoving = false;
   private localPlayerRunning = false;
@@ -857,23 +1015,38 @@ export class Game {
    * Enquanto ativo, o heroi anda client-side ate o ponto, igual ao teclado —
    * mesmo que os snapshots atrasem, ele nunca fica "andando parado".
    */
-  private clickMoveTarget: { x: number; z: number; run: boolean; sentAt: number } | null = null;
+  private clickMoveTarget: ClickMoveTarget | null = null;
   /** Ate quando (elapsed) a mira local e dona do yaw — cobre o vao entre golpes. */
   private localAimHoldUntil = 0;
-  /** Interacao adiada (clique distante em loot/bau): anda ate la e executa. */
-  private pendingInteraction: { kind: 'loot' | 'chest'; id: string; x: number; y: number; z: number; range: number } | null = null;
+  /** Interacao adiada (clique distante em loot/bau/npc): anda ate la e executa. */
+  private pendingInteraction: {
+    kind: 'loot' | 'chest' | 'npc';
+    id: string;
+    x: number;
+    y: number;
+    z: number;
+    range: number;
+    moveX?: number;
+    moveY?: number;
+    moveZ?: number;
+    lastRetryAt?: number;
+  } | null = null;
   /** Coalescing de comandos 'move' (ultimo alvo vence; ver MOVE_COMMAND_MIN_INTERVAL). */
   private lastMoveCommandAt = -Infinity;
   private queuedMoveCommand: { target: Vec3Like; run: boolean } | null = null;
   /** Cache do inventario: o servidor manda `null` quando nao muda (delta). */
   private cachedInventory: InventoryItem[] = [];
+  private cachedStash: InventoryItem[] = [];
+  /** Cache do catalogo de NPCs: snapshots delta podem trazer `npcs: null`. */
+  private cachedNpcStates: NpcState[] = [];
   /**
    * Caches de quest e equipamento — mesmo padrao de delta do inventario.
    * Defaults SEGUROS (nunca null): o 1o snapshot completo pode ser substituido
    * no buffer por um delta durante o preload dos assets; o HUD nao pode quebrar
    * nesse vao (o reenvio periodico de ~2s preenche os dados reais).
    */
-  private cachedQuest: QuestState = { title: '', objective: '', progress: 0, goal: 0, completed: false };
+  private cachedQuest: QuestState = { title: '', objective: '', progress: 0, goal: 0, accepted: false, completed: false, rewardClaimed: false, rewardText: '' };
+  private cachedVendorStock: Record<string, Record<string, number>> = {};
   private cachedEquipment: EquipmentState = {
     head: null, chest: null, hands: null, legs: null, feet: null, weapon: null, offhand: null, trinket: null,
   };
@@ -883,24 +1056,154 @@ export class Game {
     this.net = net;
     const worldData = this.net.getWorld();
     this.terrain = worldData.terrain;
+    this.moveBound = worldData.size / 2 - 2;
+    this.worldBlockers = worldData.blockers;
     this.world = new PcWorld(canvas, worldData);
     this.input = new Input(canvas);
+    const initialNpcStates = (this.net.getSnapshot().npcs as NpcState[] | null | undefined) ?? [];
+    this.cachedNpcStates = initialNpcStates;
+    const snapshotNpcs = npcDefinitionsFromSnapshot(initialNpcStates);
+    this.npcs = snapshotNpcs.length > 0 ? snapshotNpcs : createNpcDefinitions(worldData);
+    this.npcCatalogKey = this.npcDefinitionsKey(this.npcs);
     this.hud = new HUD(uiLayer, profile, worldData);
     if (import.meta.env.DEV) {
       (window as unknown as { __arannaGame?: Game }).__arannaGame = this;
     }
     this.targetMarker = this.world.createTargetMarker();
+    this.npcApproachPreviewMarker = this.createNpcApproachPreviewMarker();
     this.applyRenderQuality();
 
     this.hud.onRespawn = () => this.net.send({ type: 'respawn', entityId: this.net.playerId });
     this.hud.onEquipItem = (itemId) => this.net.send({ type: 'equip-item', entityId: this.net.playerId, itemId });
     this.hud.onUseItem = (item) => this.net.send({ type: 'use-item', entityId: this.net.playerId, item });
     this.hud.onUnequipSlot = (slot) => this.net.send({ type: 'unequip-slot', entityId: this.net.playerId, slot });
-    this.hud.onAllocateAttribute = (attribute) => this.net.send({
-      type: 'allocate-attribute',
-      entityId: this.net.playerId,
-      attribute,
-    });
+    this.hud.onAllocateAttribute = (attribute) => this.handleAllocateAttribute(attribute);
+    this.hud.onVendorBuy = (vendorId, itemId) => this.handleVendorBuy(vendorId, itemId);
+    this.hud.onVendorSellUnused = (vendorId) => this.handleVendorSellUnused(vendorId);
+    this.hud.onVendorClose = () => {
+      this.activeVendorId = null;
+      this.vendorBuyLocks.clear();
+      this.vendorSellPending = null;
+      this.hudDirty = true;
+    };
+    this.hud.onStashDeposit = (npcId, item) => this.handleStashTransfer(npcId, item, 'deposit');
+    this.hud.onStashWithdraw = (npcId, item) => this.handleStashTransfer(npcId, item, 'withdraw');
+    this.hud.onStashClose = () => {
+      this.activeStashNpcId = null;
+      this.stashTransferLocks.clear();
+      this.hudDirty = true;
+    };
+    this.hud.onNpcDestination = (npcId) => this.interactWithNpc(
+      npcId,
+      true,
+      canStartNpcDestinationAutomove({ keyboardMovementActive: this.isKeyboardMovementActive() }),
+    );
+    this.hud.onNpcTargetInteract = (npcId) => this.interactWithNpc(
+      npcId,
+      true,
+      npcTargetFrameInteractionDecision({
+        npcTargetId: npcId,
+        keyboardMovementActive: this.isKeyboardMovementActive(),
+      }).allowAutomove,
+    );
+    this.hud.onNpcTargetHover = (npcId) => {
+      this.targetFrameHoveredNpcId = npcId;
+      this.hudDirty = true;
+    };
+    this.hud.onQuestTracker = () => this.trackQuestObjective();
+    this.hud.onNpcDestinationHover = (npcId) => {
+      this.serviceDirectoryHoveredNpcId = npcId;
+      this.hudDirty = true;
+    };
+    this.hud.onQuestTrackerHover = (hovered) => {
+      this.questTrackerHovered = hovered;
+      this.hudDirty = true;
+    };
+    this.hud.onNpcDialogueClose = () => {
+      this.activeQuestNpcId = null;
+      this.trainingNpcId = null;
+      this.healerServicePending = false;
+      this.blacksmithUpgradePending = false;
+      this.travelServicePending = false;
+      this.jewelerServicePending = false;
+      this.hudDirty = true;
+    };
+    this.hud.onNpcDialogueAction = (npcId) => {
+      this.sfx.play('ui');
+      const activeNpc = this.activeQuestNpcId ? this.npcViews.get(this.activeQuestNpcId) : null;
+      if (activeNpc?.definition.kind === 'healer') {
+        this.handleHealerService(npcId);
+        return;
+      }
+      if (activeNpc?.definition.kind === 'blacksmith') {
+        this.handleBlacksmithUpgrade(npcId);
+        return;
+      }
+      if (activeNpc?.definition.kind === 'trainer') {
+        this.handleTrainerService();
+        return;
+      }
+      if (activeNpc?.definition.kind === 'travel') {
+        this.handleTravelService(npcId);
+        return;
+      }
+      if (activeNpc?.definition.kind === 'jeweler') {
+        this.handleJewelerService(npcId);
+        return;
+      }
+      if (activeNpc?.definition.kind === 'guard') {
+        const guideTarget = this.npcGuideTargetNpcId(activeNpc.definition.kind);
+        if (guideTarget) {
+          this.closeNpcDialogue();
+          this.interactWithNpc(
+            guideTarget,
+            true,
+            canStartNpcDestinationAutomove({ keyboardMovementActive: this.isKeyboardMovementActive() }),
+          );
+          return;
+        }
+        this.closeNpcDialogue();
+        return;
+      }
+      const questAction = questDialogueActionDecision(this.cachedQuest, this.questNavigationTargetNpcId());
+      if (questAction.action === 'accept') {
+        if (this.questAcceptPending) return;
+        this.questAcceptPending = true;
+        this.hud.setNpcDialogueActionPending(true);
+        this.hud.setNpcDialogueStatus('Pedido de missao enviado ao servidor.');
+        window.setTimeout(() => {
+          this.questAcceptPending = false;
+          this.hud.setNpcDialogueActionPending(false);
+        }, 1200);
+        this.net.send({ type: 'accept-quest', entityId: this.net.playerId, npcId });
+        return;
+      }
+      if (questAction.action === 'claim') {
+        if (this.questRewardClaimPending) return;
+        this.questRewardClaimPending = true;
+        this.hud.setNpcDialogueActionPending(true);
+        this.hud.setNpcDialogueStatus('Recompensa enviada ao servidor.');
+        window.setTimeout(() => {
+          this.questRewardClaimPending = false;
+          this.hud.setNpcDialogueActionPending(false);
+        }, 1200);
+        this.net.send({ type: 'claim-quest-reward', entityId: this.net.playerId, npcId });
+        return;
+      }
+      if (questAction.action === 'track' && questAction.targetNpcId) {
+        this.closeNpcDialogue();
+        this.interactWithNpc(
+          questAction.targetNpcId,
+          true,
+          canStartNpcDestinationAutomove({ keyboardMovementActive: this.isKeyboardMovementActive() }),
+        );
+        return;
+      }
+      this.closeNpcDialogue();
+    };
+    this.hud.setNpcMinimapMarkers(this.npcMinimapMarkers());
+    this.updateNpcServiceDestinations();
+    this.createNpcViews();
 
     this.resize();
     window.addEventListener('resize', () => this.resize());
@@ -928,8 +1231,9 @@ export class Game {
   }
 
   private async preloadGameplayAssets(onProgress: (value: number) => void): Promise<void> {
+    const npcModelUrls = [...new Set(this.npcs.map((npc) => npc.modelUrl))];
     const batches = [
-      this.world.models.preload([HERO_MODEL_URL, ...ZOMBIE_MODEL_URLS]),
+      this.world.models.preload([HERO_MODEL_URL, ...ZOMBIE_MODEL_URLS, ...npcModelUrls]),
       this.world.models.preload([...PRELOAD_LOOT_MODEL_URLS, CHEST_MODEL_URLS.closed, CHEST_MODEL_URLS.open]),
       preloadHudIcons([...Object.values(ITEM_ICON_URLS), ...Object.values(HUD_SKILL_ICON_URLS)]),
       this.loadWeaponFireTexture(),
@@ -973,11 +1277,75 @@ export class Game {
     this.reconcileChests(snapshot.chests);
     this.updateLootViews();
     this.updateCameraAndMarker(0);
+    this.updateNpcViews(0);
     this.updateViewVisuals(snapshot.entities, 0);
     this.updateEnemyCulling();
     this.updateOverlays();
-    this.hud.update(snapshot, playerState, this.selectedEnemy(snapshot.entities));
+    const selectedTarget = this.selectedEnemy(snapshot.entities);
+    const npcTarget = selectedTarget ? undefined : this.npcTargetFrame();
+    this.npcTargetHudKey = this.npcTargetFrameKey(selectedTarget, npcTarget);
+    this.updateQuestTrackerTarget();
+    this.hud.update(snapshot, playerState, selectedTarget, npcTarget);
     this.hudDirty = false;
+  }
+
+  private npcDefinitionsKey(npcs: readonly NpcDefinition[]): string {
+    return npcs.map((npc) => [
+      npc.id,
+      npc.kind,
+      npc.zone,
+      npc.name,
+      npc.title,
+      npc.position.x.toFixed(2),
+      npc.position.y.toFixed(2),
+      npc.position.z.toFixed(2),
+      npc.rotationY.toFixed(3),
+      npc.interactRange.toFixed(2),
+      npc.clickRadius.toFixed(2),
+      npc.collisionRadius.toFixed(2),
+      npc.modelUrl,
+      ...(npc.shopItems ?? []).map((item) => [
+        item.id,
+        item.kind,
+        item.price,
+        item.rarity ?? '',
+        item.stock ?? '',
+      ].join('/')),
+      npc.dialogue?.greeting ?? '',
+      npc.dialogue?.actionLabel ?? '',
+    ].join(':')).join('|');
+  }
+
+  private syncNpcDefinitions(npcs: readonly NpcState[] | null | undefined): void {
+    if (npcs == null) return;
+    const incoming = npcDefinitionsFromSnapshot(npcs);
+    if (incoming.length === 0) return;
+    const key = this.npcDefinitionsKey(incoming);
+    if (key === this.npcCatalogKey) return;
+
+    this.npcs = incoming;
+    this.npcCatalogKey = key;
+    // Interacao adiada guarda coordenadas do catalogo antigo; se um NPC mudou
+    // de lugar, o retry de 'move' continuaria mandando o heroi para o ponto
+    // velho. Cancela e deixa o jogador clicar de novo.
+    if (this.pendingInteraction?.kind === 'npc') this.pendingInteraction = null;
+    this.closeNpcPanels();
+    this.clearNpcViews();
+    this.createNpcViews();
+    this.hud.setNpcMinimapMarkers(this.npcMinimapMarkers());
+    this.updateNpcServiceDestinations();
+  }
+
+  private clearNpcViews(): void {
+    for (const view of this.npcViews.values()) {
+      view.label.dispose();
+      view.markerLabel.dispose();
+      destroyEntity(view.servicePropsAnchor);
+      destroyEntity(view.entity);
+    }
+    this.npcViews.clear();
+    this.nearbyNpcPromptKey = '';
+    this.hud.hideNpcPrompt();
   }
 
   /**
@@ -986,9 +1354,18 @@ export class Game {
    * o que falta, entao continua funcionando mesmo se o servidor ainda enviar.
    */
   private hydrateSnapshotPresentation(snapshot: WorldSnapshot): void {
+    const incomingNpcs = snapshot.npcs as NpcState[] | null | undefined;
+    if (incomingNpcs != null) {
+      this.cachedNpcStates = incomingNpcs;
+      this.syncNpcDefinitions(incomingNpcs);
+    }
+    snapshot.npcs = this.cachedNpcStates;
+
     // Inventario com DELTA: o servidor manda `null` quando NAO mudou — nesse caso
     // reaproveitamos o cache. Quando vem o array (mudou ou reenvio periodico),
     // hidratamos (nome/icone) e cacheamos. (`!= null` cobre null e campo ausente.)
+    let vendorDataChanged = false;
+    let stashDataChanged = false;
     const incoming = snapshot.inventory as InventoryItem[] | null | undefined;
     if (incoming != null) {
       for (const item of incoming) {
@@ -996,19 +1373,56 @@ export class Game {
         if (!item.name) item.name = itemDisplayName(item);
       }
       this.cachedInventory = incoming;
+      if (this.activeVendorId) vendorDataChanged = true;
+      if (this.activeStashNpcId) stashDataChanged = true;
+      if (this.activeQuestNpcId) {
+        const activeNpc = this.npcViews.get(this.activeQuestNpcId);
+        if (activeNpc?.definition.kind === 'healer') this.refreshHealerDialogue();
+        if (activeNpc?.definition.kind === 'blacksmith') this.refreshBlacksmithDialogue('Forja atualizada.');
+        if (activeNpc?.definition.kind === 'jeweler') this.refreshJewelerDialogue('Joias atualizadas.');
+      }
     }
     snapshot.inventory = this.cachedInventory;
+    const incomingStash = snapshot.stash as InventoryItem[] | null | undefined;
+    if (incomingStash != null) {
+      for (const item of incomingStash) {
+        if (!item.icon) item.icon = itemIconFor(item.kind);
+        if (!item.name) item.name = itemDisplayName(item);
+      }
+      this.cachedStash = incomingStash;
+      if (this.activeStashNpcId) stashDataChanged = true;
+    }
+    snapshot.stash = this.cachedStash;
 
     // Quest e equipamento com DELTA (null = nao mudou), mesmo padrao acima.
     // Equipment e equippedWeapon viajam juntos sob o mesmo rev no servidor:
     // `equipment != null` e o gate para atualizar o cache dos dois.
     const incomingQuest = snapshot.quest as QuestState | null | undefined;
-    if (incomingQuest != null) this.cachedQuest = incomingQuest;
+    if (incomingQuest != null) {
+      this.cachedQuest = incomingQuest;
+      if (this.cachedQuest.accepted) this.questAcceptPending = false;
+      if (this.cachedQuest.rewardClaimed) this.questRewardClaimPending = false;
+      if (this.activeQuestNpcId) this.hud.updateNpcDialogueQuest(this.cachedQuest, this.activeQuestDialogueActionLabel());
+      this.hud.setNpcMinimapMarkers(this.npcMinimapMarkers());
+      this.updateNpcServiceDestinations();
+    }
     snapshot.quest = this.cachedQuest;
+    const incomingVendorStock = snapshot.vendorStock as Record<string, Record<string, number>> | null | undefined;
+    if (incomingVendorStock != null) {
+      this.cachedVendorStock = incomingVendorStock;
+      if (this.activeVendorId) vendorDataChanged = true;
+    }
+    snapshot.vendorStock = this.cachedVendorStock;
+    if (vendorDataChanged) this.refreshActiveVendorAfterSnapshot();
+    if (stashDataChanged) this.refreshActiveStashAfterSnapshot();
     const incomingEquipment = snapshot.equipment as EquipmentState | null | undefined;
     if (incomingEquipment != null) {
       this.cachedEquipment = incomingEquipment;
       this.cachedEquippedWeapon = snapshot.equippedWeapon ?? null;
+      if (this.activeQuestNpcId) {
+        const activeNpc = this.npcViews.get(this.activeQuestNpcId);
+        if (activeNpc?.definition.kind === 'blacksmith') this.refreshBlacksmithDialogue('Forja atualizada.');
+      }
     }
     snapshot.equipment = this.cachedEquipment;
     snapshot.equippedWeapon = this.cachedEquippedWeapon;
@@ -1046,17 +1460,33 @@ export class Game {
     this.applyLocalPlayerMovement(dt);
     this.flushQueuedMoveCommand();
     this.updatePendingInteraction();
+    this.updatePathGuidance();
     this.aimLocalPlayerDuringAttack(dt);
+    this.aimLocalPlayerAtFocusedNpc(dt);
     this.updateLootViews();
     this.updateCameraAndMarker(dt);
+    this.updateNpcViews(dt);
+    this.updateNpcApproachPreview();
+    this.updateNpcServiceDestinations();
+    this.updateNpcMinimapMarkers();
     this.updateViewVisuals(snapshot.entities, dt);
     this.updateEnemyCulling();
     this.updateDamageTexts(dt);
     this.updateEffects(dt);
     this.updateOverlays();
+    if (snapshotChanged) this.refreshActiveServiceDialogue(playerState);
+
+    const selectedTarget = this.selectedEnemy(snapshot.entities);
+    const npcTarget = selectedTarget ? undefined : this.npcTargetFrame();
+    const npcTargetHudKey = this.npcTargetFrameKey(selectedTarget, npcTarget);
+    if (npcTargetHudKey !== this.npcTargetHudKey) {
+      this.npcTargetHudKey = npcTargetHudKey;
+      this.hudDirty = true;
+    }
+    this.updateQuestTrackerTarget();
 
     if (snapshotChanged || this.hudDirty) {
-      this.hud.update(snapshot, playerState, this.selectedEnemy(snapshot.entities));
+      this.hud.update(snapshot, playerState, selectedTarget, npcTarget);
       this.hudDirty = false;
     }
     this.perf.update(frameMs, this.world.getRenderStats(), this.renderQualityMode === 'auto' ? `auto:${this.autoQualityLevel}` : this.renderQualityMode);
@@ -1065,6 +1495,9 @@ export class Game {
   private processInput(dt: number): void {
     const menuRequested = this.input.takeInventoryToggle() || this.input.takeCharacterToggle();
     if (menuRequested) {
+      this.trainingNpcId = null;
+      this.hud.setCharacterTrainingContext(null);
+      this.hudDirty = true;
       this.sfx.play('ui');
       this.hud.toggleMenu();
     }
@@ -1072,6 +1505,10 @@ export class Game {
     if (this.input.takeQualityToggle()) {
       this.sfx.play('ui');
       this.cycleRenderQualityMode();
+    }
+    if (this.input.takeCancel()) {
+      this.cancelPlayerIntent();
+      return;
     }
 
     const zoom = this.input.takeZoom();
@@ -1095,30 +1532,50 @@ export class Game {
     }
 
     this.processKeyboardMove(dt);
+    const npcCycleDirection = this.input.takeNpcCycle();
+    if (npcCycleDirection !== 0) this.cycleSelectedNpc(npcCycleDirection);
+    if (this.input.takeNpcInteract()) {
+      const promptNpc = this.nearestPromptNpc();
+      const target = npcInteractionTargetDecision({
+        nearestPromptNpcId: promptNpc?.definition.id ?? null,
+        selectedNpcId: this.selectedNpcId,
+        selectedNpcAvailable: this.selectedNpcIsAvailable(),
+        questNpcId: this.questNavigationTargetNpcId(),
+        keyboardMovementActive: this.isKeyboardMovementActive(),
+      });
+      if (target.npcId) this.interactWithNpc(target.npcId, this.isMovementRunning(), target.allowAutomove);
+    }
     for (const ndc of this.input.takeClicks()) this.handleClick(ndc);
   }
 
   private processKeyboardMove(dt: number): void {
-    const movementChanged = this.input.takeMovementChanged();
-    const axes = this.input.getMoveAxes();
+    const autorun = autorunMoveState({
+      active: this.autorunActive,
+      toggleQueued: this.input.takeAutorunToggle(),
+      manualAxes: this.input.getMoveAxes(),
+      movementChanged: this.input.takeMovementChanged(),
+    });
+    this.autorunActive = autorun.active;
+    const axes = autorun.axes;
     const player = this.views.get(this.net.playerId)?.entity
       ? entityPosition(this.views.get(this.net.playerId)!.entity)
       : this.latestEntities.get(this.net.playerId)?.position;
     const direction = this.world.rig.getMoveDirection(axes.strafe, axes.forward);
     const decision = this.keyboardMove.update({
       dt,
-      movementChanged,
+      movementChanged: autorun.movementChanged,
       axes,
-      running: this.input.running,
+      running: this.isMovementRunning(),
       player,
       direction,
     });
     if (decision.type === 'none') return;
     // O teclado assumiu o controle do movimento: trajeto de clique e interacao
     // pendente morrem aqui.
-    this.clickMoveTarget = null;
-    this.pendingInteraction = null;
-    this.sendMoveCommand(decision.target, decision.run);
+    this.trainingNpcId = null;
+    this.cancelAutomoveIntent();
+    this.closeNpcPanels();
+    this.sendMoveCommand(this.walkableMoveTarget(decision.target, player), decision.run);
   }
 
   private applyLocalPlayerMovement(dt: number): void {
@@ -1127,24 +1584,25 @@ export class Game {
     const view = this.views.get(this.net.playerId);
     const state = this.latestEntities.get(this.net.playerId);
     if (!view || (state && !state.alive)) {
-      this.clickMoveTarget = null;
-      this.pendingInteraction = null;
+      this.cancelAutomoveIntent();
       return;
     }
 
-    const axes = this.input.getMoveAxes();
+    const axes = this.effectiveMoveAxes();
     const direction = this.world.rig.getMoveDirection(axes.strafe, axes.forward);
+    const currentPosition = entityPosition(view.entity);
     const prediction = this.clientMovement.predict({
       dt,
       axes,
-      running: this.input.running,
+      running: this.isMovementRunning(),
       direction,
-      current: entityPosition(view.entity),
+      current: currentPosition,
       terrain: this.terrain,
       zone: this.zone,
     });
     if (prediction) {
-      setEntityPosition(view.entity, prediction.position);
+      const position = this.resolveLocalCollision(prediction.position, direction, currentPosition);
+      setEntityPosition(view.entity, position);
       setYaw(view.entity, prediction.rotationY);
       this.localPlayerMoving = true;
       this.localPlayerRunning = prediction.running;
@@ -1168,23 +1626,127 @@ export class Game {
     if (state?.jumping) return;
 
     const p = entityPosition(view.entity);
-    const dx = target.x - p.x;
-    const dz = target.z - p.z;
+    const clearIndex = furthestClearPathIndex(
+      { x: p.x, y: p.y, z: p.z },
+      target.path,
+      this.localNavigationBlockers(),
+    );
+    if (clearIndex > 0) target.path.splice(0, clearIndex);
+    while (target.path.length > 1) {
+      const next = target.path[0];
+      if (Math.hypot(next.x - p.x, next.z - p.z) > CLICK_MOVE_STOP_DISTANCE) break;
+      target.path.shift();
+    }
+    const waypoint = target.path[0] ?? { x: target.x, y: 0, z: target.z };
+    const dx = waypoint.x - p.x;
+    const dz = waypoint.z - p.z;
     const distance = Math.hypot(dx, dz);
     if (distance <= CLICK_MOVE_STOP_DISTANCE) {
-      this.clickMoveTarget = null;
+      if (target.path.length > 1) {
+        target.path.shift();
+      } else {
+        this.clickMoveTarget = null;
+      }
       return;
     }
 
     const speed = target.run ? CLICK_MOVE_RUN_SPEED : CLICK_MOVE_WALK_SPEED;
-    const step = Math.min(speed * Math.min(Math.max(dt, 0), 0.05), distance - CLICK_MOVE_STOP_DISTANCE * 0.5);
+    const arrival = clickMoveArrivalStep(distance, speed, dt, CLICK_MOVE_STOP_DISTANCE, target.path.length <= 1, target.run);
+    const step = arrival.step;
     const nx = Math.max(-this.terrain.half, Math.min(this.terrain.half, p.x + (dx / distance) * step));
     const nz = Math.max(-this.terrain.half, Math.min(this.terrain.half, p.z + (dz / distance) * step));
     const ny = this.zone === 'dungeon' ? this.terrain.heightAt(0, 0) : this.terrain.heightAt(nx, nz);
-    setEntityPosition(view.entity, { x: nx, y: ny, z: nz });
+    const position = this.resolveLocalCollision({ x: nx, y: ny, z: nz }, { x: dx, z: dz }, p);
+    setEntityPosition(view.entity, position);
     setYaw(view.entity, Math.atan2(dx, dz));
     this.localPlayerMoving = true;
-    this.localPlayerRunning = !!target.run;
+    this.localPlayerRunning = arrival.running;
+  }
+
+  private localNavigationBlockers(): MovementBlocker[] {
+    const zoneNpcs = this.npcs.filter((npc) => npc.zone === this.zone);
+    const npcBlockers = zoneNpcs.map((npc) => ({
+        x: npc.position.x,
+        z: npc.position.z,
+        radius: npc.collisionRadius,
+      }));
+    const servicePropBlockers = zoneNpcs.flatMap((npc) => npcServicePropBlockers({
+      kind: npc.kind,
+      x: npc.position.x,
+      z: npc.position.z,
+      rotationY: npc.rotationY,
+    }));
+    if (this.zone === 'overworld') return [...this.worldBlockers, ...npcBlockers, ...servicePropBlockers];
+    return [...npcBlockers, ...servicePropBlockers];
+  }
+
+  private heightForMove(x: number, z: number): number {
+    return this.zone === 'dungeon' ? this.terrain.heightAt(0, 0) : this.terrain.heightAt(x, z);
+  }
+
+  private resolveLocalCollision(
+    position: Vec3Like,
+    fallbackDirection?: { x: number; z: number },
+    previousPosition?: Vec3Like,
+  ): Vec3Like {
+    return resolveCircularCollisions(
+      { x: position.x, y: position.y, z: position.z },
+      this.localNavigationBlockers(),
+      this.moveBound,
+      LOCAL_PLAYER_COLLISION_RADIUS,
+      (x, z) => this.heightForMove(x, z),
+      fallbackDirection,
+      previousPosition ? { x: previousPosition.x, y: previousPosition.y, z: previousPosition.z } : undefined,
+    );
+  }
+
+  private walkableMoveTarget(target: Vec3Like, start?: Pick<Vec3Like, 'x' | 'z'>): Vec3Like {
+    const playerEntity = this.views.get(this.net.playerId)?.entity;
+    const origin = start
+      ?? (playerEntity ? entityPosition(playerEntity) : undefined)
+      ?? this.latestEntities.get(this.net.playerId)?.position
+      ?? target;
+    const adjusted = walkableGoalNear(
+      { x: origin.x, y: 0, z: origin.z },
+      { x: target.x, y: target.y, z: target.z },
+      this.localNavigationBlockers(),
+      this.moveBound,
+    );
+    return { x: adjusted.x, y: this.heightForMove(adjusted.x, adjusted.z), z: adjusted.z };
+  }
+
+  private createClickMoveTarget(target: Vec3Like, run: boolean, start?: Pick<Vec3Like, 'x' | 'z'>): {
+    commandTarget: Vec3Like;
+    prediction: ClickMoveTarget;
+  } {
+    const playerEntity = this.views.get(this.net.playerId)?.entity;
+    const origin = start
+      ?? (playerEntity ? entityPosition(playerEntity) : undefined)
+      ?? this.latestEntities.get(this.net.playerId)?.position
+      ?? target;
+    const blockers = this.localNavigationBlockers();
+    const path = findLocalPath(
+      { x: origin.x, y: 0, z: origin.z },
+      { x: target.x, y: target.y, z: target.z },
+      blockers,
+      this.moveBound,
+    ).map((point) => ({
+      x: point.x,
+      y: this.heightForMove(point.x, point.z),
+      z: point.z,
+    }));
+    const last = path[path.length - 1] ?? this.walkableMoveTarget(target, origin);
+    const commandTarget = { x: last.x, y: last.y, z: last.z };
+    return {
+      commandTarget,
+      prediction: {
+        x: commandTarget.x,
+        z: commandTarget.z,
+        run,
+        sentAt: this.elapsed,
+        path: path.length > 0 ? path : [commandTarget],
+      },
+    };
   }
 
   /**
@@ -1219,6 +1781,31 @@ export class Game {
     setYaw(view.entity, current + delta * alpha);
   }
 
+  private aimLocalPlayerAtFocusedNpc(dt: number): void {
+    const view = this.views.get(this.net.playerId);
+    const state = this.latestEntities.get(this.net.playerId);
+    const selectedNpc = this.selectedNpcId ? this.npcViews.get(this.selectedNpcId) : null;
+    const npcId = npcFacingFocusTargetId({
+      playerReady: !!view && (!state || state.alive),
+      keyboardMovementActive: this.isKeyboardMovementActive(),
+      automoveActive: !!this.clickMoveTarget,
+      attackAimActive: !!state && (state.action === 'attack' || this.elapsed < this.localAimHoldUntil),
+      activeNpcId: this.activeNpcId(),
+      pendingNpcId: this.pendingInteraction?.kind === 'npc' ? this.pendingInteraction.id : null,
+      selectedNpcId: this.selectedNpcId,
+      selectedNpcNearby: !!selectedNpc && selectedNpc.definition.zone === this.zone && this.npcServiceIsNearby(selectedNpc.definition),
+    });
+    if (!view || !npcId) return;
+    const npc = this.npcViews.get(npcId);
+    if (!npc || npc.definition.zone !== this.zone) return;
+
+    const playerPosition = entityPosition(view.entity);
+    const npcPosition = entityPosition(npc.entity);
+    const targetYaw = yawTowardPoint(playerPosition, npcPosition);
+    if (targetYaw === null) return;
+    setYaw(view.entity, turnYawToward(entityYaw(view.entity), targetYaw, dt, NPC_INTERACTION_TURN_RATE));
+  }
+
   /**
    * Envia 'move' com coalescing: garante espacamento minimo entre pacotes e, se
    * o jogador spammar clique, guarda apenas o alvo MAIS RECENTE para enviar
@@ -1246,14 +1833,55 @@ export class Game {
     this.net.send({ type: 'move', entityId: this.net.playerId, target, run });
   }
 
-  /** Anda ate um loot/bau distante e executa a interacao ao entrar no raio. */
-  private beginPendingInteraction(interaction: NonNullable<Game['pendingInteraction']>): void {
+  private cancelAutomoveIntent(): void {
+    this.clickMoveTarget = null;
+    this.pendingInteraction = null;
+    this.queuedMoveCommand = null;
+    this.hudDirty = true;
+  }
+
+  private cancelPlayerIntent(): void {
+    const plan = playerIntentCancelPlan({
+      automoveActive: !!this.clickMoveTarget || !!this.pendingInteraction || !!this.queuedMoveCommand,
+      autorunActive: this.autorunActive,
+      npcPanelOpen: !!this.activeNpcId() || !!this.trainingNpcId,
+      enemySelected: !!this.selectedEnemyId,
+      npcSelected: !!this.selectedNpcId,
+    });
+    if (!plan.handled) return;
+
+    if (plan.clearAutomove) this.cancelAutomoveIntent();
+    if (plan.clearAutorun) {
+      this.autorunActive = false;
+      const player = this.views.get(this.net.playerId)?.entity
+        ? entityPosition(this.views.get(this.net.playerId)!.entity)
+        : this.latestEntities.get(this.net.playerId)?.position;
+      if (player) this.sendMoveCommand({ x: player.x, y: 0, z: player.z }, false);
+    }
+    if (plan.closeNpcPanels) this.closeNpcPanels();
+    if (plan.clearEnemy) this.setSelectedEnemy(null);
+    if (plan.clearNpcSelection) this.setSelectedNpc(null);
+    this.localAimHoldUntil = 0;
+    this.lastAttackAimPoint = null;
+    this.hudDirty = true;
+    this.sfx.play('ui');
+  }
+
+  /** Anda ate um loot/bau/npc distante e executa a interacao ao entrar no raio. */
+  private beginPendingInteraction(interaction: NonNullable<Game['pendingInteraction']>, run = this.isMovementRunning()): void {
     this.pendingInteraction = interaction;
+    this.hudDirty = true;
+    if (interaction.kind === 'npc') this.setSelectedNpc(interaction.id);
+    else this.setSelectedNpc(null);
     this.setSelectedEnemy(null);
     this.localAimHoldUntil = 0;
-    this.clickMoveTarget = { x: interaction.x, z: interaction.z, run: this.input.running, sentAt: this.elapsed };
-    this.sendMoveCommand({ x: interaction.x, y: 0, z: interaction.z }, this.input.running);
-    this.showMarker(interaction.x, interaction.y, interaction.z);
+    const moveX = interaction.moveX ?? interaction.x;
+    const moveY = interaction.moveY ?? interaction.y;
+    const moveZ = interaction.moveZ ?? interaction.z;
+    const { commandTarget, prediction } = this.createClickMoveTarget({ x: moveX, y: moveY, z: moveZ }, run);
+    this.clickMoveTarget = prediction;
+    this.sendMoveCommand(commandTarget, run);
+    this.showMarker(commandTarget.x, commandTarget.y, commandTarget.z, 'interact');
   }
 
   /** Executa a interacao pendente quando o heroi chega perto do alvo. */
@@ -1262,25 +1890,74 @@ export class Game {
     if (!pending) return;
     const view = this.views.get(this.net.playerId);
     const state = this.latestEntities.get(this.net.playerId);
-    if (!view || (state && !state.alive)) {
-      this.pendingInteraction = null;
-      return;
-    }
+
+    let targetAvailable = true;
     // Alvo sumiu (loot coletado por outro / bau aberto)? Cancela em silencio.
-    if (pending.kind === 'loot' && !this.lootViews.has(pending.id)) {
-      this.pendingInteraction = null;
-      return;
-    }
+    if (pending.kind === 'loot' && !this.lootViews.has(pending.id)) targetAvailable = false;
     if (pending.kind === 'chest') {
       const chest = this.chestViews.get(pending.id);
-      if (!chest || chest.opened) {
-        this.pendingInteraction = null;
-        return;
-      }
+      if (!chest || chest.opened) targetAvailable = false;
     }
-    const p = entityPosition(view.entity);
-    if (Math.hypot(pending.x - p.x, pending.z - p.z) > pending.range) return;
+    if (pending.kind === 'npc') {
+      const npc = this.npcViews.get(pending.id);
+      if (!npc || npc.definition.zone !== this.zone) targetAvailable = false;
+    }
+
+    const p = view ? entityPosition(view.entity) : undefined;
+    const distanceToApproachTarget = pending.kind === 'npc'
+      && p
+      && pending.moveX !== undefined
+      && pending.moveZ !== undefined
+      ? Math.hypot(pending.moveX - p.x, pending.moveZ - p.z)
+      : undefined;
+    const decision = pendingInteractionDecision({
+      playerReady: !!view && (!state || state.alive),
+      targetAvailable,
+      distanceToTarget: p ? Math.hypot(pending.x - p.x, pending.z - p.z) : Infinity,
+      range: pending.range,
+      distanceToApproachTarget,
+      approachRange: pending.kind === 'npc' ? NPC_APPROACH_ARRIVAL_RANGE : undefined,
+    });
+    if (decision === 'cancel') {
+      this.cancelAutomoveIntent();
+      return;
+    }
+    if (decision === 'wait') {
+      if (pending.kind === 'npc' && pending.moveX !== undefined && pending.moveY !== undefined && pending.moveZ !== undefined) {
+        const retry = pendingInteractionRetryDecision({
+          decision,
+          kind: pending.kind,
+          automoveActive: !!this.clickMoveTarget || !!this.queuedMoveCommand,
+          now: this.elapsed,
+          lastRetryAt: pending.lastRetryAt,
+          distanceToApproachTarget,
+          approachRange: NPC_APPROACH_ARRIVAL_RANGE,
+        });
+        if (retry === 'retry') {
+          pending.lastRetryAt = this.elapsed;
+          const { commandTarget, prediction } = this.createClickMoveTarget(
+            { x: pending.moveX, y: pending.moveY, z: pending.moveZ },
+            this.isMovementRunning(),
+            p,
+          );
+          this.clickMoveTarget = prediction;
+          this.sendMoveCommand(commandTarget, prediction.run);
+          this.showMarker(commandTarget.x, commandTarget.y, commandTarget.z, 'interact');
+          this.hudDirty = true;
+        }
+      }
+      return;
+    }
+
     this.pendingInteraction = null;
+    this.clickMoveTarget = null;
+    this.queuedMoveCommand = null;
+    this.hudDirty = true;
+    if (p) this.sendMoveCommand({ x: p.x, y: 0, z: p.z }, false);
+    if (pending.kind === 'npc') {
+      this.openNpc(pending.id);
+      return;
+    }
     if (pending.kind === 'loot') {
       this.sfx.play('pickup');
       this.net.send({ type: 'collect', entityId: this.net.playerId, lootId: pending.id });
@@ -1298,6 +1975,36 @@ export class Game {
     return Math.hypot(x - p.x, z - p.z);
   }
 
+  private npcApproachPoint(view: NpcView): Vec3Like {
+    const npc = entityPosition(view.entity);
+    const player = this.views.get(this.net.playerId)?.entity;
+    const playerPos = player ? entityPosition(player) : undefined;
+    const approach = chooseNpcApproachPoint({
+      npc: { x: npc.x, y: npc.y, z: npc.z },
+      player: playerPos ? { x: playerPos.x, z: playerPos.z } : undefined,
+      rotationY: view.definition.rotationY,
+      interactRange: view.definition.interactRange,
+      blockers: this.localNavigationBlockers(),
+      bound: this.moveBound,
+      preferFacing: true,
+    });
+    return { x: approach.x, y: this.heightForMove(approach.x, approach.z), z: approach.z };
+  }
+
+  private hoverNpcUnderPointer(): string | null {
+    const ray = this.world.screenRay(this.input.pointer);
+    const npcPick = rayPickBest(
+      ray,
+      [...this.npcViews.entries()].filter(([, view]) => view.definition.zone === this.zone),
+      ([, view]) => {
+        const p = entityPosition(view.entity);
+        return { x: p.x, y: p.y + 1.2, z: p.z };
+      },
+      ([, view]) => view.definition.clickRadius * 1.08,
+    );
+    return npcPick?.[0] ?? null;
+  }
+
   /** Posicao do alvo atual do ataque: inimigo selecionado vivo, senao o ultimo clique. */
   private currentAttackAimPoint(): Vec3Like | null {
     if (this.selectedEnemyId) {
@@ -1310,14 +2017,30 @@ export class Game {
   private handleClick(ndc: PointerNdc): void {
     this.sfx.unlock();
     const ray = this.world.screenRay(ndc);
+    const allowClickAutomove = canStartClickAutomove({ keyboardMovementActive: this.isKeyboardMovementActive() });
     const portal = this.world.pickPortal(ray);
     if (portal) {
+      this.setSelectedNpc(null);
       this.setSelectedEnemy(null);
-      this.clickMoveTarget = null;
-      this.pendingInteraction = null;
-      this.queuedMoveCommand = null;
+      this.cancelAutomoveIntent();
+      this.closeNpcPanels();
       this.sfx.play('arcane-nova');
       this.net.send({ type: portal, entityId: this.net.playerId });
+      return;
+    }
+
+    const npcPick = rayPickBest(
+      ray,
+      [...this.npcViews.entries()].filter(([, view]) => view.definition.zone === this.zone),
+      ([, view]) => {
+        const p = entityPosition(view.entity);
+        return { x: p.x, y: p.y + 1.2, z: p.z };
+      },
+      ([, view]) => view.definition.clickRadius,
+    );
+    if (npcPick) {
+      const [id] = npcPick;
+      this.interactWithNpc(id, this.isMovementRunning(), allowClickAutomove);
       return;
     }
 
@@ -1332,13 +2055,22 @@ export class Game {
     );
     if (chestPick) {
       const [id, chestView] = chestPick;
-      this.setSelectedEnemy(null);
       const chestPos = entityPosition(chestView.entity);
       // Longe do bau: anda ate ele e abre ao chegar (o servidor ignora alem de 4.0).
       if (this.localPlayerDistanceTo(chestPos.x, chestPos.z) > CHEST_INTERACT_RANGE) {
+        if (!allowClickAutomove) {
+          this.setSelectedNpc(null);
+          return;
+        }
+        this.setSelectedNpc(null);
+        this.setSelectedEnemy(null);
+        this.closeNpcPanels();
         this.beginPendingInteraction({ kind: 'chest', id, x: chestPos.x, y: chestPos.y, z: chestPos.z, range: CHEST_INTERACT_RANGE });
         return;
       }
+      this.setSelectedNpc(null);
+      this.setSelectedEnemy(null);
+      this.closeNpcPanels();
       this.pendingInteraction = null;
       this.sfx.play('chest');
       this.net.send({ type: 'open-chest', entityId: this.net.playerId, chestId: id });
@@ -1356,13 +2088,22 @@ export class Game {
     );
     if (lootPick) {
       const [id, lootView] = lootPick;
-      this.setSelectedEnemy(null);
       const lootPos = entityPosition(lootView.entity);
       // Longe do item: anda ate ele e coleta ao chegar (o servidor ignora alem de 3.1).
       if (this.localPlayerDistanceTo(lootPos.x, lootPos.z) > LOOT_INTERACT_RANGE) {
+        if (!allowClickAutomove) {
+          this.setSelectedNpc(null);
+          return;
+        }
+        this.setSelectedNpc(null);
+        this.setSelectedEnemy(null);
+        this.closeNpcPanels();
         this.beginPendingInteraction({ kind: 'loot', id, x: lootPos.x, y: lootPos.y, z: lootPos.z, range: LOOT_INTERACT_RANGE });
         return;
       }
+      this.setSelectedNpc(null);
+      this.setSelectedEnemy(null);
+      this.closeNpcPanels();
       this.pendingInteraction = null;
       this.sfx.play('pickup');
       this.net.send({ type: 'collect', entityId: this.net.playerId, lootId: id });
@@ -1381,9 +2122,8 @@ export class Game {
     if (enemyPick) {
       const [id, enemyView] = enemyPick;
       this.setSelectedEnemy(id);
-      this.clickMoveTarget = null;
-      this.pendingInteraction = null;
-      this.queuedMoveCommand = null;
+      this.cancelAutomoveIntent();
+      this.closeNpcPanels();
       const ep = entityPosition(enemyView.entity);
       this.lastAttackAimPoint = { x: ep.x, y: ep.y, z: ep.z };
       this.net.send({ type: 'attack', entityId: this.net.playerId, targetId: id });
@@ -1394,16 +2134,30 @@ export class Game {
     if (!ground) return;
     const closeLoot = this.findLootNear(ground.point);
     if (closeLoot) {
-      this.setSelectedEnemy(null);
       const lootView = this.lootViews.get(closeLoot);
       const lootPos = lootView ? entityPosition(lootView.entity) : ground.point;
       if (this.localPlayerDistanceTo(lootPos.x, lootPos.z) > LOOT_INTERACT_RANGE) {
+        if (!allowClickAutomove) {
+          this.setSelectedNpc(null);
+          return;
+        }
+        this.setSelectedNpc(null);
+        this.setSelectedEnemy(null);
+        this.closeNpcPanels();
         this.beginPendingInteraction({ kind: 'loot', id: closeLoot, x: lootPos.x, y: lootPos.y, z: lootPos.z, range: LOOT_INTERACT_RANGE });
         return;
       }
+      this.setSelectedNpc(null);
+      this.setSelectedEnemy(null);
+      this.closeNpcPanels();
       this.pendingInteraction = null;
       this.sfx.play('pickup');
       this.net.send({ type: 'collect', entityId: this.net.playerId, lootId: closeLoot });
+      return;
+    }
+    const closeNpc = this.findNpcNear(ground.point);
+    if (closeNpc) {
+      this.interactWithNpc(closeNpc, this.isMovementRunning(), allowClickAutomove);
       return;
     }
     const closeTarget = this.findCloseEnemyToward(ground.point);
@@ -1411,23 +2165,29 @@ export class Game {
     const playerPos = player ? entityPosition(player) : undefined;
     if (closeTarget && playerPos && Math.hypot(ground.point.x - playerPos.x, ground.point.z - playerPos.z) <= CLOSE_CLICK_RADIUS) {
       this.setSelectedEnemy(closeTarget);
-      this.clickMoveTarget = null;
-      this.pendingInteraction = null;
-      this.queuedMoveCommand = null;
+      this.cancelAutomoveIntent();
+      this.closeNpcPanels();
       const targetPos = this.latestEntities.get(closeTarget)?.position ?? ground.point;
       this.lastAttackAimPoint = { x: targetPos.x, y: targetPos.y, z: targetPos.z };
       this.net.send({ type: 'attack', entityId: this.net.playerId, targetId: closeTarget });
       return;
     }
 
+    if (!allowClickAutomove) {
+      this.setSelectedNpc(null);
+      return;
+    }
+    this.setSelectedNpc(null);
     this.setSelectedEnemy(null);
     this.localAimHoldUntil = 0;
-    this.pendingInteraction = null;
+    this.cancelAutomoveIntent();
+    this.closeNpcPanels();
     // Predicao local: o heroi comeca a andar JA NESTE frame; o servidor confirma
     // e corrige pelo reconcile (mesmas margens da predicao de teclado).
-    this.clickMoveTarget = { x: ground.point.x, z: ground.point.z, run: this.input.running, sentAt: this.elapsed };
-    this.sendMoveCommand({ x: ground.point.x, y: 0, z: ground.point.z }, this.input.running);
-    this.showMarker(ground.point.x, ground.point.y, ground.point.z);
+    const { commandTarget, prediction } = this.createClickMoveTarget(ground.point, this.isMovementRunning(), playerPos);
+    this.clickMoveTarget = prediction;
+    this.sendMoveCommand(commandTarget, this.isMovementRunning());
+    this.showMarker(commandTarget.x, commandTarget.y, commandTarget.z, 'move');
   }
 
   private reconcile(entities: EntityState[], dt: number, snapshotChanged = true): void {
@@ -1541,6 +2301,1536 @@ export class Game {
     const view: View = { entity, visual, healthBar, kind: e.kind };
     this.views.set(e.id, view);
     return view;
+  }
+
+  private createNpcViews(): void {
+    for (const definition of this.npcs) {
+      const entity = makeEntity(definition.id, this.world.app);
+      const visual = makeEntity(`${definition.id}-visual`, this.world.app);
+      entity.addChild(visual);
+      setEntityPosition(entity, definition.position);
+      setYaw(entity, definition.rotationY);
+      const fallback = this.world.createFallbackCharacter('npc-vendor-fallback', 0xa66a2c, 0xf2c79b);
+      visual.addChild(fallback);
+      const color = this.npcAccentColor(definition);
+      const ring = this.world.createPrimitive(
+        'npc-interact-ring',
+        'torus',
+        this.world.material(`npc-ring-${definition.kind}`, color, { opacity: 0.62, additive: true, unlit: true }),
+        { x: 0, y: 0.06, z: 0 },
+        { x: 1.42, y: 0.025, z: 1.42 },
+        entity,
+      );
+      const destinationRing = this.world.createPrimitive(
+        'npc-destination-ring',
+        'torus',
+        this.world.material('npc-destination-ring', 0xffd874, { opacity: 0.86, additive: true, unlit: true }),
+        { x: 0, y: 0.08, z: 0 },
+        { x: 2.05, y: 0.03, z: 2.05 },
+        entity,
+      );
+      destinationRing.enabled = false;
+      const serviceProps = this.createNpcServiceProps(definition);
+      const servicePropsAnchor = makeEntity(`${definition.id}-service-props-anchor`, this.world.app);
+      setEntityPosition(servicePropsAnchor, definition.position);
+      setYaw(servicePropsAnchor, definition.rotationY);
+      servicePropsAnchor.addChild(serviceProps.root);
+      this.world.root.addChild(servicePropsAnchor);
+      this.world.root.addChild(entity);
+      const label = new WorldLabel(this.uiLayer, 'npc-label', definition.name, color);
+      this.configureNpcNameplate(label, color);
+      const markerLabel = new WorldLabel(this.uiLayer, 'npc-marker', this.npcMarkerText(definition), color);
+      markerLabel.el.style.font = '900 22px/1 ui-sans-serif,system-ui,sans-serif';
+      markerLabel.el.style.textShadow = '0 1px 4px rgba(0,0,0,.95), 0 0 10px currentColor';
+      markerLabel.el.style.zIndex = '10';
+      const view: NpcView = {
+        definition,
+        entity,
+        visual,
+        label,
+        markerLabel,
+        ring,
+        destinationRing,
+        servicePropsAnchor,
+        serviceProps: serviceProps.root,
+        servicePropParts: serviceProps.parts,
+      };
+      this.npcViews.set(definition.id, view);
+      this.ensureNpcModel(view);
+    }
+  }
+
+  private createNpcServiceProps(definition: NpcDefinition): { root: pc.Entity; parts: NpcServicePropEntity[] } {
+    const root = makeEntity(`${definition.id}-service-props`, this.world.app);
+    const parts: NpcServicePropEntity[] = [];
+    for (const part of npcServicePropParts(definition.kind)) {
+      const entity = this.createNpcServicePropPart(root, definition.kind, part);
+      parts.push({ entity, part });
+    }
+    return { root, parts };
+  }
+
+  private createNpcServicePropPart(parent: pc.Entity, kind: NpcDefinition['kind'], part: NpcServicePropPart): pc.Entity {
+    const materialOptions: { opacity?: number; additive?: boolean; unlit?: boolean } = {};
+    if (part.opacity !== undefined) materialOptions.opacity = part.opacity;
+    if (part.additive) materialOptions.additive = true;
+    if (part.unlit) materialOptions.unlit = true;
+    const material = this.world.material(
+      `npc-prop-${kind}-${part.id}`,
+      part.color,
+      materialOptions,
+    );
+    const entity = this.world.createPrimitive(
+      `npc-prop-${kind}-${part.id}`,
+      part.primitive,
+      material,
+      part.position,
+      part.scale,
+      parent,
+    );
+    if (part.rotation) {
+      entity.setLocalEulerAngles(part.rotation.x, part.rotation.y, part.rotation.z);
+    }
+    return entity;
+  }
+
+  private ensureNpcModel(view: NpcView): void {
+    if (view.loading || view.failed) return;
+    view.loading = true;
+    void Promise.all([
+      this.world.models.instantiate(view.definition.modelUrl),
+      this.world.models.animationTracks(view.definition.modelUrl),
+    ]).then(([model, tracks]) => {
+      if (!view.entity.parent) {
+        destroyEntity(model);
+        return;
+      }
+      clearChildren(view.visual);
+      keepSingleSkinnedRigRoot(model, HERO_RIG_ROOT_NAME);
+      configureImportedModel(model);
+      setVisualAssetTransform(model, HERO_VISUAL_SCALE);
+      view.visual.addChild(model);
+      view.anim = new PcClipController(model, buildHeroClipConfigs(tracks));
+      view.loading = false;
+    }).catch((error) => {
+      view.loading = false;
+      view.failed = true;
+      console.warn('[Game] falha ao carregar NPC PlayCanvas:', error);
+    });
+  }
+
+  private configureNpcNameplate(label: WorldLabel, color: string): void {
+    label.el.classList.add('npc-nameplate');
+    label.el.style.font = '';
+    label.el.style.textShadow = '';
+    label.el.style.whiteSpace = '';
+    label.el.style.color = '';
+    label.el.style.zIndex = '9';
+    label.el.style.setProperty('--npc-color', color);
+  }
+
+  private updateNpcNameplate(
+    view: NpcView,
+    focus: ReturnType<typeof npcVisualFocusState>,
+    distanceToPlayer: number,
+    marker: string,
+  ): NpcNameplateModel {
+    const model = npcNameplateModel({
+      kind: view.definition.kind,
+      name: view.definition.name,
+      title: view.definition.title,
+      marker,
+      distance: distanceToPlayer,
+      distanceLabel: this.npcDistanceLabel(view.definition, distanceToPlayer),
+      serviceLabel: this.npcServiceStatusLabel(view.definition),
+      actionLabel: this.npcNameplateActionLabel(view.definition, focus),
+      active: focus.active,
+      selected: focus.selected,
+      pending: focus.pending,
+      objective: focus.objective,
+      hovered: focus.hovered,
+      nearby: focus.nearby,
+      focused: focus.focused,
+      quest: this.cachedQuest,
+    });
+
+    view.label.el.dataset.kind = view.definition.kind;
+    view.label.el.dataset.tone = model.tone;
+    view.label.el.classList.toggle('focused', model.focused);
+    view.label.el.classList.toggle('compact', model.compact);
+    view.label.el.style.visibility = model.visible ? 'visible' : 'hidden';
+    view.label.el.style.opacity = model.focused ? '1' : '0.84';
+
+    const key = `${model.marker}:${model.name}:${model.detail}:${model.state}:${model.tone}:${model.focused ? 1 : 0}:${model.visible ? 1 : 0}:${model.compact ? 1 : 0}`;
+    if (key !== view.nameplateKey) {
+      view.nameplateKey = key;
+      this.renderNpcNameplate(view.label.el, model);
+    }
+    return model;
+  }
+
+  private renderNpcNameplate(root: HTMLElement, model: NpcNameplateModel): void {
+    const state = document.createElement('span');
+    state.className = 'npc-nameplate-state';
+    const marker = document.createElement('b');
+    marker.textContent = model.marker;
+    const stateText = document.createElement('em');
+    stateText.textContent = model.state;
+    state.append(marker, stateText);
+
+    const name = document.createElement('strong');
+    name.textContent = model.name;
+    const detail = document.createElement('small');
+    detail.textContent = model.detail;
+    root.replaceChildren(state, name, detail);
+  }
+
+  private updateNpcViews(dt: number): void {
+    let promptView: NpcView | null = null;
+    let promptDistance = Infinity;
+    const playerEntity = this.views.get(this.net.playerId)?.entity;
+    const playerPosition = playerEntity ? entityPosition(playerEntity) : undefined;
+    this.hoveredNpcId = npcHoverFocusTargetId({
+      pointerNpcId: this.hoverNpcUnderPointer(),
+      serviceNpcId: this.serviceDirectoryHoveredNpcId
+        ?? questNavigationHoverNpcId(this.questNavigationTargetNpcId(), this.questTrackerHovered),
+      targetFrameNpcId: this.targetFrameHoveredNpcId,
+    });
+    const questRouteNpcId = this.questNavigationTargetNpcId();
+
+    for (const view of this.npcViews.values()) {
+      const visible = view.definition.zone === this.zone;
+      view.entity.enabled = visible;
+      view.servicePropsAnchor.enabled = visible;
+      if (!visible) {
+        view.label.el.style.display = 'none';
+        view.markerLabel.el.style.display = 'none';
+        if (this.activeVendorId === view.definition.id) this.closeVendor();
+        if (this.activeStashNpcId === view.definition.id) this.closeStash();
+        if (this.activeQuestNpcId === view.definition.id) this.closeNpcDialogue();
+        continue;
+      }
+
+      const distanceToPlayer = playerPosition
+        ? Math.hypot(view.definition.position.x - playerPosition.x, view.definition.position.z - playerPosition.z)
+        : Infinity;
+      if (this.activeVendorId === view.definition.id
+        && shouldCloseNpcServicePanel(distanceToPlayer, view.definition.interactRange)) {
+        this.closeVendor();
+      }
+      if (this.activeStashNpcId === view.definition.id
+        && shouldCloseNpcServicePanel(distanceToPlayer, view.definition.interactRange)) {
+        this.closeStash();
+      }
+      if (this.activeQuestNpcId === view.definition.id
+        && shouldCloseNpcServicePanel(distanceToPlayer, view.definition.interactRange)) {
+        this.closeNpcDialogue();
+      }
+
+      const focus = npcVisualFocusState({
+        npcId: view.definition.id,
+        selectedNpcId: this.selectedNpcId,
+        pendingNpcId: this.pendingInteraction?.kind === 'npc' ? this.pendingInteraction.id : null,
+        activeNpcId: this.activeNpcId(),
+        hoveredNpcId: this.hoveredNpcId,
+        objectiveNpcId: questRouteNpcId,
+        distanceToPlayer,
+        interactRange: view.definition.interactRange,
+      });
+      if (!this.activeNpcId()) {
+        if (focus.pending) {
+          promptDistance = -1;
+          promptView = view;
+        } else if (focus.nearby && distanceToPlayer < promptDistance) {
+          promptDistance = distanceToPlayer;
+          promptView = view;
+        }
+      }
+
+      view.animTime = (view.animTime ?? 0) + dt;
+      view.visual.setLocalPosition(0, Math.sin((view.animTime ?? 0) * 1.8) * 0.025, 0);
+      const ringPulse = 1 + Math.sin((view.animTime ?? 0) * 2.2) * 0.035;
+      const ring = npcInteractionRingState({
+        distanceToPlayer,
+        interactRange: view.definition.interactRange,
+        nearby: focus.nearby,
+        hovered: focus.hovered,
+        objective: focus.objective,
+        destination: focus.destination,
+      });
+      view.ring.enabled = ring.visible;
+      view.ring.setLocalPosition(0, ring.lift, 0);
+      view.ring.setLocalScale(ring.scale * ringPulse, 0.025, ring.scale * ringPulse);
+      this.updateNpcServiceProps(view, focus);
+      this.updateNpcDestinationRing(view, focus.destination);
+      this.updateNpcFacing(view, focus.focused, playerPosition, dt);
+      view.anim?.setState('idle');
+      view.anim?.setPlaybackSpeed(1);
+      const p = entityPosition(view.entity);
+      const markerText = this.npcMarkerText(view.definition);
+      if (view.markerLabel.el.textContent !== markerText) view.markerLabel.setText(markerText);
+      const nameplate = this.updateNpcNameplate(view, focus, distanceToPlayer, markerText);
+      view.markerLabel.el.dataset.kind = view.definition.kind;
+      view.markerLabel.el.dataset.tone = nameplate.tone;
+      view.markerLabel.el.classList.toggle('destination', focus.destination);
+      view.markerLabel.el.classList.toggle('nearby', focus.nearby);
+      view.markerLabel.el.classList.toggle('objective', focus.objective);
+      view.markerLabel.el.classList.toggle('hovered', focus.hovered);
+      view.markerLabel.el.style.visibility = nameplate.visible || focus.destination ? 'visible' : 'hidden';
+      view.markerLabel.el.style.opacity = focus.destination ? '1' : focus.focused ? '0.94' : '0.88';
+      view.label.setWorldPosition(p.x, p.y + 2.7, p.z);
+      view.label.update(this.world);
+      view.markerLabel.setWorldPosition(p.x, p.y + (focus.destination ? 3.34 : 3.18) + Math.sin((view.animTime ?? 0) * 2.8) * 0.08, p.z);
+      view.markerLabel.update(this.world);
+    }
+
+    this.updateNpcPrompt(promptView);
+  }
+
+  private updateNpcDestinationRing(view: NpcView, destination: boolean): void {
+    view.destinationRing.enabled = destination;
+    if (!destination) return;
+    const t = view.animTime ?? 0;
+    const pulse = 1 + Math.sin(t * 4.6) * 0.11;
+    view.destinationRing.setLocalPosition(0, 0.08 + Math.sin(t * 5.8) * 0.012, 0);
+    view.destinationRing.setLocalScale(2.05 * pulse, 0.03, 2.05 * pulse);
+  }
+
+  private updateNpcServiceProps(view: NpcView, focus: ReturnType<typeof npcVisualFocusState>): void {
+    const time = view.animTime ?? 0;
+    const state = npcServicePropVisualState({
+      active: focus.active,
+      pending: focus.pending,
+      selected: focus.selected,
+      nearby: focus.nearby,
+      time,
+    });
+    view.serviceProps.setLocalPosition(0, state.lift, 0);
+    view.serviceProps.setLocalScale(state.scale, state.scale, state.scale);
+    for (const prop of view.servicePropParts) {
+      const partState = npcServicePropPartVisualState({
+        part: prop.part,
+        active: focus.active,
+        pending: focus.pending,
+        selected: focus.selected,
+        nearby: focus.nearby,
+        time,
+      });
+      prop.entity.setLocalPosition(partState.position.x, partState.position.y, partState.position.z);
+      prop.entity.setLocalScale(partState.scale.x, partState.scale.y, partState.scale.z);
+      prop.entity.setLocalEulerAngles(partState.rotation.x, partState.rotation.y, partState.rotation.z);
+    }
+  }
+
+  private updateNpcFacing(view: NpcView, focused: boolean, playerPosition: Vec3Like | undefined, dt: number): void {
+    const p = entityPosition(view.entity);
+    let targetYaw = view.definition.rotationY;
+    if (focused && playerPosition) {
+      const dx = playerPosition.x - p.x;
+      const dz = playerPosition.z - p.z;
+      if (dx * dx + dz * dz > 0.0001) targetYaw = Math.atan2(dx, dz);
+    }
+    const current = entityYaw(view.entity);
+    const delta = Math.atan2(Math.sin(targetYaw - current), Math.cos(targetYaw - current));
+    if (Math.abs(delta) < 0.002) return;
+    const alpha = dt > 0 ? 1 - Math.exp(-NPC_TURN_RATE * dt) : 1;
+    setYaw(view.entity, current + delta * alpha);
+  }
+
+  private npcMarkerText(definition: NpcDefinition): string {
+    return definition.kind === 'quest'
+      ? npcQuestMarkerModel(this.cachedQuest).marker
+      : npcServiceGlyph(definition.kind);
+  }
+
+  private npcAccentColor(definition: Pick<NpcDefinition, 'kind'>): string {
+    return npcServiceAccentCss(definition.kind);
+  }
+
+  private npcMinimapMarkers(): HudMinimapNpc[] {
+    const questRouteNpcId = this.questNavigationTargetNpcId();
+    return this.npcs.map((npc) => ({
+      id: npc.id,
+      name: npc.name,
+      zone: npc.zone,
+      position: { x: npc.position.x, z: npc.position.z },
+      kind: npc.kind,
+      marker: this.npcMarkerText(npc),
+      active: this.activeNpcId() === npc.id,
+      selected: this.selectedNpcId === npc.id,
+      pending: this.pendingInteraction?.kind === 'npc' && this.pendingInteraction.id === npc.id,
+      objective: questRouteNpcId === npc.id,
+      hovered: this.hoveredNpcId === npc.id,
+    }));
+  }
+
+  private npcServiceDestinations(): HudNpcDestination[] {
+    const activeNpcId = this.activeNpcId();
+    const questRouteNpcId = this.questNavigationTargetNpcId();
+    return sortNpcServiceDestinations(this.npcs.map((npc) => ({
+      id: npc.id,
+      name: npc.name,
+      title: npc.title,
+      zone: npc.zone,
+      kind: npc.kind,
+      marker: this.npcMarkerText(npc),
+      statusLabel: this.npcServiceStatusLabel(npc),
+      priority: this.npcServicePriority(npc, questRouteNpcId),
+      distance: this.npcServiceDistance(npc),
+      distanceLabel: this.npcServiceDistanceLabel(npc),
+      active: activeNpcId === npc.id,
+      selected: this.selectedNpcId === npc.id,
+      nearby: this.npcServiceIsNearby(npc),
+      pending: this.pendingInteraction?.kind === 'npc' && this.pendingInteraction.id === npc.id,
+      hovered: this.hoveredNpcId === npc.id,
+      objective: questRouteNpcId === npc.id,
+    })));
+  }
+
+  private npcServicePriority(npc: NpcDefinition, questRouteNpcId = this.questNavigationTargetNpcId()): number {
+    if (npc.kind === 'vendor') {
+      const availability = this.vendorAvailability(npc);
+      return npcServicePriorityScore({
+        kind: npc.kind,
+        vendorAvailableItems: availability.available,
+        vendorAffordableItems: availability.affordable,
+      });
+    }
+
+    if (npc.kind === 'healer') {
+      const player = this.latestEntities.get(this.net.playerId);
+      const mana = player?.mana ?? 0;
+      const maxMana = player?.maxMana ?? 0;
+      const needsService = !!player && (player.hp < player.maxHp - 0.5 || mana < maxMana - 0.5);
+      return npcServicePriorityScore({
+        kind: npc.kind,
+        healer: {
+          needsService,
+          canPay: this.currentCoinCount() >= HEALER_SERVICE_COST,
+        },
+      });
+    }
+
+    if (npc.kind === 'blacksmith') {
+      return npcServicePriorityScore({ kind: npc.kind, blacksmith: this.blacksmithActionState() });
+    }
+
+    if (npc.kind === 'trainer') {
+      const player = this.latestEntities.get(this.net.playerId);
+      return npcServicePriorityScore({
+        kind: npc.kind,
+        trainer: { unspentPoints: player?.attributes?.unspentPoints ?? 0 },
+      });
+    }
+
+    if (npc.kind === 'jeweler') {
+      return npcServicePriorityScore({
+        kind: npc.kind,
+        jeweler: { blessCount: this.stackCount('jewel_bless'), requiredBless: 3 },
+      });
+    }
+
+    if (npc.kind === 'banker') {
+      return npcServicePriorityScore({
+        kind: npc.kind,
+        banker: { stashItems: this.stashStoredItemCount() },
+      });
+    }
+
+    if (npc.kind === 'guard') {
+      return npcServicePriorityScore({
+        kind: npc.kind,
+        guideTargetAvailable: !!this.npcGuideTargetNpcId(npc.kind),
+      });
+    }
+
+    return npcServicePriorityScore({
+      kind: npc.kind,
+      quest: this.cachedQuest,
+      questRouteTarget: questRouteNpcId === npc.id,
+    });
+  }
+
+  private npcTargetFrame(): HudNpcTarget | undefined {
+    const pendingNpcId = this.pendingInteraction?.kind === 'npc' ? this.pendingInteraction.id : null;
+    const activeNpcId = this.activeNpcId();
+    const id = activeNpcId ?? pendingNpcId ?? this.selectedNpcId ?? this.hoveredNpcId;
+    if (!id) return undefined;
+    const view = this.npcViews.get(id);
+    if (!view || view.definition.zone !== this.zone) return undefined;
+    const nearby = this.npcServiceIsNearby(view.definition);
+    const selected = this.selectedNpcId === id;
+    const hovered = this.hoveredNpcId === id;
+    const distance = this.npcServiceDistance(view.definition);
+    const model = npcTargetFrameModel({
+      kind: view.definition.kind,
+      name: view.definition.name,
+      title: view.definition.title,
+      marker: this.npcMarkerText(view.definition),
+      distanceLabel: this.npcDistanceLabel(view.definition, distance ?? Infinity),
+      serviceLabel: this.npcServiceStatusLabel(view.definition),
+      actionLabel: this.npcTargetActionLabel(view.definition, {
+        selected,
+        hovered,
+        nearby,
+      }),
+      active: activeNpcId === id,
+      pending: pendingNpcId === id,
+      selected,
+      hovered,
+      nearby,
+      quest: this.cachedQuest,
+    });
+    return {
+      id,
+      kind: view.definition.kind,
+      name: model.name,
+      marker: model.marker,
+      subtitle: model.subtitle,
+      status: model.status,
+      tone: model.tone,
+    };
+  }
+
+  private npcTargetFrameKey(selectedTarget?: EntityState, npcTarget?: HudNpcTarget): string {
+    if (selectedTarget && selectedTarget.kind === 'enemy' && selectedTarget.alive) {
+      return `enemy:${selectedTarget.id}`;
+    }
+    if (!npcTarget) return '';
+    return npcTargetFrameRenderKey(npcTarget.id, npcTarget);
+  }
+
+  private npcTargetActionLabel(npc: NpcDefinition, state: { selected: boolean; hovered?: boolean; nearby: boolean }): string | undefined {
+    if (!state.selected && !state.hovered) return undefined;
+    if (state.nearby) return this.npcPromptActionLabel(npc);
+    return state.selected ? 'R Aproximar' : 'Clique Aproximar';
+  }
+
+  private npcNameplateActionLabel(npc: NpcDefinition, focus: ReturnType<typeof npcVisualFocusState>): string | undefined {
+    if (focus.pending) return undefined;
+    if (focus.nearby) return this.npcPromptActionLabel(npc);
+    if (focus.selected) return 'R Aproximar';
+    if (focus.hovered) return 'Clique Aproximar';
+    return undefined;
+  }
+
+  private npcServiceDistance(npc: NpcDefinition): number | undefined {
+    if (npc.zone !== this.zone) return undefined;
+    const distance = this.localPlayerDistanceTo(npc.position.x, npc.position.z);
+    if (!Number.isFinite(distance)) return undefined;
+    return distance;
+  }
+
+  private npcServiceDistanceLabel(npc: NpcDefinition): string | undefined {
+    const distance = this.npcServiceDistance(npc);
+    if (distance === undefined) return undefined;
+    return this.npcDistanceLabel(npc, distance);
+  }
+
+  private npcDistanceLabel(npc: Pick<NpcDefinition, 'interactRange'>, distance: number): string | undefined {
+    if (!Number.isFinite(distance)) return undefined;
+    if (distance <= npc.interactRange + 0.35) return 'Perto';
+    return `${Math.max(1, Math.round(distance))}m`;
+  }
+
+  private npcServiceIsNearby(npc: NpcDefinition): boolean {
+    const distance = this.npcServiceDistance(npc);
+    return distance !== undefined && distance <= npc.interactRange + 0.35;
+  }
+
+  private npcServiceStatusLabel(npc: NpcDefinition): string | undefined {
+    if (npc.kind === 'vendor') {
+      const availability = this.vendorAvailability(npc);
+      return buildNpcServiceStatusLabel({
+        kind: npc.kind,
+        vendorAvailableItems: availability.available,
+        vendorAffordableItems: availability.affordable,
+      });
+    }
+
+    if (npc.kind === 'healer') {
+      const player = this.latestEntities.get(this.net.playerId);
+      if (!player) return undefined;
+      const mana = player.mana ?? 0;
+      const maxMana = player.maxMana ?? 0;
+      const needsService = player.hp < player.maxHp - 0.5 || mana < maxMana - 0.5;
+      return buildNpcServiceStatusLabel({
+        kind: npc.kind,
+        healer: {
+          needsService,
+          canPay: this.currentCoinCount() >= HEALER_SERVICE_COST,
+          cost: HEALER_SERVICE_COST,
+        },
+      });
+    }
+
+    if (npc.kind === 'blacksmith') {
+      const action = this.blacksmithActionState();
+      return buildNpcServiceStatusLabel({ kind: npc.kind, blacksmith: action });
+    }
+
+    if (npc.kind === 'trainer') {
+      const player = this.latestEntities.get(this.net.playerId);
+      return buildNpcServiceStatusLabel({
+        kind: npc.kind,
+        trainer: { unspentPoints: player?.attributes?.unspentPoints ?? 0 },
+      });
+    }
+
+    if (npc.kind === 'travel') {
+      return buildNpcServiceStatusLabel({
+        kind: npc.kind,
+        travel: { destination: npc.zone === 'dungeon' ? 'acampamento' : 'dungeon' },
+      });
+    }
+
+    if (npc.kind === 'jeweler') {
+      return buildNpcServiceStatusLabel({
+        kind: npc.kind,
+        jeweler: { blessCount: this.stackCount('jewel_bless'), requiredBless: 3 },
+      });
+    }
+
+    if (npc.kind === 'banker') {
+      return buildNpcServiceStatusLabel({
+        kind: npc.kind,
+        banker: { stashItems: this.stashStoredItemCount() },
+      });
+    }
+
+    if (npc.kind === 'guard') {
+      return buildNpcServiceStatusLabel({ kind: npc.kind });
+    }
+
+    return buildNpcServiceStatusLabel({ kind: npc.kind, quest: this.cachedQuest });
+  }
+
+  private vendorAvailability(npc: NpcDefinition): { available: number; affordable: number } {
+    const stock = this.cachedVendorStock[npc.id];
+    const coins = this.currentCoinCount();
+    let available = 0;
+    let affordable = 0;
+    for (const item of npc.shopItems ?? []) {
+      const remaining = stock && Object.prototype.hasOwnProperty.call(stock, item.id)
+        ? Math.max(0, stock[item.id] ?? 0)
+        : item.stock;
+      if (remaining !== undefined && remaining <= 0) continue;
+      available += 1;
+      if (coins >= item.price) affordable += 1;
+    }
+    return { available, affordable };
+  }
+
+  private stashStoredItemCount(): number {
+    return this.stashItemsFrom(this.cachedStash).reduce((total, item) => (
+      total + (item.stackable ? item.count : 1)
+    ), 0);
+  }
+
+  private updateNpcServiceDestinations(): void {
+    this.hud.setNpcServiceDestinations(this.npcServiceDestinations(), this.zone);
+  }
+
+  private updateNpcMinimapMarkers(): void {
+    this.hud.setNpcMinimapMarkers(this.npcMinimapMarkers());
+  }
+
+  private updateNpcPrompt(view: NpcView | null): void {
+    if (!view) {
+      if (!this.nearbyNpcPromptKey) return;
+      this.nearbyNpcPromptKey = '';
+      this.hud.hideNpcPrompt();
+      return;
+    }
+    const pendingNpc = this.pendingInteraction?.kind === 'npc' && this.pendingInteraction.id === view.definition.id;
+    const actionLabel = this.npcPromptActionLabel(view.definition, pendingNpc);
+    const promptKey = `${view.definition.id}:${actionLabel}`;
+    if (promptKey === this.nearbyNpcPromptKey) return;
+    this.nearbyNpcPromptKey = promptKey;
+    const prompt: HudNpcPrompt = {
+      id: view.definition.id,
+      name: view.definition.name,
+      title: view.definition.title,
+      kind: view.definition.kind,
+      actionLabel,
+    };
+    this.hud.showNpcPrompt(prompt);
+  }
+
+  private npcPromptActionLabel(definition: NpcDefinition, pending = false): string {
+    return npcActionLabel({
+      kind: definition.kind,
+      zone: definition.zone,
+      quest: this.cachedQuest,
+      pending,
+    });
+  }
+
+  private nearestPromptNpc(): NpcView | null {
+    let nearest: NpcView | null = null;
+    let nearestDistance = Infinity;
+    for (const view of this.npcViews.values()) {
+      if (view.definition.zone !== this.zone) continue;
+      const distance = this.localPlayerDistanceTo(view.definition.position.x, view.definition.position.z);
+      if (distance > view.definition.interactRange + 0.55 || distance >= nearestDistance) continue;
+      nearest = view;
+      nearestDistance = distance;
+    }
+    return nearest;
+  }
+
+  private activeNpcId(): string | null {
+    return this.activeVendorId ?? this.activeStashNpcId ?? this.activeQuestNpcId;
+  }
+
+  private activeNpcView(): NpcView | null {
+    const id = this.activeNpcId();
+    return id ? this.npcViews.get(id) ?? null : null;
+  }
+
+  private selectedNpcIsAvailable(): boolean {
+    if (!this.selectedNpcId) return false;
+    const view = this.npcViews.get(this.selectedNpcId);
+    const available = !!view && view.definition.zone === this.zone;
+    if (!available) this.setSelectedNpc(null);
+    return available;
+  }
+
+  private cycleSelectedNpc(direction: number): void {
+    const id = nextNpcSelectionId(this.npcServiceDestinations(), this.selectedNpcId, this.zone, direction);
+    if (!id || id === this.selectedNpcId) return;
+    this.setSelectedEnemy(null);
+    this.setSelectedNpc(id);
+    this.localAimHoldUntil = 0;
+    this.lastAttackAimPoint = null;
+    this.hudDirty = true;
+    this.sfx.play('ui');
+  }
+
+  private questNavigationTargetNpcId(): string | null {
+    return questNavigationTargetNpcId({
+      quest: this.cachedQuest,
+      zone: this.zone,
+      npcs: this.npcs,
+    });
+  }
+
+  private npcGuideTargetNpcId(sourceKind: NpcDefinition['kind']): string | null {
+    return npcGuideTargetNpcId({
+      sourceKind,
+      zone: this.zone,
+      npcs: this.npcs,
+    });
+  }
+
+  private npcGuideActionLabel(view: NpcView): string {
+    return this.npcGuideTargetNpcId(view.definition.kind)
+      ? view.definition.dialogue?.actionLabel ?? 'Mostrar caminho'
+      : 'Fechar';
+  }
+
+  private updateQuestTrackerTarget(): void {
+    const targetNpcId = this.questNavigationTargetNpcId();
+    const targetNpc = targetNpcId ? this.npcs.find((npc) => npc.id === targetNpcId) : null;
+    this.hud.setQuestTrackerRoute(questTrackerRouteLabel(targetNpc));
+    this.hud.setQuestTrackerActionable(!!targetNpcId);
+  }
+
+  private trackQuestObjective(): void {
+    const id = this.questNavigationTargetNpcId();
+    if (!id) return;
+    this.interactWithNpc(
+      id,
+      true,
+      canStartNpcDestinationAutomove({ keyboardMovementActive: this.isKeyboardMovementActive() }),
+    );
+  }
+
+  private interactWithNpc(id: string, runToNpc = this.isMovementRunning(), allowAutomove = true): void {
+    const view = this.npcViews.get(id);
+    if (!view || view.definition.zone !== this.zone) return;
+    this.setSelectedNpc(id);
+    const p = entityPosition(view.entity);
+    this.setSelectedEnemy(null);
+    this.localAimHoldUntil = 0;
+    this.lastAttackAimPoint = null;
+    if (this.localPlayerDistanceTo(p.x, p.z) > view.definition.interactRange) {
+      if (!allowAutomove) return;
+      this.closeNpcPanels();
+      const approach = this.npcApproachPoint(view);
+      const triggerRange = npcApproachTriggerRange({
+        npc: { x: p.x, z: p.z },
+        approach: { x: approach.x, z: approach.z },
+        interactRange: view.definition.interactRange,
+      });
+      this.beginPendingInteraction({
+        kind: 'npc',
+        id,
+        x: p.x,
+        y: p.y,
+        z: p.z,
+        range: triggerRange,
+        moveX: approach.x,
+        moveY: approach.y,
+        moveZ: approach.z,
+      }, runToNpc);
+      return;
+    }
+    this.cancelAutomoveIntent();
+    this.openNpc(id);
+  }
+
+  private openNpc(id: string): void {
+    const view = this.npcViews.get(id);
+    if (!view) return;
+    if (view.definition.kind === 'vendor') {
+      this.openVendorNpc(view);
+      return;
+    }
+    if (view.definition.kind === 'banker') {
+      this.openBankerNpc(view);
+      return;
+    }
+    if (view.definition.kind === 'quest') {
+      this.openQuestNpc(view);
+      return;
+    }
+    if (view.definition.kind === 'blacksmith') {
+      this.openBlacksmithNpc(view);
+      return;
+    }
+    if (view.definition.kind === 'trainer') {
+      this.openTrainerNpc(view);
+      return;
+    }
+    if (view.definition.kind === 'travel') {
+      this.openTravelNpc(view);
+      return;
+    }
+    if (view.definition.kind === 'jeweler') {
+      this.openJewelerNpc(view);
+      return;
+    }
+    if (view.definition.kind === 'guard') {
+      this.openGuardNpc(view);
+      return;
+    }
+    this.openHealerNpc(view);
+  }
+
+  private openVendorNpc(view: NpcView): void {
+    this.faceLocalPlayerAndNpc(view);
+    this.closeNpcDialogue();
+    this.closeStash();
+    this.activeVendorId = view.definition.id;
+    this.hudDirty = true;
+    this.sfx.play('ui');
+    this.showVendorPanel(view);
+  }
+
+  private openBankerNpc(view: NpcView): void {
+    this.faceLocalPlayerAndNpc(view);
+    this.closeVendor();
+    this.closeNpcDialogue();
+    this.activeStashNpcId = view.definition.id;
+    this.stashTransferLocks.clear();
+    this.hudDirty = true;
+    this.sfx.play('ui');
+    this.showStashPanel(view);
+  }
+
+  private showStashPanel(view: NpcView, status = ''): void {
+    this.hud.showStash({
+      id: view.definition.id,
+      name: view.definition.name,
+      title: view.definition.title,
+      bagItems: this.stashItemsFrom(this.cachedInventory),
+      stashItems: this.stashItemsFrom(this.cachedStash),
+    });
+    if (status) this.hud.setStashStatus(status);
+  }
+
+  private updateActiveStashPanel(status = ''): void {
+    if (!this.activeStashNpcId) return;
+    const view = this.npcViews.get(this.activeStashNpcId);
+    if (!view) return;
+    this.hud.updateStash({
+      id: view.definition.id,
+      name: view.definition.name,
+      title: view.definition.title,
+      bagItems: this.stashItemsFrom(this.cachedInventory),
+      stashItems: this.stashItemsFrom(this.cachedStash),
+    });
+    if (status) this.hud.setStashStatus(status);
+  }
+
+  private refreshActiveStashAfterSnapshot(): void {
+    if (!this.activeStashNpcId) return;
+    let status = '';
+    for (const [key, pending] of this.stashTransferLocks) {
+      if (!this.stashTransferConfirmed(pending)) continue;
+      this.stashTransferLocks.delete(key);
+      this.hud.setStashItemPending(pending.itemId, pending.action, false);
+      status = pending.action === 'deposit' ? 'Item guardado no banco.' : 'Item retirado do banco.';
+    }
+    this.updateActiveStashPanel(status);
+  }
+
+  private showVendorPanel(view: NpcView, status = ''): void {
+    const sellOffer = this.unusedGearSellOffer();
+    this.vendorBuyLocks.clear();
+    this.vendorSellPending = null;
+    this.hud.showVendor({
+      id: view.definition.id,
+      name: view.definition.name,
+      title: view.definition.title,
+      coins: this.currentCoinCount(),
+      items: this.vendorShopItemsFor(view),
+      sellUnusedCount: sellOffer.count,
+      sellUnusedValue: sellOffer.value,
+    });
+    if (status) this.hud.setVendorStatus(status);
+  }
+
+  private refreshActiveVendorPanel(status = ''): void {
+    if (!this.activeVendorId) return;
+    const view = this.npcViews.get(this.activeVendorId);
+    if (view) this.showVendorPanel(view, status);
+  }
+
+  private refreshActiveVendorAfterSnapshot(): void {
+    if (!this.activeVendorId) return;
+    if (this.vendorSellPending) {
+      if (!this.vendorSellConfirmed()) return;
+      this.refreshActiveVendorPanel('Venda concluida.');
+      return;
+    }
+    if (this.vendorBuyLocks.size > 0) {
+      if (!this.vendorBuyConfirmed()) return;
+      this.refreshActiveVendorPanel('Compra concluida.');
+      return;
+    }
+    this.refreshActiveVendorPanel();
+  }
+
+  private vendorBuyConfirmed(): boolean {
+    const coins = this.currentCoinCount();
+    for (const pending of this.vendorBuyLocks.values()) {
+      if (coins <= pending.beforeCoins - pending.price) return true;
+      const stock = this.vendorStockCount(pending.vendorId, pending.itemId);
+      if (pending.beforeStock !== undefined && stock !== undefined && stock < pending.beforeStock) return true;
+    }
+    return false;
+  }
+
+  private vendorSellConfirmed(): boolean {
+    const pending = this.vendorSellPending;
+    if (!pending) return false;
+    const offer = this.unusedGearSellOffer();
+    return this.currentCoinCount() > pending.beforeCoins
+      || offer.count < pending.beforeCount
+      || offer.value < pending.beforeValue;
+  }
+
+  private vendorStockCount(vendorId: string, itemId: string): number | undefined {
+    const stock = this.cachedVendorStock[vendorId];
+    return stock && Object.prototype.hasOwnProperty.call(stock, itemId) ? stock[itemId] : undefined;
+  }
+
+  private vendorShopItemsFor(view: NpcView): VendorShopItem[] {
+    const stock = this.cachedVendorStock[view.definition.id];
+    return (view.definition.shopItems ?? []).map((item) => (
+      stock && Object.prototype.hasOwnProperty.call(stock, item.id)
+        ? { ...item, stock: Math.max(0, stock[item.id] ?? 0) }
+        : item
+    ));
+  }
+
+  private isStashableItem(item: Pick<InventoryItem, 'kind' | 'stackable' | 'equipped'>): boolean {
+    if (item.kind === 'coin') return false;
+    if (item.stackable) return item.kind !== 'sword';
+    return item.kind === 'sword' && !item.equipped;
+  }
+
+  private stashItemsFrom(items: readonly InventoryItem[]): HudStashItem[] {
+    return items
+      .filter((item) => item.count > 0 && this.isStashableItem(item))
+      .map((item) => ({
+        id: item.id,
+        kind: item.kind,
+        name: item.name || itemDisplayName(item),
+        icon: item.icon || itemIconFor(item.kind),
+        count: item.count,
+        stackable: item.stackable,
+        rarity: item.rarity,
+        upgradeLevel: item.upgradeLevel,
+        damageMin: item.damageMin,
+        damageMax: item.damageMax,
+      }));
+  }
+
+  private stashCount(kind: ItemKind): number {
+    return this.cachedStash.find((item) => item.kind === kind && item.stackable)?.count ?? 0;
+  }
+
+  private bagHasItem(itemId: string): boolean {
+    return this.cachedInventory.some((item) => item.id === itemId);
+  }
+
+  private stashHasItem(itemId: string): boolean {
+    return this.cachedStash.some((item) => item.id === itemId);
+  }
+
+  private stashTransferKey(itemId: string, action: 'deposit' | 'withdraw'): string {
+    return `${action}:${itemId}`;
+  }
+
+  private stashTransferConfirmed(pending: StashTransferPending): boolean {
+    if (!pending.stackable) {
+      const bagPresent = this.bagHasItem(pending.itemId);
+      const stashPresent = this.stashHasItem(pending.itemId);
+      if (pending.action === 'deposit') {
+        return (!bagPresent && pending.beforeBagPresent) || (stashPresent && !pending.beforeStashPresent);
+      }
+      return (bagPresent && !pending.beforeBagPresent) || (!stashPresent && pending.beforeStashPresent);
+    }
+    const bagCount = this.stackCount(pending.kind);
+    const stashCount = this.stashCount(pending.kind);
+    if (pending.action === 'deposit') {
+      return bagCount < pending.beforeBagCount || stashCount > pending.beforeStashCount;
+    }
+    return bagCount > pending.beforeBagCount || stashCount < pending.beforeStashCount;
+  }
+
+  private openQuestNpc(view: NpcView): void {
+    this.faceLocalPlayerAndNpc(view);
+    this.closeVendor();
+    this.closeStash();
+    this.activeQuestNpcId = view.definition.id;
+    this.hudDirty = true;
+    this.sfx.play('ui');
+    this.hud.showNpcDialogue({
+      id: view.definition.id,
+      kind: view.definition.kind,
+      name: view.definition.name,
+      title: view.definition.title,
+      greeting: view.definition.dialogue?.greeting ?? '',
+      actionLabel: this.questDialogueActionLabel(view.definition.dialogue?.actionLabel ?? 'Acompanhar'),
+      quest: this.cachedQuest,
+    });
+  }
+
+  private questDialogueActionLabel(fallback: string): string {
+    return buildQuestDialogueActionLabel(this.cachedQuest, this.questNavigationTargetNpcId(), fallback);
+  }
+
+  private activeQuestDialogueActionLabel(): string {
+    const activeNpc = this.activeQuestNpcId ? this.npcViews.get(this.activeQuestNpcId) : null;
+    const fallback = activeNpc?.definition.kind === 'quest'
+      ? activeNpc.definition.dialogue?.actionLabel ?? 'Acompanhar'
+      : 'Acompanhar';
+    return this.questDialogueActionLabel(fallback);
+  }
+
+  private openHealerNpc(view: NpcView): void {
+    this.faceLocalPlayerAndNpc(view);
+    this.closeVendor();
+    this.closeStash();
+    this.activeQuestNpcId = view.definition.id;
+    this.hudDirty = true;
+    this.sfx.play('ui');
+    const action = this.healerActionState();
+    this.hud.showNpcDialogue({
+      id: view.definition.id,
+      kind: view.definition.kind,
+      name: view.definition.name,
+      title: view.definition.title,
+      greeting: view.definition.dialogue?.greeting ?? '',
+      actionLabel: action.label,
+      actionDisabled: action.disabled,
+    });
+    if (action.status) this.hud.setNpcDialogueStatus(action.status);
+  }
+
+  private openBlacksmithNpc(view: NpcView): void {
+    this.faceLocalPlayerAndNpc(view);
+    this.closeVendor();
+    this.closeStash();
+    this.activeQuestNpcId = view.definition.id;
+    this.hudDirty = true;
+    this.sfx.play('ui');
+    const action = this.blacksmithActionState();
+    this.hud.showNpcDialogue({
+      id: view.definition.id,
+      kind: view.definition.kind,
+      name: view.definition.name,
+      title: view.definition.title,
+      greeting: view.definition.dialogue?.greeting ?? '',
+      actionLabel: action.label,
+      actionDisabled: action.disabled,
+    });
+    if (action.status) this.hud.setNpcDialogueStatus(action.status);
+  }
+
+  private openTrainerNpc(view: NpcView): void {
+    this.faceLocalPlayerAndNpc(view);
+    this.closeVendor();
+    this.closeStash();
+    this.activeQuestNpcId = view.definition.id;
+    this.hudDirty = true;
+    this.sfx.play('ui');
+    this.hud.showNpcDialogue({
+      id: view.definition.id,
+      kind: view.definition.kind,
+      name: view.definition.name,
+      title: view.definition.title,
+      greeting: view.definition.dialogue?.greeting ?? '',
+      actionLabel: 'Abrir atributos',
+    });
+  }
+
+  private openTravelNpc(view: NpcView): void {
+    this.faceLocalPlayerAndNpc(view);
+    this.closeVendor();
+    this.closeStash();
+    this.activeQuestNpcId = view.definition.id;
+    this.hudDirty = true;
+    this.sfx.play('ui');
+    this.hud.showNpcDialogue({
+      id: view.definition.id,
+      kind: view.definition.kind,
+      name: view.definition.name,
+      title: view.definition.title,
+      greeting: view.definition.dialogue?.greeting ?? '',
+      actionLabel: view.definition.zone === 'dungeon' ? 'Retornar ao acampamento' : 'Entrar na dungeon',
+    });
+  }
+
+  private openJewelerNpc(view: NpcView): void {
+    this.faceLocalPlayerAndNpc(view);
+    this.closeVendor();
+    this.closeStash();
+    this.activeQuestNpcId = view.definition.id;
+    this.hudDirty = true;
+    this.sfx.play('ui');
+    const action = this.jewelerActionState();
+    this.hud.showNpcDialogue({
+      id: view.definition.id,
+      kind: view.definition.kind,
+      name: view.definition.name,
+      title: view.definition.title,
+      greeting: view.definition.dialogue?.greeting ?? '',
+      actionLabel: action.label,
+      actionDisabled: action.disabled,
+    });
+    if (action.status) this.hud.setNpcDialogueStatus(action.status);
+  }
+
+  private openGuardNpc(view: NpcView): void {
+    this.faceLocalPlayerAndNpc(view);
+    this.closeVendor();
+    this.closeStash();
+    this.activeQuestNpcId = view.definition.id;
+    this.hudDirty = true;
+    this.sfx.play('ui');
+    this.hud.showNpcDialogue({
+      id: view.definition.id,
+      kind: view.definition.kind,
+      name: view.definition.name,
+      title: view.definition.title,
+      greeting: view.definition.dialogue?.greeting ?? '',
+      actionLabel: this.npcGuideActionLabel(view),
+    });
+  }
+
+  private closeNpcPanels(): void {
+    this.trainingNpcId = null;
+    this.hud.setCharacterTrainingContext(null);
+    this.hudDirty = true;
+    this.closeVendor();
+    this.closeStash();
+    this.closeNpcDialogue();
+  }
+
+  private closeVendor(): void {
+    if (!this.activeVendorId) return;
+    this.activeVendorId = null;
+    this.vendorBuyLocks.clear();
+    this.vendorSellPending = null;
+    this.hudDirty = true;
+    this.hud.hideVendor();
+  }
+
+  private closeStash(): void {
+    if (!this.activeStashNpcId) return;
+    this.activeStashNpcId = null;
+    this.stashTransferLocks.clear();
+    this.hudDirty = true;
+    this.hud.hideStash();
+  }
+
+  private closeNpcDialogue(): void {
+    if (!this.activeQuestNpcId) return;
+    this.activeQuestNpcId = null;
+    this.healerServicePending = false;
+    this.blacksmithUpgradePending = false;
+    this.travelServicePending = false;
+    this.jewelerServicePending = false;
+    this.hudDirty = true;
+    this.hud.hideNpcDialogue();
+  }
+
+  private refreshActiveServiceDialogue(player?: EntityState): void {
+    if (!this.activeQuestNpcId) return;
+    const activeNpc = this.npcViews.get(this.activeQuestNpcId);
+    if (activeNpc?.definition.kind === 'healer') this.refreshHealerDialogue(undefined, player);
+  }
+
+  private healerActionState(player = this.latestEntities.get(this.net.playerId)): NpcServiceActionState {
+    const label = `Curar (${HEALER_SERVICE_COST} moedas)`;
+    if (!player) return { label, disabled: true, status: 'Aguardando estado do personagem.' };
+    const mana = player.mana ?? 0;
+    const maxMana = player.maxMana ?? 0;
+    const needsService = player.hp < player.maxHp - 0.5 || mana < maxMana - 0.5;
+    if (!needsService) return { label: 'Vida cheia', disabled: true, status: 'Vida e mana ja estao cheias.' };
+    if (this.currentCoinCount() < HEALER_SERVICE_COST) return { label, disabled: true, status: 'Moedas insuficientes.' };
+    return { label, disabled: false, status: `Custo: ${HEALER_SERVICE_COST} moedas.` };
+  }
+
+  private refreshHealerDialogue(status?: string, player?: EntityState): void {
+    const action = this.healerActionState(player);
+    if (this.healerServicePending && !status) {
+      if (action.disabled && action.label === 'Vida cheia') {
+        this.healerServicePending = false;
+        this.hud.setNpcDialogueActionPending(false);
+        this.hud.updateNpcDialogueActionLabel(action.label, action.disabled);
+        this.hud.setNpcDialogueStatus('Cura aplicada.');
+      }
+      return;
+    }
+    this.hud.updateNpcDialogueActionLabel(action.label, action.disabled);
+    this.hud.setNpcDialogueStatus(status ?? action.status ?? '');
+  }
+
+  private handleHealerService(npcId: string): void {
+    if (this.healerServicePending) return;
+    const action = this.healerActionState();
+    this.hud.updateNpcDialogueActionLabel(action.label, action.disabled);
+    if (action.disabled) {
+      this.hud.setNpcDialogueStatus(action.status ?? '');
+      return;
+    }
+
+    this.healerServicePending = true;
+    this.hud.setNpcDialogueActionPending(true);
+    this.hud.setNpcDialogueStatus('Cura enviada ao servidor.');
+    window.setTimeout(() => {
+      if (!this.healerServicePending) return;
+      this.healerServicePending = false;
+      this.hud.setNpcDialogueActionPending(false);
+      this.refreshHealerDialogue();
+    }, 1200);
+    this.net.send({ type: 'heal-at-npc', entityId: this.net.playerId, npcId });
+  }
+
+  private blacksmithGemKindForEquippedWeapon(): ItemKind | null {
+    const weapon = this.cachedEquippedWeapon;
+    if (!weapon || weapon.kind !== 'sword') return null;
+    if (weapon.upgradeLevel < BLACKSMITH_BLESS_MAX_LEVEL) return 'jewel_bless';
+    if (weapon.upgradeLevel < BLACKSMITH_MAX_LEVEL) return 'jewel_soul';
+    return null;
+  }
+
+  private gemShortName(gem: ItemKind): string {
+    return gem === 'jewel_soul' ? 'Soul' : 'Bless';
+  }
+
+  private gemFullName(gem: ItemKind): string {
+    return gem === 'jewel_soul' ? 'Jewel of Soul' : 'Jewel of Bless';
+  }
+
+  private blacksmithActionState(): NpcServiceActionState {
+    const weapon = this.cachedEquippedWeapon;
+    if (!weapon || weapon.kind !== 'sword') {
+      return { label: 'Equipe espada', disabled: true, status: 'Equipe uma espada para forjar.' };
+    }
+    const gem = this.blacksmithGemKindForEquippedWeapon();
+    if (!gem) return { label: 'Arma no maximo', disabled: true, status: 'Esta arma ja esta no limite.' };
+    const shortName = this.gemShortName(gem);
+    if (this.stackCount(gem) <= 0) {
+      return { label: `Precisa ${shortName}`, disabled: true, status: `Preciso de uma ${this.gemFullName(gem)}.` };
+    }
+    return {
+      label: `Forjar com ${shortName}`,
+      disabled: false,
+      status: `Consome 1 ${this.gemFullName(gem)}.`,
+      item: gem,
+    };
+  }
+
+  private refreshBlacksmithDialogue(status?: string): void {
+    const action = this.blacksmithActionState();
+    this.blacksmithUpgradePending = false;
+    this.hud.setNpcDialogueActionPending(false);
+    this.hud.updateNpcDialogueActionLabel(action.label, action.disabled);
+    this.hud.setNpcDialogueStatus(status ?? action.status ?? '');
+  }
+
+  private handleTrainerService(): void {
+    this.trainingNpcId = this.activeQuestNpcId;
+    const trainer = this.trainingNpcId ? this.npcViews.get(this.trainingNpcId) : null;
+    this.closeNpcDialogue();
+    this.hud.setCharacterTrainingContext(trainer ? `Treino com ${trainer.definition.name}` : null);
+    this.hudDirty = true;
+    this.hud.showCharacterMenu();
+  }
+
+  private handleAllocateAttribute(attribute: PlayerAttribute): void {
+    const trainer = this.trainingNpcId ? this.npcViews.get(this.trainingNpcId) : null;
+    if (trainer && trainer.definition.zone === this.zone) {
+      const p = entityPosition(trainer.entity);
+      const inRange = this.localPlayerDistanceTo(p.x, p.z) <= trainer.definition.interactRange + 0.75;
+      if (inRange) {
+        this.net.send({
+          type: 'train-attribute-at-npc',
+          entityId: this.net.playerId,
+          npcId: trainer.definition.id,
+          attribute,
+        });
+        return;
+      }
+    }
+    this.trainingNpcId = null;
+    this.hud.setCharacterTrainingContext(null);
+    this.hudDirty = true;
+    this.net.send({
+      type: 'allocate-attribute',
+      entityId: this.net.playerId,
+      attribute,
+    });
+  }
+
+  private handleTravelService(npcId: string): void {
+    if (this.travelServicePending) return;
+    this.travelServicePending = true;
+    this.hud.setNpcDialogueActionPending(true);
+    const view = this.npcViews.get(npcId);
+    this.hud.setNpcDialogueStatus(view?.definition.zone === 'dungeon' ? 'Retorno enviado ao servidor.' : 'Passagem enviada ao servidor.');
+    window.setTimeout(() => {
+      this.travelServicePending = false;
+      this.hud.setNpcDialogueActionPending(false);
+    }, 1200);
+    this.net.send({ type: 'travel-at-npc', entityId: this.net.playerId, npcId });
+  }
+
+  private jewelerActionState(): NpcServiceActionState {
+    const blessCount = this.stackCount('jewel_bless');
+    if (blessCount < 3) {
+      return { label: 'Precisa 3 Bless', disabled: true, status: `Bless na mochila: ${blessCount}/3.` };
+    }
+    return { label: 'Transmutar 3 Bless', disabled: false, status: 'Converte 3 Bless em 1 Soul.' };
+  }
+
+  private refreshJewelerDialogue(status?: string): void {
+    const action = this.jewelerActionState();
+    this.jewelerServicePending = false;
+    this.hud.setNpcDialogueActionPending(false);
+    this.hud.updateNpcDialogueActionLabel(action.label, action.disabled);
+    this.hud.setNpcDialogueStatus(status ?? action.status ?? '');
+  }
+
+  private handleJewelerService(npcId: string): void {
+    if (this.jewelerServicePending) return;
+    const action = this.jewelerActionState();
+    this.hud.updateNpcDialogueActionLabel(action.label, action.disabled);
+    if (action.disabled) {
+      this.hud.setNpcDialogueStatus(action.status ?? '');
+      return;
+    }
+    this.jewelerServicePending = true;
+    this.hud.setNpcDialogueActionPending(true);
+    this.hud.setNpcDialogueStatus('Lapidacao enviada ao servidor.');
+    window.setTimeout(() => {
+      if (!this.jewelerServicePending) return;
+      this.jewelerServicePending = false;
+      this.hud.setNpcDialogueActionPending(false);
+      this.refreshJewelerDialogue();
+    }, 1200);
+    this.net.send({ type: 'transmute-at-npc', entityId: this.net.playerId, npcId });
+  }
+
+  private stackCount(kind: ItemKind): number {
+    return this.cachedInventory.find((item) => item.kind === kind && item.stackable)?.count ?? 0;
+  }
+
+  private handleBlacksmithUpgrade(npcId: string): void {
+    if (this.blacksmithUpgradePending) return;
+    const action = this.blacksmithActionState();
+    this.hud.updateNpcDialogueActionLabel(action.label, action.disabled);
+    if (action.disabled || !action.item) {
+      this.hud.setNpcDialogueStatus(action.status ?? '');
+      return;
+    }
+
+    this.blacksmithUpgradePending = true;
+    this.hud.setNpcDialogueActionPending(true);
+    this.hud.setNpcDialogueStatus('Forja enviada ao servidor.');
+    window.setTimeout(() => {
+      if (!this.blacksmithUpgradePending) return;
+      this.blacksmithUpgradePending = false;
+      this.hud.setNpcDialogueActionPending(false);
+      this.refreshBlacksmithDialogue();
+    }, 1200);
+    this.net.send({ type: 'upgrade-at-npc', entityId: this.net.playerId, npcId, item: action.item });
+  }
+
+  private handleVendorBuy(vendorId: string, itemId: string): void {
+    if (vendorId !== this.activeVendorId) return;
+    const view = this.npcViews.get(vendorId);
+    const item = view?.definition.shopItems?.find((candidate) => candidate.id === itemId);
+    if (!item) return;
+    const buyKey = `${vendorId}:${itemId}`;
+    if (this.vendorBuyLocks.has(buyKey)) return;
+    if (this.currentCoinCount() < item.price) {
+      this.sfx.play('ui');
+      this.hud.setVendorStatus('Moedas insuficientes.');
+      return;
+    }
+    this.sfx.play('ui');
+    this.vendorBuyLocks.set(buyKey, {
+      vendorId,
+      itemId,
+      price: item.price,
+      beforeCoins: this.currentCoinCount(),
+      beforeStock: item.stock,
+    });
+    this.hud.setVendorItemPending(itemId, true);
+    window.setTimeout(() => {
+      const stillAwaitingServer = this.vendorBuyLocks.has(buyKey);
+      this.vendorBuyLocks.delete(buyKey);
+      this.hud.setVendorItemPending(itemId, false);
+      if (stillAwaitingServer && this.activeVendorId === vendorId) {
+        this.hud.setVendorStatus('Sem confirmacao do servidor. Aproxime-se do vendedor e tente novamente.');
+      }
+    }, 1200);
+    this.net.send({ type: 'buy-vendor-item', entityId: this.net.playerId, vendorId, itemId });
+    if (item.stock !== undefined) {
+      this.hud.setVendorStatus('Compra enviada. Aguardando estoque do servidor.');
+    } else {
+      this.hud.setVendorStatus('Compra enviada ao servidor.');
+    }
+  }
+
+  private unusedGearSellOffer(): { count: number; value: number } {
+    let count = 0;
+    let value = 0;
+    for (const item of this.cachedInventory) {
+      if (item.kind !== 'sword' || item.stackable || item.equipped) continue;
+      count++;
+      value += this.weaponSellValue(item);
+    }
+    return { count, value };
+  }
+
+  private weaponSellValue(item: InventoryItem): number {
+    const baseByRarity: Record<string, number> = {
+      comum: 18,
+      incomum: 34,
+      raro: 58,
+      epico: 95,
+      lendario: 150,
+    };
+    const base = baseByRarity[item.rarity ?? 'comum'] ?? 18;
+    const upgrade = (item.upgradeLevel ?? 0) * 6;
+    const magic = (item.magicDamageMax ?? 0) * 2;
+    const spread = item.damageMax !== undefined && item.damageMin !== undefined
+      ? Math.max(0, Math.floor((item.damageMax - item.damageMin) / 2))
+      : 0;
+    return Math.max(1, base + upgrade + magic + spread);
+  }
+
+  private handleVendorSellUnused(vendorId: string): void {
+    if (vendorId !== this.activeVendorId) return;
+    const offer = this.unusedGearSellOffer();
+    if (offer.count <= 0 || offer.value <= 0) {
+      this.sfx.play('ui');
+      this.hud.setVendorStatus('Nenhum equipamento sobrando para vender.');
+      return;
+    }
+    this.sfx.play('ui');
+    this.vendorSellPending = {
+      beforeCoins: this.currentCoinCount(),
+      beforeCount: offer.count,
+      beforeValue: offer.value,
+    };
+    this.hud.setVendorSellPending(true);
+    this.hud.setVendorStatus('Venda enviada ao servidor.');
+    window.setTimeout(() => {
+      if (this.activeVendorId === vendorId && this.vendorSellPending) {
+        this.vendorSellPending = null;
+        this.hud.setVendorSellPending(false);
+        this.hud.setVendorStatus('Sem confirmacao do servidor. Aproxime-se do vendedor e tente novamente.');
+      }
+    }, 1200);
+    this.net.send({ type: 'sell-unused-gear-at-vendor', entityId: this.net.playerId, vendorId });
+  }
+
+  private handleStashTransfer(npcId: string, item: HudStashItem, action: 'deposit' | 'withdraw'): void {
+    if (npcId !== this.activeStashNpcId || !this.isStashableItem(item)) return;
+    const available = item.stackable
+      ? (action === 'deposit' ? this.stackCount(item.kind) : this.stashCount(item.kind)) > 0
+      : (action === 'deposit' ? this.bagHasItem(item.id) : this.stashHasItem(item.id));
+    if (!available) {
+      this.sfx.play('ui');
+      this.hud.setStashStatus(action === 'deposit' ? 'Nada desse item na mochila.' : 'Nada desse item no banco.');
+      return;
+    }
+    const key = this.stashTransferKey(item.id, action);
+    if (this.stashTransferLocks.has(key)) return;
+    this.sfx.play('ui');
+    this.stashTransferLocks.set(key, {
+      kind: item.kind,
+      itemId: item.id,
+      stackable: item.stackable,
+      action,
+      beforeBagCount: this.stackCount(item.kind),
+      beforeStashCount: this.stashCount(item.kind),
+      beforeBagPresent: this.bagHasItem(item.id),
+      beforeStashPresent: this.stashHasItem(item.id),
+    });
+    this.hud.setStashItemPending(item.id, action, true);
+    this.hud.setStashStatus(action === 'deposit' ? 'Deposito enviado ao servidor.' : 'Retirada enviada ao servidor.');
+    window.setTimeout(() => {
+      const pending = this.stashTransferLocks.get(key);
+      if (!pending) return;
+      this.stashTransferLocks.delete(key);
+      this.hud.setStashItemPending(item.id, action, false);
+      if (this.activeStashNpcId === npcId) {
+        this.hud.setStashStatus('Sem confirmacao do servidor. Aproxime-se da banqueira e tente novamente.');
+      }
+    }, 1200);
+    this.net.send({
+      type: action === 'deposit' ? 'deposit-stash-item' : 'withdraw-stash-item',
+      entityId: this.net.playerId,
+      npcId,
+      item: item.stackable ? item.kind : undefined,
+      itemId: item.stackable ? undefined : item.id,
+    });
+  }
+
+  private currentCoinCount(): number {
+    return this.cachedInventory.find((item) => item.kind === 'coin' && item.stackable)?.count ?? 0;
+  }
+
+  private faceLocalPlayerAndNpc(npc: NpcView): void {
+    const player = this.views.get(this.net.playerId);
+    if (!player) return;
+    const pp = entityPosition(player.entity);
+    const np = entityPosition(npc.entity);
+    const playerYaw = yawTowardPoint(pp, np);
+    if (playerYaw !== null) setYaw(player.entity, playerYaw);
+    const npcYaw = yawTowardPoint(np, pp);
+    if (npcYaw !== null) setYaw(npc.entity, npcYaw);
   }
 
   private clearViewVisual(view: View): void {
@@ -2416,6 +4706,21 @@ export class Game {
     return id;
   }
 
+  private findNpcNear(point: Vec3Like): string | null {
+    let id: string | null = null;
+    let best = 1.8;
+    for (const [npcId, view] of this.npcViews) {
+      if (view.definition.zone !== this.zone) continue;
+      const p = entityPosition(view.entity);
+      const distance = Math.hypot(p.x - point.x, p.z - point.z);
+      if (distance < best) {
+        best = distance;
+        id = npcId;
+      }
+    }
+    return id;
+  }
+
   private selectedEnemy(entities: readonly EntityState[]): EntityState | undefined {
     if (!this.selectedEnemyId) return undefined;
     const enemy = entities.find((entity) => entity.id === this.selectedEnemyId && entity.kind === 'enemy' && entity.alive);
@@ -2424,14 +4729,202 @@ export class Game {
   }
 
   private setSelectedEnemy(id: string | null): void {
+    if (id) this.setSelectedNpc(null);
     if (id === this.selectedEnemyId) return;
     this.selectedEnemyId = id;
     this.hudDirty = true;
   }
 
+  private setSelectedNpc(id: string | null): void {
+    if (id === this.selectedNpcId) return;
+    this.selectedNpcId = id;
+    this.hudDirty = true;
+  }
+
   private isKeyboardMovementActive(): boolean {
-    const axes = this.input.getMoveAxes();
+    const axes = this.effectiveMoveAxes();
     return axes.strafe !== 0 || axes.forward !== 0;
+  }
+
+  private effectiveMoveAxes(): { strafe: number; forward: number } {
+    const manualAxes = this.input.getMoveAxes();
+    return {
+      strafe: manualAxes.strafe,
+      forward: this.autorunActive && manualAxes.forward === 0 ? 1 : manualAxes.forward,
+    };
+  }
+
+  private isMovementRunning(): boolean {
+    return this.input.running || this.autorunActive;
+  }
+
+  private createNpcApproachPreviewMarker(): pc.Entity {
+    const marker = this.world.createPrimitive(
+      'npc-approach-preview-marker',
+      'torus',
+      this.npcApproachPreviewMaterial(false, 'vendor'),
+      { x: 0, y: 0, z: 0 },
+      { x: 0.52, y: 0.018, z: 0.52 },
+    );
+    marker.enabled = false;
+    return marker;
+  }
+
+  private npcApproachPreviewMaterial(selected: boolean, kind: NpcDefinition['kind']): pc.StandardMaterial {
+    return this.world.material(
+      `npc-approach-preview-${selected ? 'selected' : 'hovered'}-${kind}`,
+      npcServiceAccentHex(kind),
+      { opacity: selected ? 0.72 : 0.52, additive: true, unlit: true },
+    );
+  }
+
+  private updateNpcApproachPreview(): void {
+    const pendingNpcId = this.pendingInteraction?.kind === 'npc' ? this.pendingInteraction.id : null;
+    const id = npcApproachPreviewTargetId({
+      hoveredNpcId: this.hoveredNpcId,
+      selectedNpcId: this.selectedNpcId,
+      pendingNpcId,
+      activeNpcId: this.activeNpcId(),
+      automoveActive: !!this.clickMoveTarget,
+    });
+    if (!id) {
+      this.npcApproachPreviewMarker.enabled = false;
+      return;
+    }
+
+    const view = this.npcViews.get(id);
+    const available = !!view && view.definition.zone === this.zone;
+    const distanceToNpc = view ? this.localPlayerDistanceTo(view.definition.position.x, view.definition.position.z) : Infinity;
+    if (!view || !shouldShowNpcApproachPreview({
+      targetAvailable: available,
+      distanceToNpc,
+      interactRange: view.definition.interactRange,
+    })) {
+      this.npcApproachPreviewMarker.enabled = false;
+      return;
+    }
+
+    const approach = this.npcApproachPoint(view);
+    const player = this.views.get(this.net.playerId)?.entity;
+    const selected = this.selectedNpcId === id;
+    const pulse = 1 + (Math.sin(this.elapsed * 4.8) + 1) * (selected ? 0.075 : 0.055);
+    const baseScale = selected ? 0.66 : 0.54;
+    this.npcApproachPreviewMarker.enabled = true;
+    if (this.npcApproachPreviewMarker.render) {
+      this.npcApproachPreviewMarker.render.material = this.npcApproachPreviewMaterial(selected, view.definition.kind);
+    }
+    this.npcApproachPreviewMarker.setLocalPosition(approach.x, approach.y + 0.09, approach.z);
+    this.npcApproachPreviewMarker.setLocalScale(baseScale * pulse, 0.018, baseScale * pulse);
+    if (!player) return;
+
+    const playerPosition = entityPosition(player);
+    const path = findLocalPath(
+      { x: playerPosition.x, y: 0, z: playerPosition.z },
+      { x: approach.x, y: approach.y, z: approach.z },
+      this.localNavigationBlockers(),
+      this.moveBound,
+    ).map((point) => ({
+      x: point.x,
+      y: this.heightForMove(point.x, point.z),
+      z: point.z,
+    }));
+    const samples = samplePathGuidancePoints(
+      { x: playerPosition.x, y: playerPosition.y, z: playerPosition.z },
+      path.length > 0 ? path : [approach],
+      PATH_GUIDANCE_SPACING,
+      NPC_APPROACH_PREVIEW_MAX_POINTS,
+    );
+    this.renderPathGuidanceSamples(samples, 'preview', view.definition.kind);
+  }
+
+  private updatePathGuidance(): void {
+    const target = this.clickMoveTarget;
+    const player = this.views.get(this.net.playerId);
+    if (!target || !player) {
+      this.hidePathGuidance();
+      return;
+    }
+
+    const playerPosition = entityPosition(player.entity);
+    const samples = samplePathGuidancePoints(
+      { x: playerPosition.x, y: playerPosition.y, z: playerPosition.z },
+      target.path,
+      PATH_GUIDANCE_SPACING,
+      PATH_GUIDANCE_MAX_POINTS,
+    );
+    if (samples.length === 0) {
+      this.hidePathGuidance();
+      return;
+    }
+
+    const kind: PathGuidanceKind = this.pendingInteraction ? 'interact' : 'move';
+    const npcKind = this.pendingInteraction?.kind === 'npc'
+      ? this.npcViews.get(this.pendingInteraction.id)?.definition.kind
+      : undefined;
+    this.renderPathGuidanceSamples(samples, kind, npcKind);
+  }
+
+  private renderPathGuidanceSamples(
+    samples: readonly PathGuidancePoint[],
+    kind: PathGuidanceKind,
+    npcKind?: NpcDefinition['kind'],
+  ): void {
+    const material = this.pathGuidanceMaterial(kind, npcKind);
+    for (let i = 0; i < samples.length; i++) {
+      const sample = samples[i];
+      const marker = this.ensurePathGuidanceMarker(i);
+      marker.enabled = true;
+      if (marker.render) marker.render.material = material;
+      const wave = (Math.sin(this.elapsed * 5.2 + i * 0.72) + 1) * 0.5;
+      const baseScale = sample.terminal
+        ? kind === 'interact' ? 0.48 : kind === 'preview' ? 0.32 : 0.4
+        : (kind === 'preview' ? 0.13 : 0.18) + Math.min(i, 5) * (kind === 'preview' ? 0.018 : 0.025);
+      const scale = baseScale * (1 + wave * (kind === 'preview' ? 0.16 : 0.22));
+      marker.setLocalPosition(sample.x, sample.y + (sample.terminal ? 0.085 : 0.065), sample.z);
+      marker.setLocalScale(scale, 0.018, scale);
+    }
+
+    for (let i = samples.length; i < this.pathGuidanceMarkers.length; i++) {
+      this.pathGuidanceMarkers[i].enabled = false;
+    }
+  }
+
+  private ensurePathGuidanceMarker(index: number): pc.Entity {
+    let marker = this.pathGuidanceMarkers[index];
+    if (!marker) {
+      marker = this.world.createPrimitive(
+        'path-guidance-marker',
+        'torus',
+        this.pathGuidanceMaterial('move'),
+        { x: 0, y: 0, z: 0 },
+        { x: 0.2, y: 0.018, z: 0.2 },
+      );
+      marker.enabled = false;
+      this.pathGuidanceMarkers[index] = marker;
+    }
+    return marker;
+  }
+
+  private pathGuidanceMaterial(kind: PathGuidanceKind, npcKind?: NpcDefinition['kind']): pc.StandardMaterial {
+    if (kind === 'interact') {
+      return this.world.material(
+        `path-guidance-interact-${npcKind ?? 'generic'}`,
+        npcKind ? npcServiceAccentHex(npcKind) : 0xffd874,
+        { opacity: 0.78, additive: true, unlit: true },
+      );
+    }
+    if (kind === 'preview') {
+      return this.world.material(
+        `path-guidance-preview-${npcKind ?? 'generic'}`,
+        npcKind ? npcServiceAccentHex(npcKind) : 0xd7e3ef,
+        { opacity: 0.44, additive: true, unlit: true },
+      );
+    }
+    return this.world.material('path-guidance-move', 0x6cff8a, { opacity: 0.66, additive: true, unlit: true });
+  }
+
+  private hidePathGuidance(): void {
+    for (const marker of this.pathGuidanceMarkers) marker.enabled = false;
   }
 
   private updateCameraAndMarker(dt: number): void {
@@ -2448,14 +4941,26 @@ export class Game {
       this.markerTimer -= dt;
       const t = Math.max(this.markerTimer / MARKER_DURATION, 0);
       this.targetMarker.enabled = true;
-      const scale = 0.58 * (1 + (1 - t) * 0.8);
+      const baseScale = this.targetMarkerKind === 'interact' ? 0.72 : 0.58;
+      const pulse = this.targetMarkerKind === 'interact' ? 1.08 : 0.8;
+      const scale = baseScale * (1 + (1 - t) * pulse);
       this.targetMarker.setLocalScale(scale, 0.025, scale);
     } else {
       this.targetMarker.enabled = false;
     }
   }
 
-  private showMarker(x: number, y: number, z: number): void {
+  private setTargetMarkerKind(kind: TargetMarkerKind): void {
+    if (kind === this.targetMarkerKind) return;
+    this.targetMarkerKind = kind;
+    const material = kind === 'interact'
+      ? this.world.material('target-marker-interact', 0xffd874, { opacity: 0.9, additive: true, unlit: true })
+      : this.world.material('target-marker-move', 0x6cff8a, { opacity: 0.86, additive: true, unlit: true });
+    if (this.targetMarker.render) this.targetMarker.render.material = material;
+  }
+
+  private showMarker(x: number, y: number, z: number, kind: TargetMarkerKind): void {
+    this.setTargetMarkerKind(kind);
     this.targetMarker.setLocalPosition(x, y + 0.05, z);
     this.markerTimer = MARKER_DURATION;
   }
@@ -2465,10 +4970,12 @@ export class Game {
     this.zone = zone;
     // Trocar de zona teleporta o jogador: trajeto de clique, interacao pendente
     // e comando de move enfileirado morrem aqui.
-    this.clickMoveTarget = null;
-    this.pendingInteraction = null;
-    this.queuedMoveCommand = null;
+    this.autorunActive = false;
+    this.cancelAutomoveIntent();
+    this.closeNpcPanels();
     this.world.setZone(zone);
+    this.hud.showZoneBanner(zone);
+    this.updateNpcServiceDestinations();
   }
 
   private readRenderQualityMode(): RenderQualityMode {

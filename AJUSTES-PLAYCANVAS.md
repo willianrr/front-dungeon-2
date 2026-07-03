@@ -351,6 +351,18 @@ enquanto o `aimLocalPlayerDuringAttack` girava para o alvo (rate 18).
   é mais aplicado ao player local durante `attack` (nem com predição de movimento
   ativa) — quem gira no ataque é só o `aimLocalPlayerDuringAttack`, eliminando a
   briga que deixava o boneco olhando errado.
+- **Front — predição com colisão (`resolveLocalCollision` →
+  `resolveCircularCollisions` em `MovementCollision.ts`):** bug visto em
+  vídeo: perto de árvores o herói avançava e era TELEPORTADO de volta
+  (rubber-band). Causa: a predição andava em linha reta ATRAVESSANDO blockers,
+  enquanto o A* do servidor contornava — divergência >3 un disparava o snap de
+  correção. A predição (teclado E clique) agora aplica o MESMO empurrão radial
+  do `resolve()` do servidor usando os blockers do worldgen compartilhado +
+  NPCs + cenários de serviço (`localNavigationBlockers`): desliza em volta de
+  árvores/pedras e a divergência some. Yaw da predição: encara sempre a
+  **intenção/destino** (`ClientMovementPredictor`/`updateClickMovement`), que é
+  estável — encarar o deslocamento de todo frame girava o herói no deslize
+  (micro-vaivém predição/correção).
 - **Front — janela de retenção da mira (`ATTACK_AIM_HOLD_SECONDS`, 1,2 s):** o
   servidor alterna `attack → idle (curto) → attack` entre golpes (o `actionTimer`
   expira a ~90% do cooldown). Nesse idle a condição `action === 'attack'` caía e o
@@ -505,6 +517,20 @@ binário (msgpack/protobuf) e delta por entidade com keyframes.
   70) — o servidor manda ainda menos entidades por snapshot, casado com o raio
   visível (~40) + margem para spawn fora da tela. ⚠️ Recompilar o Go.
 
+### Cursores customizados + botão direito
+
+- **Cursor = manopla, na página INTEIRA** (`src/ui/cursor.ts`, instalado no boot
+  pelo `main.ts` — vale já na tela de login, loading, HUD e menus): uma regra
+  `* { cursor: inherit !important }` vence qualquer `cursor:` do CSS, então todo
+  elemento herda do `<html>`. Vira a **manopla dourada** (`click_press.png`)
+  quando o ponteiro está sobre inimigo VIVO (mesmo picking do clique de ataque,
+  via `setAttackCursor`). Os PNGs são 250px — acima do limite de cursor dos
+  navegadores (~128px) — então são reduzidos em runtime (canvas 34px → data
+  URL). Hotspot na ponta do dedo (`CURSOR_HOTSPOT_*`). Tolerante a falha: sem
+  os arquivos, fica o cursor do sistema.
+- **Menu de contexto bloqueado** na página inteira (`contextmenu` →
+  `preventDefault` no Input), padrão de ARPG web.
+
 ### Idle de verdade: skip de snapshot idêntico + reenvio lento sob demanda
 
 Observado no DevTools: parado e sozinho, o cliente recebia 2 KB a 5 Hz (piso de
@@ -519,6 +545,25 @@ Correções:
 - **Reenvio de estado lento** (inventário/quest/equipamento): de 2 s fixos para
   **10 s OU imediatamente após descarte real de snapshot** (contador cumulativo
   `totalDroppedSnapshots` por sessão) — o 14 KB periódico praticamente some.
+
+### Moonwalk — causa raiz encontrada (facing embutido nos clipes do GLB)
+
+Depois de varias tentativas de corrigir o "andar de lado" pelo yaw da ENTIDADE,
+a causa real estava DENTRO do asset: o `warrior.glb` tem 3 rigs e os clipes
+foram exportados (IA/Meshy) com **facings diferentes gravados na rotação do
+`mixamorig:Hips`** — ANDANDO e um PARADO em ~0°, mas **ATACANDO e o outro
+PARADO em −43°**. Trocar de animação girava o corpo POR DENTRO da entidade
+(o `prepareGameplayTrack` congelava só a POSIÇÃO da raiz, não a rotação).
+Isso explica retroativamente o moonwalk do remoto E o ataque "de lado".
+
+**⚠️ Fix AINDA NÃO PORTADO para este repo.** O plano (validado numericamente
+contra o GLB em protótipo): no load, alinhar o twist Y da 1ª chave de rotação
+do quadril de cada clipe ao do clipe de ANDAR por pré-multiplicação de
+quaternion (giro em Y no espaço do pai), preservando o balanço natural — todos
+os clipes passariam a −0,31° (referência), normas = 1.0000. Hoje o
+`prepareGameplayTrack` (Game.ts) congela só a POSIÇÃO da raiz; a normalização
+do twist (ex.: `alignTrackRootTwist`) precisa ser implementada ao trocar/reusar
+clipes com facing gravado.
 
 ### Zonas por jogador (dungeon deixa de teleportar todo mundo)
 

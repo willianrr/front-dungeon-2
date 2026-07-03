@@ -20,11 +20,14 @@ function emptySnapshot(): WorldSnapshot {
     entities: [],
     loot: [],
     chests: [],
+    npcs: [],
     inventory: [],
+    stash: [],
     equipment: { head: null, chest: null, hands: null, legs: null, feet: null, weapon: null, offhand: null, trinket: null },
     equippedWeapon: null,
     combatEvents: [],
-    quest: { title: '', objective: '', progress: 0, goal: 0, completed: false },
+    quest: { title: '', objective: '', progress: 0, goal: 0, accepted: false, completed: false, rewardClaimed: false, rewardText: '' },
+    vendorStock: {},
   };
 }
 

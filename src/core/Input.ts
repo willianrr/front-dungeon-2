@@ -23,6 +23,10 @@ export class Input {
   private characterToggleQueued = false;
   private sfxMuteToggleQueued = false;
   private qualityToggleQueued = false;
+  private autorunToggleQueued = false;
+  private npcInteractQueued = false;
+  private npcCycleQueued = 0;
+  private cancelQueued = false;
   private movementChangedQueued = false;
   private readonly movementKeys = new Set<string>();
 
@@ -61,6 +65,10 @@ export class Input {
         this.movementChangedQueued = true;
       }
       if (e.repeat) return;
+      if (e.code === 'Tab' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        this.npcCycleQueued = e.shiftKey ? -1 : 1;
+        e.preventDefault();
+      }
       if (e.code === 'Space') {
         this.jumpQueued = true;
         e.preventDefault();
@@ -71,8 +79,20 @@ export class Input {
       if (e.code === 'KeyI') this.inventoryToggleQueued = true;
       if (e.code === 'KeyC') this.characterToggleQueued = true;
       if (e.code === 'KeyM') this.sfxMuteToggleQueued = true;
+      if (e.code === 'Escape') {
+        this.cancelQueued = true;
+        e.preventDefault();
+      }
+      if (e.code === 'KeyR' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        this.npcInteractQueued = true;
+        e.preventDefault();
+      }
       if (e.code === 'KeyF' && !e.ctrlKey && !e.metaKey && !e.altKey) {
         this.qualityToggleQueued = true;
+        e.preventDefault();
+      }
+      if (e.code === 'NumLock') {
+        this.autorunToggleQueued = true;
         e.preventDefault();
       }
     });
@@ -152,6 +172,30 @@ export class Input {
   takeQualityToggle(): boolean {
     const queued = this.qualityToggleQueued;
     this.qualityToggleQueued = false;
+    return queued;
+  }
+
+  takeAutorunToggle(): boolean {
+    const queued = this.autorunToggleQueued;
+    this.autorunToggleQueued = false;
+    return queued;
+  }
+
+  takeCancel(): boolean {
+    const queued = this.cancelQueued;
+    this.cancelQueued = false;
+    return queued;
+  }
+
+  takeNpcInteract(): boolean {
+    const queued = this.npcInteractQueued;
+    this.npcInteractQueued = false;
+    return queued;
+  }
+
+  takeNpcCycle(): number {
+    const queued = this.npcCycleQueued;
+    this.npcCycleQueued = 0;
     return queued;
   }
 

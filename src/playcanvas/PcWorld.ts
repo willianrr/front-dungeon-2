@@ -185,7 +185,13 @@ export function lerpEntityPosition(entity: pc.Entity, target: Vec3Like, alpha: n
 }
 
 export function entityYaw(entity: pc.Entity): number {
-  return entity.getLocalEulerAngles().y * RAD;
+  // getLocalEulerAngles().y "dobra" alem de +-90 graus: um yaw puro de 160
+  // decompoe como euler (180, 20, 180), entao ler .y devolveria 20. Isso fazia
+  // NPCs com rotacao base > 90 girarem para o lado errado e nunca voltarem.
+  // Extrai o yaw completo do quaternion (direcao do +Z local no plano XZ),
+  // na mesma convencao de setYaw (atan2(dx, dz)).
+  const q = entity.getLocalRotation();
+  return Math.atan2(2 * (q.x * q.z + q.w * q.y), 1 - 2 * (q.x * q.x + q.y * q.y));
 }
 
 export function setEntityVisible(entity: pc.Entity, visible: boolean): void {

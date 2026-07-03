@@ -100,7 +100,49 @@ export interface QuestState {
   objective: string;
   progress: number;
   goal: number;
+  accepted: boolean;
   completed: boolean;
+  rewardClaimed: boolean;
+  rewardText?: string;
+}
+
+export type NpcKind = 'vendor' | 'quest' | 'healer' | 'blacksmith' | 'trainer' | 'travel' | 'jeweler' | 'banker' | 'guard';
+
+export interface NpcDialogueState {
+  greeting: string;
+  actionLabel: string;
+}
+
+export interface NpcShopItemState {
+  id: string;
+  kind: ItemKind;
+  price: number;
+  count?: number;
+  stock?: number;
+  rarity?: ItemRarity;
+  upgradeLevel?: number;
+  glowGem?: WeaponGlowGem;
+  element?: WeaponElement;
+  damageMin?: number;
+  damageMax?: number;
+  magicDamageMin?: number;
+  magicDamageMax?: number;
+}
+
+export interface NpcState {
+  id: string;
+  kind: NpcKind;
+  name: string;
+  title: string;
+  zone: WorldZone;
+  position: V3;
+  rotationY: number;
+  modelUrl: string;
+  interactRange: number;
+  clickRadius: number;
+  collisionRadius: number;
+  shopItems?: NpcShopItemState[];
+  dialogue?: NpcDialogueState;
 }
 
 /** Atributos distribuídos pelo jogador no painel de personagem. */
@@ -218,12 +260,16 @@ export interface WorldSnapshot {
   entities: EntityState[];
   loot: LootState[];
   chests: ChestState[];
+  /** Catalogo de NPCs. Em runtime pode chegar `null` quando nao mudou (delta). */
+  npcs: NpcState[];
   /**
    * Inventário do jogador. O servidor só (re)envia este array quando muda (delta) ou
    * periodicamente; quando não muda manda `null` e o cliente reaproveita o cache.
    * (em runtime pode chegar `null`; o cliente injeta o cache antes de consumir.)
    */
   inventory: InventoryItem[];
+  /** Banco do jogador. DELTA: em runtime pode chegar `null` (= nao mudou). */
+  stash: InventoryItem[];
   /**
    * Slots de equipamento. DELTA igual ao inventário: em runtime pode chegar
    * `null` (= não mudou) e o cliente injeta o cache antes de consumir. Quando
@@ -235,6 +281,7 @@ export interface WorldSnapshot {
   combatEvents: CombatEvent[];
   /** Quest guia. DELTA: em runtime pode chegar `null` (= não mudou). */
   quest: QuestState;
+  vendorStock: Record<string, Record<string, number>>;
 }
 
 /** Comandos que o cliente envia ao servidor (intencoes do jogador). */
@@ -246,6 +293,17 @@ export type Command =
   | { type: 'collect'; entityId: string; lootId: string }
   | { type: 'open-chest'; entityId: string; chestId: string }
   | { type: 'equip-item'; entityId: string; itemId: string }
+  | { type: 'buy-vendor-item'; entityId: string; vendorId: string; itemId: string }
+  | { type: 'sell-unused-gear-at-vendor'; entityId: string; vendorId: string }
+  | { type: 'deposit-stash-item'; entityId: string; npcId: string; item?: ItemKind; itemId?: string }
+  | { type: 'withdraw-stash-item'; entityId: string; npcId: string; item?: ItemKind; itemId?: string }
+  | { type: 'accept-quest'; entityId: string; npcId: string }
+  | { type: 'claim-quest-reward'; entityId: string; npcId: string }
+  | { type: 'heal-at-npc'; entityId: string; npcId: string }
+  | { type: 'upgrade-at-npc'; entityId: string; npcId: string; item: ItemKind }
+  | { type: 'travel-at-npc'; entityId: string; npcId: string }
+  | { type: 'train-attribute-at-npc'; entityId: string; npcId: string; attribute: PlayerAttribute }
+  | { type: 'transmute-at-npc'; entityId: string; npcId: string }
   | { type: 'unequip-slot'; entityId: string; slot: EquipmentSlot }
   | { type: 'use-item'; entityId: string; item: ItemKind }
   | { type: 'allocate-attribute'; entityId: string; attribute: PlayerAttribute }

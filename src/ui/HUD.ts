@@ -1,7 +1,12 @@
 import { GEM_DEFINITIONS, GEM_GLOW_COLORS, ITEM_ICON_URLS, RARITY_COLORS, isGemKind } from '../shared/itemMeta';
 import type { PlayerProfile } from '../shared/playerProfile';
-import type { EntityState, EquipmentSlot, InventoryItem, ItemKind, PlayerAttribute, WorldSnapshot } from '../shared/types';
+import type { EntityState, EquipmentSlot, InventoryItem, ItemKind, ItemRarity, NpcKind, PlayerAttribute, QuestState, WorldSnapshot, WorldZone } from '../shared/types';
 import type { WorldData } from '../shared/worldgen';
+import { npcMinimapMarkerVisualState, type NpcMinimapMarkerVisualState } from '../core/NpcMinimapMarker';
+import { npcServiceDestinationSubtitle } from '../core/NpcServiceDirectory';
+import { npcServiceGlyph, npcServiceRoleLabel } from '../core/NpcServiceIdentity';
+import { npcServiceAccentCss } from '../core/NpcServiceVisual';
+import { vendorOfferModel, vendorRecommendedItemId } from '../core/VendorOffer';
 
 // HUD em DOM sobreposto ao canvas. Mostra nivel, vida, experiencia, quest,
 // mochila, personagem e tela de morte.
@@ -74,6 +79,110 @@ const MINIMAP_MAX_DPR = 2;
 type RenderQualityLevel = 'high' | 'medium' | 'low';
 type RenderQualityMode = RenderQualityLevel | 'auto';
 
+export interface HudVendorItem {
+  id: string;
+  kind: ItemKind;
+  name: string;
+  icon: string;
+  price: number;
+  rarity?: ItemRarity;
+  stock?: number;
+  tagline?: string;
+}
+
+export interface HudVendorPanel {
+  id: string;
+  name: string;
+  title: string;
+  coins: number;
+  items: HudVendorItem[];
+  sellUnusedCount?: number;
+  sellUnusedValue?: number;
+}
+
+export interface HudStashItem {
+  id: string;
+  kind: ItemKind;
+  name: string;
+  icon: string;
+  count: number;
+  stackable: boolean;
+  rarity?: ItemRarity;
+  upgradeLevel?: number;
+  damageMin?: number;
+  damageMax?: number;
+}
+
+export interface HudStashPanel {
+  id: string;
+  name: string;
+  title: string;
+  bagItems: HudStashItem[];
+  stashItems: HudStashItem[];
+}
+
+export interface HudMinimapNpc {
+  id: string;
+  name: string;
+  zone: WorldZone;
+  position: { x: number; z: number };
+  kind: NpcKind;
+  marker?: string;
+  active?: boolean;
+  pending?: boolean;
+  selected?: boolean;
+  objective?: boolean;
+  hovered?: boolean;
+}
+
+export interface HudNpcDestination {
+  id: string;
+  name: string;
+  title: string;
+  kind: NpcKind;
+  zone: WorldZone;
+  marker: string;
+  statusLabel?: string;
+  distance?: number;
+  distanceLabel?: string;
+  selected?: boolean;
+  active?: boolean;
+  nearby?: boolean;
+  pending?: boolean;
+  hovered?: boolean;
+  objective?: boolean;
+  priority?: number;
+}
+
+export interface HudNpcDialoguePanel {
+  id: string;
+  kind: NpcKind;
+  name: string;
+  title: string;
+  greeting: string;
+  actionLabel: string;
+  actionDisabled?: boolean;
+  quest?: QuestState;
+}
+
+export interface HudNpcPrompt {
+  id: string;
+  name: string;
+  title: string;
+  kind: NpcKind;
+  actionLabel: string;
+}
+
+export interface HudNpcTarget {
+  id: string;
+  kind: NpcKind;
+  name: string;
+  marker: string;
+  subtitle: string;
+  status: string;
+  tone: string;
+}
+
 const TEMPLATE = `
   <div class="hotbar" aria-label="Atalhos do teclado">
     <div class="hotbar-slot hotbar-equipment-slot" id="hotbar-weapon-slot"><span>Espada</span></div>
@@ -134,6 +243,7 @@ const TEMPLATE = `
       <div class="unit-heading">
         <span class="target-name" id="target-name">Zumbi</span>
       </div>
+      <small class="target-subtitle" id="target-subtitle" hidden></small>
       <div class="bar hp unit-bar">
         <div class="bar-fill" id="target-hp-fill"></div>
         <span class="bar-text" id="target-hp-text">0 / 0</span>
@@ -145,11 +255,17 @@ const TEMPLATE = `
     </div>
   </div>
 
-  <div class="quest-panel">
+  <div class="quest-panel" id="quest-panel" hidden>
     <span class="panel-kicker" id="zone-name">Terras de Aranna</span>
     <h2 id="quest-title">A Escurid&atilde;o Sob Aranna</h2>
     <p id="quest-objective"></p>
+    <small class="quest-route" id="quest-route" hidden></small>
     <div class="quest-progress"><div id="quest-progress-fill"></div></div>
+  </div>
+
+  <div class="zone-banner" id="zone-banner" aria-hidden="true">
+    <span id="zone-banner-kicker">Area descoberta</span>
+    <strong id="zone-banner-name">Terras de Aranna</strong>
   </div>
 
   <div class="minimap-panel" aria-hidden="true">
@@ -157,6 +273,71 @@ const TEMPLATE = `
   </div>
 
   <div class="quality-chip" id="quality-chip" aria-hidden="true">AUTO</div>
+
+  <div class="npc-service-panel" id="npc-service-panel" aria-hidden="true">
+    <div class="npc-service-heading">
+      <span>Servicos</span>
+      <strong id="npc-service-zone">Terras de Aranna</strong>
+    </div>
+    <div class="npc-service-items" id="npc-service-items"></div>
+  </div>
+
+  <div class="npc-prompt" id="npc-prompt" aria-hidden="true">
+    <span id="npc-prompt-action">Loja</span>
+    <strong id="npc-prompt-name">Mercador</strong>
+    <small id="npc-prompt-title">NPC</small>
+  </div>
+
+  <div class="npc-dialogue hud-window" id="npc-dialogue" aria-hidden="true">
+    <button class="npc-dialogue-close" id="npc-dialogue-close" type="button" aria-label="Fechar conversa">X</button>
+    <div class="npc-dialogue-heading">
+      <span id="npc-dialogue-title">Missao</span>
+      <strong id="npc-dialogue-name">Guia</strong>
+    </div>
+    <p id="npc-dialogue-greeting"></p>
+    <div class="npc-dialogue-quest" id="npc-dialogue-quest">
+      <strong id="npc-dialogue-quest-title"></strong>
+      <small id="npc-dialogue-objective"></small>
+      <div class="npc-dialogue-progress"><div id="npc-dialogue-progress-fill"></div></div>
+    </div>
+    <div class="npc-dialogue-reward" id="npc-dialogue-reward" hidden>
+      <span>Recompensa</span>
+      <strong id="npc-dialogue-reward-text">90 moedas | 2 pocoes | 1 mana | 120 EXP</strong>
+    </div>
+    <div class="npc-dialogue-status" id="npc-dialogue-status" hidden></div>
+    <button class="npc-dialogue-action" id="npc-dialogue-action" type="button">Acompanhar</button>
+  </div>
+
+  <div class="vendor-panel hud-window" id="vendor-panel" aria-hidden="true">
+    <button class="vendor-close" id="vendor-close" type="button" aria-label="Fechar loja">X</button>
+    <div class="vendor-heading">
+      <span id="vendor-title">Loja</span>
+      <strong id="vendor-name">Mercador</strong>
+      <small id="vendor-coins">0 moedas</small>
+    </div>
+    <div class="vendor-items" id="vendor-items"></div>
+    <div class="vendor-status" id="vendor-status" hidden></div>
+  </div>
+
+  <div class="stash-panel hud-window" id="stash-panel" aria-hidden="true">
+    <button class="stash-close" id="stash-close" type="button" aria-label="Fechar banco">X</button>
+    <div class="stash-heading">
+      <span id="stash-title">Banco</span>
+      <strong id="stash-name">Banqueira</strong>
+      <small>Consumiveis e joias</small>
+    </div>
+    <div class="stash-columns">
+      <section class="stash-column">
+        <span>Mochila</span>
+        <div class="stash-items" id="stash-bag-items"></div>
+      </section>
+      <section class="stash-column">
+        <span>Banco</span>
+        <div class="stash-items" id="stash-bank-items"></div>
+      </section>
+    </div>
+    <div class="stash-status" id="stash-status" hidden></div>
+  </div>
 
   <div class="game-menu hud-window" id="game-menu" aria-hidden="true">
     <button class="game-menu-close" id="game-menu-close" type="button" aria-label="Fechar menu">X</button>
@@ -182,6 +363,20 @@ export class HUD {
   onUseItem: (kind: ItemKind) => void = () => {};
   onUnequipSlot: (slot: EquipmentSlot) => void = () => {};
   onAllocateAttribute: (attribute: PlayerAttribute) => void = () => {};
+  onVendorBuy: (vendorId: string, itemId: string) => void = () => {};
+  onVendorSellUnused: (vendorId: string) => void = () => {};
+  onVendorClose: () => void = () => {};
+  onStashDeposit: (npcId: string, item: HudStashItem) => void = () => {};
+  onStashWithdraw: (npcId: string, item: HudStashItem) => void = () => {};
+  onStashClose: () => void = () => {};
+  onNpcDestination: (npcId: string) => void = () => {};
+  onNpcDestinationHover: (npcId: string | null) => void = () => {};
+  onNpcTargetInteract: (npcId: string) => void = () => {};
+  onNpcTargetHover: (npcId: string | null) => void = () => {};
+  onQuestTracker: () => void = () => {};
+  onQuestTrackerHover: (hovered: boolean) => void = () => {};
+  onNpcDialogueClose: () => void = () => {};
+  onNpcDialogueAction: (npcId: string) => void = () => {};
 
   private readonly levelEl: HTMLElement;
   private readonly playerName: HTMLElement;
@@ -192,6 +387,7 @@ export class HUD {
   private readonly xpFill: HTMLElement;
   private readonly targetFrame: HTMLElement;
   private readonly targetName: HTMLElement;
+  private readonly targetSubtitle: HTMLElement;
   private readonly targetLevel: HTMLElement;
   private readonly targetHpFill: HTMLElement;
   private readonly targetHpText: HTMLElement;
@@ -200,9 +396,14 @@ export class HUD {
   private readonly targetManaText: HTMLElement;
   private readonly deathOverlay: HTMLElement;
   private readonly zoneName: HTMLElement;
+  private readonly questPanel: HTMLElement;
   private readonly questTitle: HTMLElement;
   private readonly questObjective: HTMLElement;
+  private readonly questRoute: HTMLElement;
   private readonly questProgress: HTMLElement;
+  private readonly zoneBanner: HTMLElement;
+  private readonly zoneBannerKicker: HTMLElement;
+  private readonly zoneBannerName: HTMLElement;
   private readonly hotbarWeaponSlot: HTMLElement;
   private readonly hotbarOffhandSlot: HTMLElement;
   private readonly hotbarHealthPotionSlot: HTMLElement;
@@ -215,6 +416,40 @@ export class HUD {
   private readonly minimapCanvas: HTMLCanvasElement;
   private readonly minimapContext: CanvasRenderingContext2D | null;
   private readonly qualityChip: HTMLElement;
+  private readonly npcServicePanel: HTMLElement;
+  private readonly npcServiceZone: HTMLElement;
+  private readonly npcServiceItems: HTMLElement;
+  private readonly npcPrompt: HTMLElement;
+  private readonly npcPromptAction: HTMLElement;
+  private readonly npcPromptName: HTMLElement;
+  private readonly npcPromptTitle: HTMLElement;
+  private readonly npcDialogue: HTMLElement;
+  private readonly npcDialogueClose: HTMLButtonElement;
+  private readonly npcDialogueTitle: HTMLElement;
+  private readonly npcDialogueName: HTMLElement;
+  private readonly npcDialogueGreeting: HTMLElement;
+  private readonly npcDialogueQuest: HTMLElement;
+  private readonly npcDialogueQuestTitle: HTMLElement;
+  private readonly npcDialogueObjective: HTMLElement;
+  private readonly npcDialogueProgress: HTMLElement;
+  private readonly npcDialogueReward: HTMLElement;
+  private readonly npcDialogueRewardText: HTMLElement;
+  private readonly npcDialogueStatus: HTMLElement;
+  private readonly npcDialogueAction: HTMLButtonElement;
+  private readonly vendorPanel: HTMLElement;
+  private readonly vendorClose: HTMLButtonElement;
+  private readonly vendorTitle: HTMLElement;
+  private readonly vendorName: HTMLElement;
+  private readonly vendorCoins: HTMLElement;
+  private readonly vendorItems: HTMLElement;
+  private readonly vendorStatus: HTMLElement;
+  private readonly stashPanel: HTMLElement;
+  private readonly stashClose: HTMLButtonElement;
+  private readonly stashTitle: HTMLElement;
+  private readonly stashName: HTMLElement;
+  private readonly stashBagItems: HTMLElement;
+  private readonly stashBankItems: HTMLElement;
+  private readonly stashStatus: HTMLElement;
   private readonly gameMenu: HTMLElement;
   private readonly inventorySlots: HTMLElement;
   private readonly characterStats: HTMLElement;
@@ -226,6 +461,24 @@ export class HUD {
   private inventoryRenderKey = '__initial_inventory__';
   private characterRenderKey = '';
   private minimapRenderKey = '';
+  private minimapNpcKey = '';
+  private minimapNpcs: HudMinimapNpc[] = [];
+  private npcServiceKey = '';
+  private activeNpcPrompt: HudNpcPrompt | null = null;
+  private activeVendor: HudVendorPanel | null = null;
+  private readonly vendorPendingItemIds = new Set<string>();
+  private vendorSellPending = false;
+  private activeStash: HudStashPanel | null = null;
+  private readonly stashPendingKeys = new Set<string>();
+  private activeNpcDialogue: HudNpcDialoguePanel | null = null;
+  private activeNpcTargetId: string | null = null;
+  private emittedNpcTargetHoverId: string | null = null;
+  private npcTargetFrameHovered = false;
+  private npcDialogueActionPending = false;
+  private zoneBannerTimer: number | null = null;
+  private characterTrainingContext: string | null = null;
+  private questTrackerActionable = false;
+  private questTrackerRouteText = '';
 
   constructor(layer: HTMLElement, profile: PlayerProfile, private readonly world: WorldData) {
     layer.innerHTML = TEMPLATE;
@@ -238,6 +491,7 @@ export class HUD {
     this.xpFill = layer.querySelector('#hud-xp-fill')!;
     this.targetFrame = layer.querySelector('#target-frame')!;
     this.targetName = layer.querySelector('#target-name')!;
+    this.targetSubtitle = layer.querySelector('#target-subtitle')!;
     this.targetLevel = layer.querySelector('#target-level')!;
     this.targetHpFill = layer.querySelector('#target-hp-fill')!;
     this.targetHpText = layer.querySelector('#target-hp-text')!;
@@ -246,9 +500,14 @@ export class HUD {
     this.targetManaText = layer.querySelector('#target-mana-text')!;
     this.deathOverlay = layer.querySelector('#death-overlay')!;
     this.zoneName = layer.querySelector('#zone-name')!;
+    this.questPanel = layer.querySelector('#quest-panel')!;
     this.questTitle = layer.querySelector('#quest-title')!;
     this.questObjective = layer.querySelector('#quest-objective')!;
+    this.questRoute = layer.querySelector('#quest-route')!;
     this.questProgress = layer.querySelector('#quest-progress-fill')!;
+    this.zoneBanner = layer.querySelector('#zone-banner')!;
+    this.zoneBannerKicker = layer.querySelector('#zone-banner-kicker')!;
+    this.zoneBannerName = layer.querySelector('#zone-banner-name')!;
     this.hotbarWeaponSlot = layer.querySelector('#hotbar-weapon-slot')!;
     this.hotbarOffhandSlot = layer.querySelector('#hotbar-offhand-slot')!;
     this.hotbarHealthPotionSlot = layer.querySelector('#hotbar-health-potion')!;
@@ -261,6 +520,40 @@ export class HUD {
     this.minimapCanvas = layer.querySelector('#minimap-canvas')!;
     this.minimapContext = this.minimapCanvas.getContext('2d');
     this.qualityChip = layer.querySelector('#quality-chip')!;
+    this.npcServicePanel = layer.querySelector('#npc-service-panel')!;
+    this.npcServiceZone = layer.querySelector('#npc-service-zone')!;
+    this.npcServiceItems = layer.querySelector('#npc-service-items')!;
+    this.npcPrompt = layer.querySelector('#npc-prompt')!;
+    this.npcPromptAction = layer.querySelector('#npc-prompt-action')!;
+    this.npcPromptName = layer.querySelector('#npc-prompt-name')!;
+    this.npcPromptTitle = layer.querySelector('#npc-prompt-title')!;
+    this.npcDialogue = layer.querySelector('#npc-dialogue')!;
+    this.npcDialogueClose = layer.querySelector('#npc-dialogue-close') as HTMLButtonElement;
+    this.npcDialogueTitle = layer.querySelector('#npc-dialogue-title')!;
+    this.npcDialogueName = layer.querySelector('#npc-dialogue-name')!;
+    this.npcDialogueGreeting = layer.querySelector('#npc-dialogue-greeting')!;
+    this.npcDialogueQuest = layer.querySelector('#npc-dialogue-quest')!;
+    this.npcDialogueQuestTitle = layer.querySelector('#npc-dialogue-quest-title')!;
+    this.npcDialogueObjective = layer.querySelector('#npc-dialogue-objective')!;
+    this.npcDialogueProgress = layer.querySelector('#npc-dialogue-progress-fill')!;
+    this.npcDialogueReward = layer.querySelector('#npc-dialogue-reward')!;
+    this.npcDialogueRewardText = layer.querySelector('#npc-dialogue-reward-text')!;
+    this.npcDialogueStatus = layer.querySelector('#npc-dialogue-status')!;
+    this.npcDialogueAction = layer.querySelector('#npc-dialogue-action') as HTMLButtonElement;
+    this.vendorPanel = layer.querySelector('#vendor-panel')!;
+    this.vendorClose = layer.querySelector('#vendor-close') as HTMLButtonElement;
+    this.vendorTitle = layer.querySelector('#vendor-title')!;
+    this.vendorName = layer.querySelector('#vendor-name')!;
+    this.vendorCoins = layer.querySelector('#vendor-coins')!;
+    this.vendorItems = layer.querySelector('#vendor-items')!;
+    this.vendorStatus = layer.querySelector('#vendor-status')!;
+    this.stashPanel = layer.querySelector('#stash-panel')!;
+    this.stashClose = layer.querySelector('#stash-close') as HTMLButtonElement;
+    this.stashTitle = layer.querySelector('#stash-title')!;
+    this.stashName = layer.querySelector('#stash-name')!;
+    this.stashBagItems = layer.querySelector('#stash-bag-items')!;
+    this.stashBankItems = layer.querySelector('#stash-bank-items')!;
+    this.stashStatus = layer.querySelector('#stash-status')!;
     this.gameMenu = layer.querySelector('#game-menu')!;
     this.inventorySlots = layer.querySelector('#inventory-slots')!;
     this.characterStats = layer.querySelector('#character-stats')!;
@@ -271,6 +564,52 @@ export class HUD {
     btn.addEventListener('click', () => this.onRespawn());
     const menuClose = layer.querySelector('#game-menu-close') as HTMLButtonElement;
     menuClose.addEventListener('click', () => this.setMenuOpen(false));
+    this.targetFrame.addEventListener('click', () => {
+      if (this.activeNpcTargetId) this.onNpcTargetInteract(this.activeNpcTargetId);
+    });
+    this.targetFrame.addEventListener('pointerenter', () => this.setNpcTargetFrameHovered(true));
+    this.targetFrame.addEventListener('pointerleave', () => this.setNpcTargetFrameHovered(false));
+    this.targetFrame.addEventListener('focus', () => this.setNpcTargetFrameHovered(true));
+    this.targetFrame.addEventListener('blur', () => this.setNpcTargetFrameHovered(false));
+    this.targetFrame.addEventListener('keydown', (event) => {
+      if (!this.activeNpcTargetId) return;
+      if (event.code !== 'Enter' && event.code !== 'Space') return;
+      event.preventDefault();
+      this.onNpcTargetInteract(this.activeNpcTargetId);
+    });
+    this.npcDialogueClose.addEventListener('click', () => {
+      this.hideNpcDialogue();
+      this.onNpcDialogueClose();
+    });
+    this.npcDialogueAction.addEventListener('click', () => {
+      if (this.activeNpcDialogue) this.onNpcDialogueAction(this.activeNpcDialogue.id);
+    });
+    this.questPanel.addEventListener('click', () => {
+      if (this.questTrackerActionable) this.onQuestTracker();
+    });
+    this.questPanel.addEventListener('pointerenter', () => {
+      if (this.questTrackerActionable) this.onQuestTrackerHover(true);
+    });
+    this.questPanel.addEventListener('pointerleave', () => this.onQuestTrackerHover(false));
+    this.questPanel.addEventListener('focus', () => {
+      if (this.questTrackerActionable) this.onQuestTrackerHover(true);
+    });
+    this.questPanel.addEventListener('blur', () => this.onQuestTrackerHover(false));
+    this.questPanel.addEventListener('keydown', (event) => {
+      if (!this.questTrackerActionable) return;
+      if (event.code !== 'Enter' && event.code !== 'Space') return;
+      event.preventDefault();
+      this.onQuestTracker();
+    });
+    this.npcServicePanel.addEventListener('pointerleave', () => this.onNpcDestinationHover(null));
+    this.vendorClose.addEventListener('click', () => {
+      this.hideVendor();
+      this.onVendorClose();
+    });
+    this.stashClose.addEventListener('click', () => {
+      this.hideStash();
+      this.onStashClose();
+    });
     this.playerName.textContent = profile.name.trim() || 'Heroi de Aranna';
 
     this.setMenuOpen(false);
@@ -282,6 +621,16 @@ export class HUD {
 
   toggleCharacter(): void {
     this.toggleMenu();
+  }
+
+  showCharacterMenu(): void {
+    this.setMenuOpen(true);
+  }
+
+  setCharacterTrainingContext(label: string | null): void {
+    if (this.characterTrainingContext === label) return;
+    this.characterTrainingContext = label;
+    this.characterRenderKey = '';
   }
 
   toggleMenu(): void {
@@ -299,8 +648,334 @@ export class HUD {
     this.qualityChip.dataset.level = level;
   }
 
-  update(snapshot: WorldSnapshot, player: EntityState | undefined, target?: EntityState): void {
-    this.updateTarget(target);
+  setQuestTrackerActionable(actionable: boolean): void {
+    if (this.questTrackerActionable === actionable) return;
+    this.questTrackerActionable = actionable;
+    if (!actionable) this.onQuestTrackerHover(false);
+    this.updateQuestTrackerAccess(!this.questPanel.hidden);
+  }
+
+  setQuestTrackerRoute(label: string): void {
+    if (this.questTrackerRouteText === label) return;
+    this.questTrackerRouteText = label;
+    this.renderQuestTrackerRoute(!this.questPanel.hidden);
+  }
+
+  private updateQuestTrackerAccess(visible: boolean): void {
+    const enabled = visible && this.questTrackerActionable;
+    this.questPanel.classList.toggle('trackable', enabled);
+    this.questPanel.tabIndex = enabled ? 0 : -1;
+    this.questPanel.setAttribute('role', enabled ? 'button' : 'region');
+    this.questPanel.title = enabled ? 'Navegar para objetivo' : '';
+  }
+
+  private renderQuestTrackerRoute(visible: boolean): void {
+    const routeVisible = visible && this.questTrackerRouteText.trim() !== '';
+    this.questRoute.hidden = !routeVisible;
+    this.questRoute.textContent = routeVisible ? this.questTrackerRouteText : '';
+  }
+
+  showZoneBanner(zone: WorldZone): void {
+    if (this.zoneBannerTimer !== null) {
+      window.clearTimeout(this.zoneBannerTimer);
+      this.zoneBannerTimer = null;
+    }
+    this.zoneBannerKicker.textContent = zone === 'dungeon' ? 'Masmorra' : 'Acampamento';
+    this.zoneBannerName.textContent = zone === 'dungeon' ? 'Camara das Sombras' : 'Terras de Aranna';
+    this.zoneBanner.classList.add('open');
+    this.zoneBanner.setAttribute('aria-hidden', 'false');
+    this.zoneBannerTimer = window.setTimeout(() => {
+      this.zoneBanner.classList.remove('open');
+      this.zoneBanner.setAttribute('aria-hidden', 'true');
+      this.zoneBannerTimer = null;
+    }, 1800);
+  }
+
+  private zoneLabel(zone: WorldZone): string {
+    return zone === 'dungeon' ? 'Camara das Sombras' : 'Terras de Aranna';
+  }
+
+  setNpcMinimapMarkers(markers: HudMinimapNpc[]): void {
+    const key = markers
+      .map((marker) => `${marker.id}:${marker.zone}:${marker.position.x.toFixed(2)}:${marker.position.z.toFixed(2)}:${marker.kind}:${marker.marker ?? ''}:${marker.active ? 1 : 0}:${marker.pending ? 1 : 0}:${marker.selected ? 1 : 0}:${marker.objective ? 1 : 0}:${marker.hovered ? 1 : 0}`)
+      .join('|');
+    if (key === this.minimapNpcKey) return;
+    this.minimapNpcKey = key;
+    this.minimapNpcs = markers;
+    this.minimapRenderKey = '';
+  }
+
+  setNpcServiceDestinations(destinations: HudNpcDestination[], zone: WorldZone): void {
+    const zoneLabel = this.zoneLabel(zone);
+    const visible = destinations.filter((destination) => destination.zone === zone);
+    const key = `${zone}:${visible.map((destination) => `${destination.id}:${destination.marker}:${destination.kind}:${destination.name}:${destination.title}:${destination.statusLabel ?? ''}:${destination.distanceLabel ?? ''}:${destination.active ? 1 : 0}:${destination.selected ? 1 : 0}:${destination.nearby ? 1 : 0}:${destination.pending ? 1 : 0}:${destination.hovered ? 1 : 0}:${destination.objective ? 1 : 0}`).join('|')}`;
+    if (key === this.npcServiceKey) return;
+    this.npcServiceKey = key;
+    this.npcServiceZone.textContent = zoneLabel;
+    this.npcServiceItems.replaceChildren();
+    this.npcServicePanel.classList.toggle('open', visible.length > 0);
+    this.npcServicePanel.setAttribute('aria-hidden', visible.length > 0 ? 'false' : 'true');
+    for (const destination of visible) {
+      const subtitle = npcServiceDestinationSubtitle(destination);
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'npc-service-button';
+      button.classList.toggle('active', !!destination.active);
+      button.classList.toggle('selected', !!destination.selected);
+      button.classList.toggle('nearby', !!destination.nearby);
+      button.classList.toggle('pending', !!destination.pending);
+      button.classList.toggle('hovered', !!destination.hovered);
+      button.classList.toggle('objective', !!destination.objective);
+      button.dataset.kind = destination.kind;
+      button.title = `${destination.name} - ${destination.title}`;
+      const marker = document.createElement('span');
+      marker.className = 'npc-service-marker';
+      marker.textContent = destination.marker;
+      const label = document.createElement('strong');
+      label.textContent = destination.name;
+      const role = document.createElement('em');
+      role.className = 'npc-service-role';
+      role.textContent = npcServiceRoleLabel(destination.kind);
+      const title = document.createElement('small');
+      title.textContent = subtitle;
+      button.append(marker, label, role, title);
+      button.addEventListener('pointerenter', () => this.onNpcDestinationHover(destination.id));
+      button.addEventListener('pointerleave', () => this.onNpcDestinationHover(null));
+      button.addEventListener('focus', () => this.onNpcDestinationHover(destination.id));
+      button.addEventListener('blur', () => this.onNpcDestinationHover(null));
+      button.addEventListener('click', () => this.onNpcDestination(destination.id));
+      this.npcServiceItems.append(button);
+    }
+  }
+
+  showNpcDialogue(dialogue: HudNpcDialoguePanel): void {
+    this.activeNpcDialogue = dialogue;
+    this.npcDialogueActionPending = false;
+    this.npcDialogueTitle.textContent = dialogue.title;
+    this.npcDialogueName.textContent = dialogue.name;
+    this.npcDialogueGreeting.textContent = dialogue.greeting;
+    this.npcDialogueStatus.hidden = true;
+    this.npcDialogueStatus.textContent = '';
+    this.npcDialogueAction.textContent = dialogue.actionLabel;
+    this.npcDialogue.dataset.kind = dialogue.kind;
+    if (dialogue.quest) {
+      this.renderNpcDialogueQuest(dialogue.quest);
+    } else {
+      this.npcDialogueQuest.hidden = true;
+      this.npcDialogueReward.hidden = true;
+      this.npcDialogueAction.disabled = !!dialogue.actionDisabled;
+    }
+    this.npcDialogue.classList.add('open');
+    this.npcDialogue.setAttribute('aria-hidden', 'false');
+  }
+
+  showNpcPrompt(prompt: HudNpcPrompt): void {
+    const key = `${prompt.id}:${prompt.actionLabel}`;
+    const activeKey = this.activeNpcPrompt ? `${this.activeNpcPrompt.id}:${this.activeNpcPrompt.actionLabel}` : '';
+    this.activeNpcPrompt = prompt;
+    if (key !== activeKey) {
+      this.npcPromptAction.textContent = prompt.actionLabel;
+      this.npcPromptName.textContent = prompt.name;
+      this.npcPromptTitle.textContent = prompt.title;
+      this.npcPrompt.dataset.kind = prompt.kind;
+    }
+    this.npcPrompt.classList.add('open');
+    this.npcPrompt.setAttribute('aria-hidden', 'false');
+  }
+
+  hideNpcPrompt(): void {
+    if (!this.activeNpcPrompt) return;
+    this.activeNpcPrompt = null;
+    this.npcPrompt.classList.remove('open');
+    this.npcPrompt.setAttribute('aria-hidden', 'true');
+  }
+
+  hideNpcDialogue(): void {
+    this.activeNpcDialogue = null;
+    this.npcDialogueActionPending = false;
+    this.npcDialogue.classList.remove('open');
+    this.npcDialogue.setAttribute('aria-hidden', 'true');
+    this.npcDialogueStatus.hidden = true;
+    this.npcDialogueStatus.textContent = '';
+  }
+
+  updateNpcDialogueQuest(quest: QuestState, actionLabel?: string): void {
+    if (!this.activeNpcDialogue || this.activeNpcDialogue.kind !== 'quest') return;
+    this.activeNpcDialogue = {
+      ...this.activeNpcDialogue,
+      quest,
+      actionLabel: actionLabel ?? this.activeNpcDialogue.actionLabel,
+    };
+    if (quest.rewardClaimed) {
+      this.npcDialogueActionPending = false;
+      this.setNpcDialogueStatus('Recompensa recebida.');
+    }
+    this.renderNpcDialogueQuest(quest);
+  }
+
+  setNpcDialogueStatus(message: string): void {
+    if (!this.activeNpcDialogue) return;
+    this.npcDialogueStatus.textContent = message;
+    this.npcDialogueStatus.hidden = message.trim() === '';
+  }
+
+  setNpcDialogueActionPending(pending: boolean): void {
+    if (!this.activeNpcDialogue) return;
+    this.npcDialogueActionPending = pending;
+    if (this.activeNpcDialogue.quest) {
+      this.renderNpcDialogueQuest(this.activeNpcDialogue.quest);
+    } else {
+      this.npcDialogueAction.disabled = pending || !!this.activeNpcDialogue.actionDisabled;
+      this.npcDialogueAction.textContent = pending ? 'Enviando' : this.activeNpcDialogue.actionLabel;
+    }
+  }
+
+  updateNpcDialogueActionLabel(label: string, disabled = false): void {
+    if (!this.activeNpcDialogue) return;
+    this.activeNpcDialogue = { ...this.activeNpcDialogue, actionLabel: label, actionDisabled: disabled };
+    if (this.activeNpcDialogue.quest) {
+      this.renderNpcDialogueQuest(this.activeNpcDialogue.quest);
+      return;
+    }
+    if (!this.npcDialogueActionPending) {
+      this.npcDialogueAction.textContent = label;
+      this.npcDialogueAction.disabled = disabled;
+    }
+  }
+
+  showVendor(vendor: HudVendorPanel): void {
+    this.activeVendor = vendor;
+    this.vendorPendingItemIds.clear();
+    this.vendorSellPending = false;
+    this.vendorTitle.textContent = vendor.title;
+    this.vendorName.textContent = vendor.name;
+    this.vendorCoins.textContent = `${vendor.coins} moedas`;
+    this.vendorStatus.hidden = true;
+    this.vendorStatus.textContent = '';
+    this.renderVendorItems(vendor);
+    this.vendorPanel.classList.add('open');
+    this.vendorPanel.setAttribute('aria-hidden', 'false');
+  }
+
+  hideVendor(): void {
+    this.activeVendor = null;
+    this.vendorPendingItemIds.clear();
+    this.vendorSellPending = false;
+    this.vendorPanel.classList.remove('open');
+    this.vendorPanel.setAttribute('aria-hidden', 'true');
+    this.vendorStatus.hidden = true;
+    this.vendorStatus.textContent = '';
+  }
+
+  showStash(stash: HudStashPanel): void {
+    this.activeStash = stash;
+    this.stashPendingKeys.clear();
+    this.stashTitle.textContent = stash.title;
+    this.stashName.textContent = stash.name;
+    this.stashStatus.hidden = true;
+    this.stashStatus.textContent = '';
+    this.renderStashItems(stash);
+    this.stashPanel.classList.add('open');
+    this.stashPanel.setAttribute('aria-hidden', 'false');
+  }
+
+  updateStash(stash: HudStashPanel): void {
+    if (!this.activeStash) return;
+    this.activeStash = stash;
+    this.stashTitle.textContent = stash.title;
+    this.stashName.textContent = stash.name;
+    this.renderStashItems(stash);
+  }
+
+  hideStash(): void {
+    this.activeStash = null;
+    this.stashPendingKeys.clear();
+    this.stashPanel.classList.remove('open');
+    this.stashPanel.setAttribute('aria-hidden', 'true');
+    this.stashStatus.hidden = true;
+    this.stashStatus.textContent = '';
+  }
+
+  setStashStatus(message: string): void {
+    if (!this.activeStash) return;
+    this.stashStatus.textContent = message;
+    this.stashStatus.hidden = message.trim() === '';
+  }
+
+  setStashItemPending(itemId: string, action: 'deposit' | 'withdraw', pending: boolean): void {
+    if (!this.activeStash) return;
+    const key = `${action}:${itemId}`;
+    if (pending) this.stashPendingKeys.add(key);
+    else this.stashPendingKeys.delete(key);
+    this.renderStashItems(this.activeStash);
+  }
+
+  clearStashPending(): void {
+    if (!this.activeStash || this.stashPendingKeys.size === 0) return;
+    this.stashPendingKeys.clear();
+    this.renderStashItems(this.activeStash);
+  }
+
+  setVendorStatus(message: string): void {
+    if (!this.activeVendor) return;
+    this.vendorStatus.textContent = message;
+    this.vendorStatus.hidden = message.trim() === '';
+  }
+
+  updateVendorCoins(coins: number): void {
+    if (!this.activeVendor) return;
+    this.vendorPendingItemIds.clear();
+    this.activeVendor = { ...this.activeVendor, coins };
+    this.vendorCoins.textContent = `${coins} moedas`;
+    this.renderVendorItems(this.activeVendor);
+  }
+
+  setVendorSellPending(pending: boolean): void {
+    if (!this.activeVendor) return;
+    this.vendorSellPending = pending;
+    this.renderVendorItems(this.activeVendor);
+  }
+
+  setVendorItemPending(itemId: string, pending: boolean): void {
+    if (!this.activeVendor) return;
+    if (pending) this.vendorPendingItemIds.add(itemId);
+    else this.vendorPendingItemIds.delete(itemId);
+    this.renderVendorItems(this.activeVendor);
+  }
+
+  clearVendorPending(): void {
+    if (!this.activeVendor || (this.vendorPendingItemIds.size === 0 && !this.vendorSellPending)) return;
+    this.vendorPendingItemIds.clear();
+    this.vendorSellPending = false;
+    this.renderVendorItems(this.activeVendor);
+  }
+
+  private renderNpcDialogueQuest(quest: QuestState): void {
+    this.npcDialogueQuest.hidden = false;
+    this.npcDialogueQuestTitle.textContent = quest.title;
+    this.npcDialogueObjective.textContent = quest.objective;
+    const ratio = quest.goal > 0 ? Math.min(1, Math.max(0, quest.progress / quest.goal)) : 0;
+    this.npcDialogueProgress.style.width = `${ratio * 100}%`;
+    const canAccept = !quest.accepted;
+    const canClaimReward = quest.accepted && quest.completed && !quest.rewardClaimed;
+    this.npcDialogueReward.hidden = !quest.accepted || !quest.completed;
+    this.npcDialogueRewardText.textContent = quest.rewardClaimed
+      ? 'Recebida'
+      : quest.rewardText || '90 moedas | 2 pocoes | 1 mana | 120 EXP';
+    this.npcDialogueAction.disabled = this.npcDialogueActionPending || (quest.accepted && quest.completed && quest.rewardClaimed);
+    this.npcDialogueAction.textContent = this.npcDialogueActionPending
+      ? 'Enviando'
+      : canAccept
+        ? 'Aceitar missao'
+        : canClaimReward
+          ? 'Receber recompensa'
+          : quest.completed
+            ? 'Concluida'
+            : this.activeNpcDialogue?.actionLabel ?? 'Acompanhar';
+  }
+
+  update(snapshot: WorldSnapshot, player: EntityState | undefined, target?: EntityState, npcTarget?: HudNpcTarget): void {
+    this.updateTarget(target, npcTarget);
     if (!player) return;
 
     this.levelEl.textContent = String(player.level);
@@ -324,9 +999,17 @@ export class HUD {
     this.deathOverlay.style.display = player.alive ? 'none' : 'flex';
 
     this.zoneName.textContent = snapshot.zone === 'overworld' ? 'Terras de Aranna' : 'Câmara das Sombras';
-    this.questTitle.textContent = snapshot.quest.title;
-    this.questObjective.textContent = snapshot.quest.objective;
-    this.questProgress.style.width = `${Math.min(100, (snapshot.quest.progress / snapshot.quest.goal) * 100)}%`;
+    const questVisible = snapshot.quest.accepted || snapshot.quest.rewardClaimed;
+    this.questPanel.hidden = !questVisible;
+    this.updateQuestTrackerAccess(questVisible);
+    this.renderQuestTrackerRoute(questVisible);
+    if (questVisible) {
+      this.questTitle.textContent = snapshot.quest.title;
+      this.questObjective.textContent = snapshot.quest.objective;
+      this.questProgress.style.width = `${Math.min(100, (snapshot.quest.progress / snapshot.quest.goal) * 100)}%`;
+    } else {
+      this.questProgress.style.width = '0%';
+    }
     const minimapKey = [
       snapshot.zone,
       snapshot.tick,
@@ -420,13 +1103,44 @@ export class HUD {
     }
   }
 
-  private updateTarget(target?: EntityState): void {
+  private updateTarget(target?: EntityState, npcTarget?: HudNpcTarget): void {
     const visible = !!target && target.kind === 'enemy' && target.alive;
-    this.targetFrame.classList.toggle('open', visible);
-    this.targetFrame.setAttribute('aria-hidden', String(!visible));
+    const npcVisible = !visible && !!npcTarget;
+    const nextNpcTargetId = npcVisible && npcTarget ? npcTarget.id : null;
+    if (nextNpcTargetId !== this.activeNpcTargetId) {
+      this.activeNpcTargetId = nextNpcTargetId;
+      if (this.npcTargetFrameHovered) this.emitNpcTargetHover(this.activeNpcTargetId);
+    }
+    this.targetFrame.classList.toggle('open', visible || npcVisible);
+    this.targetFrame.classList.toggle('npc-target', npcVisible);
+    this.targetFrame.classList.toggle('actionable', !!this.activeNpcTargetId);
+    this.targetFrame.setAttribute('aria-hidden', String(!visible && !npcVisible));
+    this.targetFrame.tabIndex = this.activeNpcTargetId ? 0 : -1;
+    this.targetFrame.setAttribute('role', this.activeNpcTargetId ? 'button' : 'group');
+    if (npcVisible && npcTarget) {
+      this.targetFrame.dataset.kind = npcTarget.kind;
+      this.targetFrame.dataset.tone = npcTarget.tone;
+      this.targetName.textContent = npcTarget.name;
+      this.targetSubtitle.textContent = npcTarget.subtitle;
+      this.targetSubtitle.hidden = false;
+      this.targetLevel.textContent = npcTarget.marker;
+      this.targetHpFill.style.width = '100%';
+      this.targetHpText.textContent = npcTarget.status;
+      this.targetManaBar.classList.add('hidden');
+      this.targetManaFill.style.width = '0%';
+      this.targetManaText.textContent = '';
+      this.targetFrame.title = npcTarget.subtitle || npcTarget.name;
+      return;
+    }
+    if (!this.activeNpcTargetId && this.npcTargetFrameHovered) this.emitNpcTargetHover(null);
+    delete this.targetFrame.dataset.kind;
+    delete this.targetFrame.dataset.tone;
+    this.targetFrame.title = '';
     if (!visible || !target) return;
 
     this.targetName.textContent = target.enemyVariant === 'zombieBoss' ? 'Boss Zumbi' : 'Zumbi';
+    this.targetSubtitle.textContent = '';
+    this.targetSubtitle.hidden = true;
     this.targetLevel.textContent = String(target.level);
 
     const hpRatio = barRatio(target.hp, target.maxHp);
@@ -441,6 +1155,18 @@ export class HUD {
 
     this.targetManaFill.style.width = `${barRatio(mana, maxMana) * 100}%`;
     this.targetManaText.textContent = `${Math.ceil(Math.max(0, mana))} / ${maxMana}`;
+  }
+
+  private setNpcTargetFrameHovered(hovered: boolean): void {
+    if (this.npcTargetFrameHovered === hovered) return;
+    this.npcTargetFrameHovered = hovered;
+    this.emitNpcTargetHover(hovered ? this.activeNpcTargetId : null);
+  }
+
+  private emitNpcTargetHover(npcId: string | null): void {
+    if (this.emittedNpcTargetHoverId === npcId) return;
+    this.emittedNpcTargetHoverId = npcId;
+    this.onNpcTargetHover(npcId);
   }
 
   private updateArcaneNovaHotbar(player: EntityState): void {
@@ -477,6 +1203,149 @@ export class HUD {
 
   private stackCount(snapshot: WorldSnapshot, kind: ItemKind): number {
     return snapshot.inventory.find((item) => item.kind === kind && item.stackable)?.count ?? 0;
+  }
+
+  private renderVendorItems(vendor: HudVendorPanel): void {
+    this.vendorItems.replaceChildren();
+    const recommendedItemId = vendorRecommendedItemId({ coins: vendor.coins, items: vendor.items });
+    if ((vendor.sellUnusedCount ?? 0) > 0 && (vendor.sellUnusedValue ?? 0) > 0) {
+      const row = document.createElement('div');
+      row.className = 'vendor-item vendor-sell-row';
+
+      const icon = document.createElement('div');
+      icon.className = 'vendor-sell-icon';
+      icon.textContent = '$';
+
+      const details = document.createElement('span');
+      details.className = 'vendor-item-details';
+      const name = document.createElement('strong');
+      name.textContent = 'Vender equipamentos';
+      const meta = document.createElement('small');
+      const count = vendor.sellUnusedCount ?? 0;
+      meta.textContent = `${count} item${count === 1 ? '' : 's'} - ${vendor.sellUnusedValue} moedas`;
+      const tagline = document.createElement('em');
+      tagline.textContent = 'A arma equipada fica guardada.';
+      details.append(name, meta, tagline);
+
+      const sell = document.createElement('button');
+      sell.type = 'button';
+      sell.className = 'vendor-buy vendor-sell-button';
+      sell.textContent = this.vendorSellPending ? 'Enviando' : 'Vender';
+      sell.disabled = this.vendorSellPending;
+      sell.addEventListener('click', () => this.onVendorSellUnused(vendor.id));
+
+      row.append(icon, details, sell);
+      this.vendorItems.append(row);
+    }
+
+    for (const item of vendor.items) {
+      const row = document.createElement('div');
+      row.className = 'vendor-item';
+      const offer = vendorOfferModel({ coins: vendor.coins, items: vendor.items, item, recommendedItemId });
+      row.classList.toggle('sold-out', offer.soldOut);
+      row.classList.toggle('recommended', offer.tone === 'buy-now');
+      row.classList.toggle('saving', offer.tone === 'save-up');
+      if (item.rarity) row.style.borderColor = RARITY_COLORS[item.rarity];
+
+      const image = document.createElement('img');
+      image.src = item.icon;
+      image.alt = item.name;
+      image.loading = 'eager';
+      image.decoding = 'async';
+
+      const details = document.createElement('span');
+      details.className = 'vendor-item-details';
+      const nameLine = document.createElement('span');
+      nameLine.className = 'vendor-item-name-line';
+      const name = document.createElement('strong');
+      name.textContent = item.name;
+      nameLine.append(name);
+      if (offer.badgeLabel) {
+        const badge = document.createElement('b');
+        badge.className = 'vendor-item-badge';
+        badge.dataset.tone = offer.tone;
+        badge.textContent = offer.badgeLabel;
+        nameLine.append(badge);
+      }
+      const meta = document.createElement('small');
+      meta.textContent = offer.metaLabel;
+      details.append(nameLine, meta);
+      if (item.tagline) {
+        const tagline = document.createElement('em');
+        tagline.textContent = item.tagline;
+        details.append(tagline);
+      }
+      const status = document.createElement('em');
+      status.className = 'vendor-item-offer';
+      status.textContent = offer.statusLabel;
+      details.append(status);
+
+      const buy = document.createElement('button');
+      buy.type = 'button';
+      buy.className = 'vendor-buy';
+      const pending = this.vendorPendingItemIds.has(item.id);
+      buy.textContent = offer.soldOut ? 'Esgotado' : pending ? 'Enviando' : 'Comprar';
+      buy.disabled = offer.soldOut || pending || !offer.affordable;
+      buy.addEventListener('click', () => this.onVendorBuy(vendor.id, item.id));
+
+      row.append(image, details, buy);
+      this.vendorItems.append(row);
+    }
+  }
+
+  private renderStashItems(stash: HudStashPanel): void {
+    this.renderStashColumn(this.stashBagItems, stash.bagItems, 'deposit', stash.id);
+    this.renderStashColumn(this.stashBankItems, stash.stashItems, 'withdraw', stash.id);
+  }
+
+  private renderStashColumn(container: HTMLElement, items: HudStashItem[], action: 'deposit' | 'withdraw', npcId: string): void {
+    container.replaceChildren();
+    if (items.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'stash-empty';
+      empty.textContent = action === 'deposit' ? 'Nada para guardar' : 'Banco vazio';
+      container.append(empty);
+      return;
+    }
+    for (const item of items) {
+      const row = document.createElement('div');
+      row.className = 'stash-item';
+
+      const image = document.createElement('img');
+      image.src = item.icon;
+      image.alt = item.name;
+      image.loading = 'eager';
+      image.decoding = 'async';
+
+      const details = document.createElement('span');
+      details.className = 'stash-item-details';
+      const name = document.createElement('strong');
+      name.textContent = item.name;
+      const meta = document.createElement('small');
+      if (item.stackable) {
+        meta.textContent = `${item.count}x`;
+      } else {
+        const up = item.upgradeLevel ? ` +${item.upgradeLevel}` : '';
+        const rarity = item.rarity ? `${item.rarity}${up}` : `arma${up}`;
+        const range = weaponRange(item);
+        meta.textContent = range ? `${rarity} - ${range}` : rarity;
+      }
+      details.append(name, meta);
+
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'stash-action';
+      const pending = this.stashPendingKeys.has(`${action}:${item.id}`);
+      button.textContent = pending ? 'Enviando' : action === 'deposit' ? 'Guardar' : 'Retirar';
+      button.disabled = pending;
+      button.addEventListener('click', () => {
+        if (action === 'deposit') this.onStashDeposit(npcId, item);
+        else this.onStashWithdraw(npcId, item);
+      });
+
+      row.append(image, details, button);
+      container.append(row);
+    }
   }
 
   private renderMinimap(snapshot: WorldSnapshot, player: EntityState): void {
@@ -520,6 +1389,21 @@ export class HUD {
       this.drawMinimapDiamond(ctx, toMap(this.world.dungeon.x, this.world.dungeon.z), cx, cy, radius, '#6ecae5', 4.6);
     } else {
       this.drawMinimapDiamond(ctx, toMap(MINIMAP_DUNGEON_EXIT.x, MINIMAP_DUNGEON_EXIT.z), cx, cy, radius, '#6ecae5', 4.6);
+    }
+
+    for (const npc of this.minimapNpcs) {
+      if (npc.zone !== snapshot.zone) continue;
+      const p = toMap(npc.position.x, npc.position.z);
+      this.drawMinimapNpcMarker(
+        ctx,
+        p,
+        cx,
+        cy,
+        radius,
+        this.minimapNpcColor(npc.kind),
+        npc.marker ?? this.minimapNpcGlyph(npc.kind),
+        npcMinimapMarkerVisualState(npc),
+      );
     }
 
     for (const chest of snapshot.chests) {
@@ -572,6 +1456,47 @@ export class HUD {
     ctx.moveTo(cx, cy - radius);
     ctx.lineTo(cx, cy + radius);
     ctx.stroke();
+  }
+
+  private minimapNpcColor(kind: NpcKind): string {
+    return npcServiceAccentCss(kind);
+  }
+
+  private minimapNpcGlyph(kind: NpcKind): string {
+    return npcServiceGlyph(kind);
+  }
+
+  private drawMinimapNpcMarker(
+    ctx: CanvasRenderingContext2D,
+    p: { x: number; y: number },
+    cx: number,
+    cy: number,
+    radius: number,
+    color: string,
+    marker: string,
+    visual: NpcMinimapMarkerVisualState,
+  ): void {
+    const size = (marker.length > 1 ? 5.4 : 4.8) * visual.sizeMultiplier;
+    const clamped = this.clampMinimapPoint(p, cx, cy, radius - size - 7);
+    if (visual.haloRadius > 0) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.fillStyle = visual.haloColor;
+      ctx.arc(clamped.x, clamped.y, size + visual.haloRadius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+    this.drawMinimapDiamond(ctx, clamped, cx, cy, radius, color, size);
+    ctx.save();
+    ctx.font = `900 ${marker.length > 1 ? 7 : 9}px ui-sans-serif, system-ui, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.lineWidth = 2.5;
+    ctx.strokeStyle = 'rgba(2, 5, 8, 0.92)';
+    ctx.fillStyle = '#f8feff';
+    ctx.strokeText(marker, clamped.x, clamped.y + 0.2);
+    ctx.fillText(marker, clamped.x, clamped.y + 0.2);
+    ctx.restore();
   }
 
   private drawMinimapBorder(ctx: CanvasRenderingContext2D, cx: number, cy: number, radius: number): void {
@@ -923,13 +1848,14 @@ export class HUD {
 
   private renderAttributes(player: EntityState): void {
     this.attributeSection.replaceChildren();
+    this.attributeSection.classList.toggle('training-mode', !!this.characterTrainingContext);
     const attributes = player.attributes;
     if (!attributes) return;
 
     const header = document.createElement('div');
     header.className = 'attribute-header';
     const title = document.createElement('span');
-    title.textContent = 'Atributos';
+    title.textContent = this.characterTrainingContext ?? 'Atributos';
     const points = document.createElement('strong');
     points.textContent = `${attributes.unspentPoints} ponto${attributes.unspentPoints === 1 ? '' : 's'}`;
     header.append(title, points);
