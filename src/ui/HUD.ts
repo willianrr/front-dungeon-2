@@ -1,6 +1,28 @@
-import { GEM_DEFINITIONS, GEM_GLOW_COLORS, ITEM_ICON_URLS, RARITY_COLORS, isGemKind } from '../shared/itemMeta';
+import { GEM_DEFINITIONS, GEM_GLOW_COLORS, ITEM_ICON_URLS, RARITY_COLORS, equipSlotsForKind, isGemKind } from '../shared/itemMeta';
 import type { PlayerProfile } from '../shared/playerProfile';
-import type { EntityState, EquipmentSlot, InventoryItem, ItemKind, ItemRarity, NpcKind, PlayerAttribute, QuestState, WorldSnapshot, WorldZone } from '../shared/types';
+import { WARRIOR_TALENT_TREE_LABELS, WARRIOR_TALENTS } from '../shared/warriorTalents';
+import type {
+  BuffState,
+  ChatChannel,
+  ChatMessageState,
+  EntityState,
+  EquipmentSlot,
+  FriendState,
+  HotbarAction,
+  InventoryItem,
+  ItemKind,
+  ItemRarity,
+  NpcKind,
+  PartyInviteState,
+  PartyState,
+  PlayerAttribute,
+  QuestState,
+  TalentDefinition,
+  TalentState,
+  TalentTree,
+  WorldSnapshot,
+  WorldZone,
+} from '../shared/types';
 import type { WorldData } from '../shared/worldgen';
 import { npcMinimapMarkerVisualState, type NpcMinimapMarkerVisualState } from '../core/NpcMinimapMarker';
 import { npcServiceDestinationSubtitle } from '../core/NpcServiceDirectory';
@@ -59,10 +81,73 @@ function percent(value: number): string {
   return `${Math.round(value * 100)}%`;
 }
 
+function chatChannelLabel(channel: ChatChannel): string {
+  if (channel === 'party') return 'Grupo';
+  if (channel === 'global') return 'Global';
+  if (channel === 'system') return 'Sistema';
+  return 'Local';
+}
+
+function parseChatInput(raw: string): { channel: ChatChannel; message: string } {
+  const text = raw.trim();
+  const lower = text.toLowerCase();
+  if (lower === '/p' || lower === '/party') return { channel: 'party', message: '' };
+  if (lower.startsWith('/p ')) return { channel: 'party', message: text.slice(3).trim() };
+  if (lower.startsWith('/party ')) return { channel: 'party', message: text.slice(7).trim() };
+  if (lower === '/g' || lower === '/global') return { channel: 'global', message: '' };
+  if (lower.startsWith('/g ')) return { channel: 'global', message: text.slice(3).trim() };
+  if (lower.startsWith('/global ')) return { channel: 'global', message: text.slice(8).trim() };
+  return { channel: 'local', message: text };
+}
+
+function chatDraftFor(channel: ChatChannel, message: string): string {
+  if (channel === 'party') return `/p ${message}`.trimEnd();
+  if (channel === 'global') return `/g ${message}`.trimEnd();
+  return message;
+}
+
+function talentRank(state: TalentState | null | undefined, talentId: string): number {
+  return state?.talents[talentId] ?? 0;
+}
+
+function talentRequirementLabel(talent: TalentDefinition): string {
+  const requirement = talent.requires?.[0];
+  if (!requirement) return '';
+  const dependency = WARRIOR_TALENTS.find((candidate) => candidate.id === requirement.talentId);
+  return dependency ? `${dependency.name} ${requirement.rank}/${dependency.maxRank}` : requirement.talentId;
+}
+
+function canLearnTalent(state: TalentState, talent: TalentDefinition): boolean {
+  if (talentRank(state, talent.id) >= talent.maxRank) return false;
+  if (state.availablePoints < talent.cost) return false;
+  return (talent.requires ?? []).every((requirement) => talentRank(state, requirement.talentId) >= requirement.rank);
+}
+
+function buffInitials(label: string): string {
+  return label
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((word) => word[0]?.toUpperCase() ?? '')
+    .join('');
+}
+
+/** Resumo curto dos stats de pecas/acessorios para badges na bag/paper doll. */
+function gearBonusLabel(item: InventoryItem): string | null {
+  if ((item.armor ?? 0) > 0) return `${item.armor} arm`;
+  const parts: string[] = [];
+  if ((item.bonusCrit ?? 0) > 0) parts.push(`+${Math.round((item.bonusCrit ?? 0) * 100)}%crit`);
+  if ((item.bonusHp ?? 0) > 0) parts.push(`+${item.bonusHp}pv`);
+  if ((item.bonusMana ?? 0) > 0) parts.push(`+${item.bonusMana}mp`);
+  return parts.length > 0 ? parts.join(' ') : null;
+}
+
 const EQUIPMENT_SLOTS: readonly { slot: EquipmentSlot; label: string }[] = [
   { slot: 'head', label: 'Cabeça' },
   { slot: 'chest', label: 'Peito' },
   { slot: 'hands', label: 'Mãos' },
+  { slot: 'ring', label: 'Anel' },
+  { slot: 'ring2', label: 'Anel 2' },
   { slot: 'legs', label: 'Pernas' },
   { slot: 'feet', label: 'Botas' },
   { slot: 'weapon', label: 'Arma' },
@@ -71,8 +156,8 @@ const EQUIPMENT_SLOTS: readonly { slot: EquipmentSlot; label: string }[] = [
 ];
 
 const HOTBAR_EQUIPMENT_SLOTS: readonly { slot: EquipmentSlot; label: string }[] = [
-  { slot: 'weapon', label: 'Espada' },
-  { slot: 'offhand', label: 'Off' },
+  { slot: 'weapon', label: 'Arma' },
+  { slot: 'offhand', label: 'Mão 2' },
 ];
 const MINIMAP_DUNGEON_EXIT = { x: 0, z: -18 };
 const MINIMAP_MAX_DPR = 2;
@@ -183,10 +268,20 @@ export interface HudNpcTarget {
   tone: string;
 }
 
+export interface HudPlayerContext {
+  id: string;
+  name: string;
+  level: number;
+  hp: number;
+  maxHp: number;
+  x: number;
+  y: number;
+}
+
 const TEMPLATE = `
   <div class="hotbar" aria-label="Atalhos do teclado">
-    <div class="hotbar-slot hotbar-equipment-slot" id="hotbar-weapon-slot"><span>Espada</span></div>
-    <div class="hotbar-slot hotbar-equipment-slot" id="hotbar-offhand-slot"><span>Off</span></div>
+    <div class="hotbar-slot hotbar-equipment-slot" id="hotbar-weapon-slot"><span>Arma</span></div>
+    <div class="hotbar-slot hotbar-equipment-slot" id="hotbar-offhand-slot"><span>Mão 2</span></div>
     <div class="hotbar-slot hotbar-consumable-slot" id="hotbar-health-potion" aria-label="Poção Rubra">
       <img class="hotbar-consumable-icon" src="${ITEM_ICON_URLS.potion}" alt="" draggable="false" />
       <span class="hotbar-consumable-count" id="hotbar-health-potion-count"></span>
@@ -203,9 +298,24 @@ const TEMPLATE = `
       <span class="hotbar-consumable-count" id="hotbar-mana-potion-count"></span>
       <span class="hotbar-keycap">3</span>
     </div>
-    <div class="hotbar-slot hotbar-number-slot"><span>4</span></div>
-    <div class="hotbar-slot hotbar-number-slot"><span>5</span></div>
-    <div class="hotbar-slot hotbar-number-slot"><span>6</span></div>
+    <div class="hotbar-slot hotbar-skill-slot hotbar-warrior-skill" id="hotbar-war-cry" aria-label="Grito de Guerra">
+      <span class="hotbar-skill-glyph">G</span>
+      <span class="hotbar-cooldown-shade" id="hotbar-war-cry-shade"></span>
+      <span class="hotbar-cooldown-text" id="hotbar-war-cry-cooldown"></span>
+      <span class="hotbar-keycap">4</span>
+    </div>
+    <div class="hotbar-slot hotbar-skill-slot hotbar-warrior-skill" id="hotbar-heavy-strike" aria-label="Golpe Pesado">
+      <span class="hotbar-skill-glyph">P</span>
+      <span class="hotbar-cooldown-shade" id="hotbar-heavy-strike-shade"></span>
+      <span class="hotbar-cooldown-text" id="hotbar-heavy-strike-cooldown"></span>
+      <span class="hotbar-keycap">5</span>
+    </div>
+    <div class="hotbar-slot hotbar-skill-slot hotbar-warrior-skill" id="hotbar-charge" aria-label="Investida">
+      <span class="hotbar-skill-glyph">I</span>
+      <span class="hotbar-cooldown-shade" id="hotbar-charge-shade"></span>
+      <span class="hotbar-cooldown-text" id="hotbar-charge-cooldown"></span>
+      <span class="hotbar-keycap">6</span>
+    </div>
     <div class="hotbar-slot hotbar-number-slot"><span>7</span></div>
     <div class="hotbar-slot hotbar-number-slot"><span>8</span></div>
     <div class="hotbar-slot hotbar-number-slot"><span>9</span></div>
@@ -232,6 +342,7 @@ const TEMPLATE = `
         <div class="bar-fill" id="hud-xp-fill"></div>
         <span class="bar-text">EXP</span>
       </div>
+      <div class="buff-tray" id="buff-tray" hidden aria-label="Efeitos ativos"></div>
     </div>
   </div>
 
@@ -253,6 +364,35 @@ const TEMPLATE = `
         <span class="bar-text" id="target-mana-text">0 / 0</span>
       </div>
     </div>
+  </div>
+
+  <div class="party-panel" id="party-panel" hidden aria-label="Grupo"></div>
+
+  <div class="party-panel friend-panel" id="friend-panel" hidden aria-label="Amigos"></div>
+
+  <div class="party-invite-panel" id="party-invite-panel" hidden aria-live="polite"></div>
+
+  <div class="player-context-menu" id="player-context-menu" hidden>
+    <strong id="player-context-name">Jogador</strong>
+    <small id="player-context-detail">Warrior</small>
+    <button id="player-context-invite" type="button">Convidar para grupo</button>
+    <button id="player-context-message" type="button">Enviar mensagem</button>
+    <button id="player-context-inspect" type="button">Inspecionar</button>
+    <button id="player-context-friend" type="button">Adicionar amigo</button>
+  </div>
+
+  <div class="system-feed" id="system-feed" aria-live="polite"></div>
+
+  <div class="chat-panel" id="chat-panel" data-active="false" aria-label="Chat">
+    <div class="chat-messages" id="chat-messages" aria-live="polite"></div>
+    <form class="chat-form" id="chat-form" data-channel="local">
+      <select id="chat-channel-select" aria-label="Canal do chat">
+        <option value="local">Local</option>
+        <option value="party">Grupo</option>
+        <option value="global">Global</option>
+      </select>
+      <input id="chat-input" type="text" maxlength="220" autocomplete="off" spellcheck="false" placeholder="Mensagem local ou /p grupo" />
+    </form>
   </div>
 
   <div class="quest-panel" id="quest-panel" hidden>
@@ -354,6 +494,18 @@ const TEMPLATE = `
       <button id="respawn-btn">Renascer</button>
     </div>
   </div>
+
+  <div class="talent-panel hud-window" id="talent-panel" hidden aria-label="Talentos do Warrior">
+    <div class="talent-heading">
+      <div>
+        <span class="panel-kicker">Warrior</span>
+        <strong>Talentos</strong>
+      </div>
+      <button class="talent-close" id="talent-close" type="button" aria-label="Fechar talentos">X</button>
+    </div>
+    <div class="talent-summary" id="talent-summary"></div>
+    <div class="talent-trees" id="talent-trees"></div>
+  </div>
 `;
 
 export class HUD {
@@ -361,6 +513,14 @@ export class HUD {
   onRespawn: () => void = () => {};
   onEquipItem: (itemId: string) => void = () => {};
   onUseItem: (kind: ItemKind) => void = () => {};
+  /** Item da bag arrastado para fora do menu (dropar no chao). */
+  onDropItem: (item: InventoryItem) => void = () => {};
+  /** Item da bag arrastado para um slot especifico do paper doll. */
+  onEquipItemToSlot: (itemId: string, slot: EquipmentSlot) => void = () => {};
+  /** Drag & drop entre dois slots da hotbar pedindo troca de posicoes. */
+  onHotbarSwap: (from: HotbarAction, to: HotbarAction) => void = () => {};
+  /** Clique simples num slot da hotbar (dispara a acao, como a tecla). */
+  onHotbarUse: (action: HotbarAction) => void = () => {};
   onUnequipSlot: (slot: EquipmentSlot) => void = () => {};
   onAllocateAttribute: (attribute: PlayerAttribute) => void = () => {};
   onVendorBuy: (vendorId: string, itemId: string) => void = () => {};
@@ -377,6 +537,17 @@ export class HUD {
   onQuestTrackerHover: (hovered: boolean) => void = () => {};
   onNpcDialogueClose: () => void = () => {};
   onNpcDialogueAction: (npcId: string) => void = () => {};
+  onPartyInviteSend: (targetPlayerId: string) => void = () => {};
+  onPartyInviteAccept: (inviteId: string) => void = () => {};
+  onPartyInviteDecline: (inviteId: string) => void = () => {};
+  onPartyLeave: () => void = () => {};
+  onPartyKick: (targetPlayerId: string) => void = () => {};
+  onPartyLeaderTransfer: (targetPlayerId: string) => void = () => {};
+  onFriendAdd: (targetPlayerId: string) => void = () => {};
+  onFriendRemove: (targetPlayerId: string) => void = () => {};
+  onChatSend: (channel: ChatChannel, message: string) => void = () => {};
+  onTalentLearn: (talentId: string) => void = () => {};
+  onTalentReset: () => void = () => {};
 
   private readonly levelEl: HTMLElement;
   private readonly playerName: HTMLElement;
@@ -385,6 +556,7 @@ export class HUD {
   private readonly manaFill: HTMLElement;
   private readonly manaText: HTMLElement;
   private readonly xpFill: HTMLElement;
+  private readonly buffTray: HTMLElement;
   private readonly targetFrame: HTMLElement;
   private readonly targetName: HTMLElement;
   private readonly targetSubtitle: HTMLElement;
@@ -394,6 +566,22 @@ export class HUD {
   private readonly targetManaBar: HTMLElement;
   private readonly targetManaFill: HTMLElement;
   private readonly targetManaText: HTMLElement;
+  private readonly partyPanel: HTMLElement;
+  private readonly friendPanel: HTMLElement;
+  private readonly partyInvitePanel: HTMLElement;
+  private readonly playerContextMenu: HTMLElement;
+  private readonly playerContextName: HTMLElement;
+  private readonly playerContextDetail: HTMLElement;
+  private readonly playerContextInvite: HTMLButtonElement;
+  private readonly playerContextMessage: HTMLButtonElement;
+  private readonly playerContextInspect: HTMLButtonElement;
+  private readonly playerContextFriend: HTMLButtonElement;
+  private readonly systemFeed: HTMLElement;
+  private readonly chatPanel: HTMLElement;
+  private readonly chatMessages: HTMLElement;
+  private readonly chatForm: HTMLFormElement;
+  private readonly chatChannelSelect: HTMLSelectElement;
+  private readonly chatInput: HTMLInputElement;
   private readonly deathOverlay: HTMLElement;
   private readonly zoneName: HTMLElement;
   private readonly questPanel: HTMLElement;
@@ -406,6 +594,8 @@ export class HUD {
   private readonly zoneBannerName: HTMLElement;
   private readonly hotbarWeaponSlot: HTMLElement;
   private readonly hotbarOffhandSlot: HTMLElement;
+  private readonly hotbarEl: HTMLElement;
+  private readonly hotbarDragBound = new Set<HTMLElement>();
   private readonly hotbarHealthPotionSlot: HTMLElement;
   private readonly hotbarHealthPotionCount: HTMLElement;
   private readonly hotbarManaPotionSlot: HTMLElement;
@@ -413,6 +603,15 @@ export class HUD {
   private readonly hotbarArcaneNovaSlot: HTMLElement;
   private readonly hotbarArcaneNovaShade: HTMLElement;
   private readonly hotbarArcaneNovaCooldown: HTMLElement;
+  private readonly hotbarWarCrySlot: HTMLElement;
+  private readonly hotbarWarCryShade: HTMLElement;
+  private readonly hotbarWarCryCooldown: HTMLElement;
+  private readonly hotbarHeavyStrikeSlot: HTMLElement;
+  private readonly hotbarHeavyStrikeShade: HTMLElement;
+  private readonly hotbarHeavyStrikeCooldown: HTMLElement;
+  private readonly hotbarChargeSlot: HTMLElement;
+  private readonly hotbarChargeShade: HTMLElement;
+  private readonly hotbarChargeCooldown: HTMLElement;
   private readonly minimapCanvas: HTMLCanvasElement;
   private readonly minimapContext: CanvasRenderingContext2D | null;
   private readonly qualityChip: HTMLElement;
@@ -455,8 +654,13 @@ export class HUD {
   private readonly characterStats: HTMLElement;
   private readonly attributeSection: HTMLElement;
   private readonly equipmentSlots: HTMLElement;
+  private readonly talentPanel: HTMLElement;
+  private readonly talentClose: HTMLButtonElement;
+  private readonly talentSummary: HTMLElement;
+  private readonly talentTrees: HTMLElement;
 
   private gameMenuOpen = false;
+  private talentPanelOpen = false;
   private hotbarRenderKey = '';
   private inventoryRenderKey = '__initial_inventory__';
   private characterRenderKey = '';
@@ -475,6 +679,21 @@ export class HUD {
   private emittedNpcTargetHoverId: string | null = null;
   private npcTargetFrameHovered = false;
   private npcDialogueActionPending = false;
+  private partyRenderKey = '';
+  private friendRenderKey = '';
+  private friendPresenceInitialized = false;
+  private readonly friendIds = new Set<string>();
+  private readonly friendOnlineById = new Map<string, boolean>();
+  private partyInviteRenderKey = '';
+  private readonly partyMemberIds = new Set<string>();
+  private activePlayerContextId: string | null = null;
+  private activePlayerContextName = '';
+  private activePlayerContextLevel = 1;
+  private activePlayerContextHp = 0;
+  private activePlayerContextMaxHp = 0;
+  private chatActive = false;
+  private talentRenderKey = '';
+  private buffRenderKey = '';
   private zoneBannerTimer: number | null = null;
   private characterTrainingContext: string | null = null;
   private questTrackerActionable = false;
@@ -489,6 +708,7 @@ export class HUD {
     this.manaFill = layer.querySelector('#hud-mana-fill')!;
     this.manaText = layer.querySelector('#hud-mana-text')!;
     this.xpFill = layer.querySelector('#hud-xp-fill')!;
+    this.buffTray = layer.querySelector('#buff-tray')!;
     this.targetFrame = layer.querySelector('#target-frame')!;
     this.targetName = layer.querySelector('#target-name')!;
     this.targetSubtitle = layer.querySelector('#target-subtitle')!;
@@ -498,6 +718,22 @@ export class HUD {
     this.targetManaBar = layer.querySelector('#target-mana-bar')!;
     this.targetManaFill = layer.querySelector('#target-mana-fill')!;
     this.targetManaText = layer.querySelector('#target-mana-text')!;
+    this.partyPanel = layer.querySelector('#party-panel')!;
+    this.friendPanel = layer.querySelector('#friend-panel')!;
+    this.partyInvitePanel = layer.querySelector('#party-invite-panel')!;
+    this.playerContextMenu = layer.querySelector('#player-context-menu')!;
+    this.playerContextName = layer.querySelector('#player-context-name')!;
+    this.playerContextDetail = layer.querySelector('#player-context-detail')!;
+    this.playerContextInvite = layer.querySelector('#player-context-invite') as HTMLButtonElement;
+    this.playerContextMessage = layer.querySelector('#player-context-message') as HTMLButtonElement;
+    this.playerContextInspect = layer.querySelector('#player-context-inspect') as HTMLButtonElement;
+    this.playerContextFriend = layer.querySelector('#player-context-friend') as HTMLButtonElement;
+    this.systemFeed = layer.querySelector('#system-feed')!;
+    this.chatPanel = layer.querySelector('#chat-panel')!;
+    this.chatMessages = layer.querySelector('#chat-messages')!;
+    this.chatForm = layer.querySelector('#chat-form') as HTMLFormElement;
+    this.chatChannelSelect = layer.querySelector('#chat-channel-select') as HTMLSelectElement;
+    this.chatInput = layer.querySelector('#chat-input') as HTMLInputElement;
     this.deathOverlay = layer.querySelector('#death-overlay')!;
     this.zoneName = layer.querySelector('#zone-name')!;
     this.questPanel = layer.querySelector('#quest-panel')!;
@@ -510,6 +746,7 @@ export class HUD {
     this.zoneBannerName = layer.querySelector('#zone-banner-name')!;
     this.hotbarWeaponSlot = layer.querySelector('#hotbar-weapon-slot')!;
     this.hotbarOffhandSlot = layer.querySelector('#hotbar-offhand-slot')!;
+    this.hotbarEl = layer.querySelector('.hotbar')!;
     this.hotbarHealthPotionSlot = layer.querySelector('#hotbar-health-potion')!;
     this.hotbarHealthPotionCount = layer.querySelector('#hotbar-health-potion-count')!;
     this.hotbarManaPotionSlot = layer.querySelector('#hotbar-mana-potion')!;
@@ -517,6 +754,15 @@ export class HUD {
     this.hotbarArcaneNovaSlot = layer.querySelector('#hotbar-arcane-nova')!;
     this.hotbarArcaneNovaShade = layer.querySelector('#hotbar-arcane-nova-shade')!;
     this.hotbarArcaneNovaCooldown = layer.querySelector('#hotbar-arcane-nova-cooldown')!;
+    this.hotbarWarCrySlot = layer.querySelector('#hotbar-war-cry')!;
+    this.hotbarWarCryShade = layer.querySelector('#hotbar-war-cry-shade')!;
+    this.hotbarWarCryCooldown = layer.querySelector('#hotbar-war-cry-cooldown')!;
+    this.hotbarHeavyStrikeSlot = layer.querySelector('#hotbar-heavy-strike')!;
+    this.hotbarHeavyStrikeShade = layer.querySelector('#hotbar-heavy-strike-shade')!;
+    this.hotbarHeavyStrikeCooldown = layer.querySelector('#hotbar-heavy-strike-cooldown')!;
+    this.hotbarChargeSlot = layer.querySelector('#hotbar-charge')!;
+    this.hotbarChargeShade = layer.querySelector('#hotbar-charge-shade')!;
+    this.hotbarChargeCooldown = layer.querySelector('#hotbar-charge-cooldown')!;
     this.minimapCanvas = layer.querySelector('#minimap-canvas')!;
     this.minimapContext = this.minimapCanvas.getContext('2d');
     this.qualityChip = layer.querySelector('#quality-chip')!;
@@ -559,11 +805,16 @@ export class HUD {
     this.characterStats = layer.querySelector('#character-stats')!;
     this.attributeSection = layer.querySelector('#attribute-section')!;
     this.equipmentSlots = layer.querySelector('#equipment-slots')!;
+    this.talentPanel = layer.querySelector('#talent-panel')!;
+    this.talentClose = layer.querySelector('#talent-close') as HTMLButtonElement;
+    this.talentSummary = layer.querySelector('#talent-summary')!;
+    this.talentTrees = layer.querySelector('#talent-trees')!;
 
     const btn = layer.querySelector('#respawn-btn') as HTMLButtonElement;
     btn.addEventListener('click', () => this.onRespawn());
     const menuClose = layer.querySelector('#game-menu-close') as HTMLButtonElement;
     menuClose.addEventListener('click', () => this.setMenuOpen(false));
+    this.talentClose.addEventListener('click', () => this.setTalentPanelOpen(false));
     this.targetFrame.addEventListener('click', () => {
       if (this.activeNpcTargetId) this.onNpcTargetInteract(this.activeNpcTargetId);
     });
@@ -577,6 +828,80 @@ export class HUD {
       event.preventDefault();
       this.onNpcTargetInteract(this.activeNpcTargetId);
     });
+    this.playerContextInvite.addEventListener('click', () => {
+      if (!this.activePlayerContextId) return;
+      this.onPartyInviteSend(this.activePlayerContextId);
+      this.hidePlayerContextMenu();
+    });
+    this.playerContextMessage.addEventListener('click', () => {
+      if (!this.activePlayerContextId) return;
+      const name = this.activePlayerContextName || 'jogador';
+      const targetPlayerId = this.activePlayerContextId;
+      this.hidePlayerContextMenu();
+      this.openPlayerMessageDraft(targetPlayerId, name);
+    });
+    this.playerContextInspect.addEventListener('click', () => {
+      if (!this.activePlayerContextId) return;
+      const sameParty = this.partyMemberIds.has(this.activePlayerContextId);
+      const hp = Math.max(0, Math.ceil(this.activePlayerContextHp));
+      const maxHp = Math.max(1, Math.ceil(this.activePlayerContextMaxHp));
+      const name = this.activePlayerContextName || 'Jogador';
+      const relation = sameParty ? 'membro do grupo' : 'jogador proximo';
+      this.hidePlayerContextMenu();
+      this.pushSystemMessage(`Inspecao: ${name} - Warrior nivel ${this.activePlayerContextLevel}, vida ${hp}/${maxHp}, ${relation}.`);
+    });
+    this.playerContextFriend.addEventListener('click', () => {
+      if (!this.activePlayerContextId) return;
+      this.onFriendAdd(this.activePlayerContextId);
+      this.hidePlayerContextMenu();
+    });
+    window.addEventListener('pointerdown', (event) => {
+      if (this.playerContextMenu.hidden) return;
+      if (event.target instanceof Node && this.playerContextMenu.contains(event.target)) return;
+      this.hidePlayerContextMenu();
+    });
+    this.chatForm.addEventListener('submit', (event) => {
+      event.preventDefault();
+      this.submitChatInput();
+    });
+    this.chatChannelSelect.addEventListener('change', () => this.applyChatChannelSelection(this.chatChannelSelect.value as ChatChannel));
+    this.chatInput.addEventListener('input', () => this.syncChatDraftChannel());
+    this.chatInput.addEventListener('focus', () => this.openChat());
+    // Sem isso, clicar fora do input deixava chatActive=true para sempre e o
+    // stopPropagation abaixo engolia TODO o teclado do jogo (WASD, skills...).
+    this.chatInput.addEventListener('blur', (event) => {
+      const next = event.relatedTarget;
+      if (next instanceof Node && this.chatPanel.contains(next)) return;
+      this.closeChat();
+    });
+    window.addEventListener('keydown', (event) => {
+      if (event.target === this.chatInput) {
+        event.stopPropagation();
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          this.closeChat();
+        }
+        if (event.key === 'Enter' && !event.repeat && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey && !event.isComposing) {
+          event.preventDefault();
+          this.submitChatInput();
+        }
+        return;
+      }
+      if (this.chatActive && document.activeElement === this.chatInput) event.stopPropagation();
+      if (event.key === 'Escape' && this.chatActive) {
+        event.preventDefault();
+        this.closeChat();
+        return;
+      }
+      if (event.key !== 'Enter' || event.repeat || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
+      if (event.target instanceof HTMLElement) {
+        const tag = event.target.tagName;
+        if (event.target.isContentEditable || tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || tag === 'BUTTON') return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      this.openChat();
+    }, true);
     this.npcDialogueClose.addEventListener('click', () => {
       this.hideNpcDialogue();
       this.onNpcDialogueClose();
@@ -613,6 +938,7 @@ export class HUD {
     this.playerName.textContent = profile.name.trim() || 'Heroi de Aranna';
 
     this.setMenuOpen(false);
+    this.setTalentPanelOpen(false);
   }
 
   toggleInventory(): void {
@@ -637,6 +963,17 @@ export class HUD {
     this.setMenuOpen(!this.gameMenuOpen);
   }
 
+  toggleTalents(): void {
+    this.setTalentPanelOpen(!this.talentPanelOpen);
+  }
+
+  setTalentPanelOpen(open: boolean): void {
+    this.talentPanelOpen = open;
+    this.talentPanel.hidden = !open;
+    this.talentPanel.classList.toggle('open', open);
+    this.talentPanel.setAttribute('aria-hidden', String(!open));
+  }
+
   setRenderQuality(mode: RenderQualityMode, level: RenderQualityLevel): void {
     const label: Record<RenderQualityLevel, string> = {
       high: 'ALTA',
@@ -646,6 +983,121 @@ export class HUD {
     this.qualityChip.textContent = mode === 'auto' ? `AUTO ${label[level]}` : label[level];
     this.qualityChip.dataset.mode = mode;
     this.qualityChip.dataset.level = level;
+  }
+
+  showPlayerContextMenu(context: HudPlayerContext): void {
+    this.activePlayerContextId = context.id;
+    this.activePlayerContextName = context.name || 'Jogador';
+    this.activePlayerContextLevel = context.level;
+    this.activePlayerContextHp = context.hp;
+    this.activePlayerContextMaxHp = context.maxHp;
+    this.playerContextName.textContent = context.name || 'Jogador';
+    this.playerContextDetail.textContent = `Warrior nivel ${context.level}`;
+    this.updatePlayerContextFriendAction(context.id);
+    const width = 214;
+    const height = 186;
+    const x = Math.min(Math.max(12, context.x), Math.max(12, window.innerWidth - width - 12));
+    const y = Math.min(Math.max(12, context.y), Math.max(12, window.innerHeight - height - 12));
+    this.playerContextMenu.style.left = `${x}px`;
+    this.playerContextMenu.style.top = `${y}px`;
+    this.playerContextMenu.hidden = false;
+  }
+
+  hidePlayerContextMenu(): void {
+    this.activePlayerContextId = null;
+    this.activePlayerContextName = '';
+    this.activePlayerContextLevel = 1;
+    this.activePlayerContextHp = 0;
+    this.activePlayerContextMaxHp = 0;
+    this.updatePlayerContextFriendAction(null);
+    this.playerContextMenu.hidden = true;
+  }
+
+  syncPlayerContextTargets(availablePlayerIds: ReadonlySet<string>): void {
+    if (!this.activePlayerContextId) return;
+    if (availablePlayerIds.has(this.activePlayerContextId)) return;
+    this.hidePlayerContextMenu();
+  }
+
+  pushSystemMessage(message: string): void {
+    const text = message.trim();
+    if (!text) return;
+    const row = document.createElement('div');
+    row.className = 'system-feed-message';
+    row.textContent = text;
+    this.systemFeed.append(row);
+    while (this.systemFeed.children.length > 5) {
+      this.systemFeed.firstElementChild?.remove();
+    }
+    window.setTimeout(() => row.remove(), 6500);
+  }
+
+  openChat(): void {
+    this.chatActive = true;
+    this.chatPanel.dataset.active = 'true';
+    this.chatInput.focus();
+  }
+
+  openChatWithDraft(draft: string): void {
+    this.openChat();
+    this.chatInput.value = draft;
+    this.syncChatDraftChannel();
+    this.chatInput.setSelectionRange(this.chatInput.value.length, this.chatInput.value.length);
+  }
+
+  closeChat(): void {
+    this.chatActive = false;
+    this.chatPanel.dataset.active = 'false';
+    this.chatInput.blur();
+  }
+
+  private submitChatInput(): void {
+    const parsed = parseChatInput(this.chatInput.value);
+    if (parsed.message) this.onChatSend(parsed.channel, parsed.message);
+    this.chatInput.value = '';
+    this.syncChatDraftChannel();
+    this.closeChat();
+  }
+
+  private syncChatDraftChannel(): void {
+    const channel = parseChatInput(this.chatInput.value).channel;
+    this.chatForm.dataset.channel = channel;
+    if (this.chatChannelSelect.value !== channel) this.chatChannelSelect.value = channel;
+  }
+
+  private applyChatChannelSelection(channel: ChatChannel): void {
+    const parsed = parseChatInput(this.chatInput.value);
+    this.chatInput.value = chatDraftFor(channel, parsed.message);
+    this.chatInput.setSelectionRange(this.chatInput.value.length, this.chatInput.value.length);
+    this.syncChatDraftChannel();
+    this.openChat();
+  }
+
+  pushChatMessage(message: ChatMessageState, localPlayerId: string): void {
+    const row = document.createElement('div');
+    row.className = 'chat-message';
+    row.dataset.channel = message.channel;
+    row.classList.toggle('self', message.senderId === localPlayerId);
+    const channel = document.createElement('span');
+    channel.className = 'chat-channel';
+    channel.textContent = chatChannelLabel(message.channel);
+    const body = document.createElement('span');
+    body.className = 'chat-body';
+    if (message.channel === 'system') {
+      body.textContent = message.message;
+    } else {
+      const sender = document.createElement('strong');
+      sender.textContent = `${message.senderName}:`;
+      const text = document.createElement('span');
+      text.textContent = message.message;
+      body.append(sender, text);
+    }
+    row.append(channel, body);
+    this.chatMessages.append(row);
+    while (this.chatMessages.children.length > 60) {
+      this.chatMessages.firstElementChild?.remove();
+    }
+    this.chatMessages.scrollTop = this.chatMessages.scrollHeight;
   }
 
   setQuestTrackerActionable(actionable: boolean): void {
@@ -982,7 +1434,7 @@ export class HUD {
 
     const hpRatio = barRatio(player.hp, player.maxHp);
     this.hpFill.style.width = `${hpRatio * 100}%`;
-    this.hpText.textContent = `${Math.ceil(Math.max(0, player.hp))} / ${player.maxHp}`;
+    this.hpText.textContent = `${Math.ceil(Math.max(0, player.hp))} / ${Math.round(player.maxHp)}`;
 
     const mana = player.mana ?? 0;
     const maxMana = player.maxMana ?? 0;
@@ -990,7 +1442,17 @@ export class HUD {
     this.manaFill.style.width = `${manaRatio * 100}%`;
     this.manaText.textContent = `${Math.ceil(Math.max(0, mana))} / ${maxMana}`;
     this.updateArcaneNovaHotbar(player);
+    this.updateWarCryHotbar(player);
+    this.updateHeavyStrikeHotbar(player);
+    this.updateChargeHotbar(player);
     this.updateConsumableHotbar(snapshot);
+    this.renderBuffs(player.buffs ?? []);
+    this.renderParty(snapshot.party, player.id);
+    const friends = snapshot.friends ?? [];
+    this.syncFriendPresenceFeedback(friends);
+    this.renderFriends(friends);
+    this.renderPartyInvites(snapshot.partyInvites);
+    this.renderTalents(snapshot.talents);
 
     const xp = player.xp ?? 0;
     const xpToNext = player.xpToNext ?? 1;
@@ -1081,6 +1543,10 @@ export class HUD {
       attributes?.vitality ?? 0,
       attributes?.energy ?? 0,
       attributes?.unspentPoints ?? 0,
+      snapshot.talents.talentPoints,
+      snapshot.talents.spentPoints,
+      snapshot.talents.availablePoints,
+      ...Object.entries(snapshot.talents.talents).map(([id, rank]) => `${id}:${rank}`).sort(),
       snapshot.zone,
       ...EQUIPMENT_SLOTS.map(({ slot }) => {
         const id = snapshot.equipment[slot];
@@ -1100,6 +1566,351 @@ export class HUD {
     if (characterKey !== this.characterRenderKey) {
       this.characterRenderKey = characterKey;
       this.renderCharacter(snapshot, player);
+    }
+  }
+
+  private renderBuffs(buffs: readonly BuffState[]): void {
+    const key = buffs
+      .map((buff) => `${buff.id}:${buff.label}:${Math.ceil(buff.remaining)}:${buff.duration}`)
+      .join('|');
+    if (key === this.buffRenderKey) return;
+    this.buffRenderKey = key;
+    this.buffTray.replaceChildren();
+    this.buffTray.hidden = buffs.length === 0;
+    for (const buff of buffs) {
+      const item = document.createElement('div');
+      item.className = 'buff-icon';
+      item.dataset.buff = buff.id;
+      const ratio = buff.duration > 0 ? Math.max(0, Math.min(1, buff.remaining / buff.duration)) : 0;
+      item.style.setProperty('--buff-ratio', String(ratio));
+      item.title = `${buff.label} - ${Math.ceil(buff.remaining)}s`;
+      const label = document.createElement('strong');
+      label.textContent = buffInitials(buff.label) || '?';
+      const time = document.createElement('span');
+      time.textContent = `${Math.ceil(buff.remaining)}`;
+      item.append(label, time);
+      this.buffTray.append(item);
+    }
+  }
+
+  private renderParty(party: PartyState | null, localPlayerId: string): void {
+    this.partyMemberIds.clear();
+    for (const member of party?.members ?? []) {
+      if (member.id !== localPlayerId && member.online) this.partyMemberIds.add(member.id);
+    }
+
+    const key = party
+      ? [
+        party.id,
+        party.leaderId,
+        ...party.members.map((member) => [
+          member.id,
+          member.name,
+          member.level,
+          Math.ceil(member.hp),
+          member.maxHp,
+          member.online ? 1 : 0,
+          party.leaderId === localPlayerId && member.id !== localPlayerId ? 1 : 0,
+        ].join(':')),
+      ].join('|')
+      : '';
+    if (key === this.partyRenderKey) return;
+    this.partyRenderKey = key;
+    this.partyPanel.replaceChildren();
+    this.partyPanel.hidden = !party || party.members.length <= 1;
+    if (!party || party.members.length <= 1) return;
+
+    const heading = document.createElement('div');
+    heading.className = 'party-heading';
+    const titleWrap = document.createElement('div');
+    titleWrap.className = 'party-heading-title';
+    const title = document.createElement('strong');
+    title.textContent = 'Grupo';
+    const count = document.createElement('small');
+    count.textContent = `${party.members.filter((member) => member.online).length}/${party.members.length}`;
+    titleWrap.append(title, count);
+    const actions = document.createElement('div');
+    actions.className = 'party-member-actions';
+    const chat = document.createElement('button');
+    chat.type = 'button';
+    chat.className = 'party-message';
+    chat.textContent = 'Chat';
+    chat.title = 'Abrir chat do grupo';
+    chat.addEventListener('click', () => {
+      this.openChatWithDraft('/p ');
+      this.pushSystemMessage('Chat do grupo aberto.');
+    });
+    const leave = document.createElement('button');
+    leave.type = 'button';
+    leave.textContent = 'Sair';
+    leave.addEventListener('click', () => this.onPartyLeave());
+    actions.append(chat, leave);
+    heading.append(titleWrap, actions);
+    this.partyPanel.append(heading);
+
+    for (const member of party.members) {
+      const row = document.createElement('div');
+      row.className = 'party-member';
+      row.classList.toggle('offline', !member.online);
+      row.classList.toggle('self', member.id === localPlayerId);
+      const top = document.createElement('div');
+      top.className = 'party-member-top';
+      const info = document.createElement('div');
+      info.className = 'party-member-info';
+      const name = document.createElement('strong');
+      name.textContent = `${member.name}${member.id === party.leaderId ? ' (lider)' : ''}`;
+      const meta = document.createElement('small');
+      meta.textContent = `Nv ${member.level} ${member.class}`;
+      info.append(name, meta);
+      const canManage = party.leaderId === localPlayerId && member.id !== localPlayerId;
+      if (canManage) {
+        const actions = document.createElement('div');
+        actions.className = 'party-member-actions';
+        const promote = document.createElement('button');
+        promote.type = 'button';
+        promote.className = 'party-promote';
+        promote.textContent = 'Promover';
+        promote.title = `Transferir lideranca para ${member.name}`;
+        promote.addEventListener('click', () => this.onPartyLeaderTransfer(member.id));
+        const kick = document.createElement('button');
+        kick.type = 'button';
+        kick.className = 'party-kick';
+        kick.textContent = 'Remover';
+        kick.title = `Remover ${member.name} do grupo`;
+        kick.addEventListener('click', () => this.onPartyKick(member.id));
+        actions.append(promote, kick);
+        top.append(info, actions);
+      } else {
+        top.append(info);
+      }
+      const hp = document.createElement('div');
+      hp.className = 'party-hp';
+      const fill = document.createElement('div');
+      fill.style.width = `${barRatio(member.hp, member.maxHp) * 100}%`;
+      const label = document.createElement('span');
+      label.textContent = member.online ? `${Math.ceil(member.hp)} / ${Math.round(member.maxHp)}` : 'offline';
+      hp.append(fill, label);
+      row.append(top, hp);
+      this.partyPanel.append(row);
+    }
+  }
+
+  private renderFriends(friends: readonly FriendState[]): void {
+    const orderedFriends = [...friends].sort((a, b) => {
+      if (a.online !== b.online) return a.online ? -1 : 1;
+      const aName = a.name || a.id;
+      const bName = b.name || b.id;
+      return aName.localeCompare(bName, 'pt-BR') || a.id.localeCompare(b.id);
+    });
+    const key = orderedFriends
+      .map((friend) => [
+        friend.id,
+        friend.name,
+        friend.level,
+        friend.online ? 1 : 0,
+        this.partyMemberIds.has(friend.id) ? 1 : 0,
+      ].join(':'))
+      .join('|');
+    if (key === this.friendRenderKey) return;
+    this.friendRenderKey = key;
+    this.friendPanel.replaceChildren();
+    this.friendPanel.hidden = friends.length === 0;
+    if (friends.length === 0) return;
+
+    const heading = document.createElement('div');
+    heading.className = 'party-heading';
+    const title = document.createElement('strong');
+    title.textContent = 'Amigos';
+    const count = document.createElement('small');
+    count.textContent = `${friends.filter((friend) => friend.online).length}/${friends.length}`;
+    heading.append(title, count);
+    this.friendPanel.append(heading);
+
+    for (const friend of orderedFriends) {
+      const row = document.createElement('div');
+      row.className = 'party-member friend-member';
+      row.classList.toggle('offline', !friend.online);
+      const top = document.createElement('div');
+      top.className = 'party-member-top';
+      const info = document.createElement('div');
+      info.className = 'party-member-info';
+      const name = document.createElement('strong');
+      name.textContent = friend.name || friend.id;
+      const meta = document.createElement('small');
+      meta.textContent = friend.online ? `Nv ${friend.level} Warrior` : 'offline';
+      info.append(name, meta);
+      const actions = document.createElement('div');
+      actions.className = 'party-member-actions';
+      if (friend.online) {
+        const message = document.createElement('button');
+        message.type = 'button';
+        message.className = 'party-message';
+        message.textContent = 'Msg';
+        message.title = `Enviar mensagem para ${friend.name || friend.id}`;
+        message.addEventListener('click', () => this.openPlayerMessageDraft(friend.id, friend.name || friend.id));
+        actions.append(message);
+        const invite = document.createElement('button');
+        invite.type = 'button';
+        invite.className = 'party-promote';
+        if (this.partyMemberIds.has(friend.id)) {
+          invite.disabled = true;
+          invite.textContent = 'No grupo';
+          invite.title = `${friend.name || friend.id} ja esta no grupo`;
+        } else {
+          invite.textContent = 'Grupo';
+          invite.title = `Convidar ${friend.name || friend.id} para grupo`;
+          invite.addEventListener('click', () => this.onPartyInviteSend(friend.id));
+        }
+        actions.append(invite);
+      }
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'party-kick';
+      remove.textContent = 'Remover';
+      remove.title = `Remover ${friend.name || friend.id} dos amigos`;
+      remove.addEventListener('click', () => this.onFriendRemove(friend.id));
+      actions.append(remove);
+      top.append(info, actions);
+      row.append(top);
+      this.friendPanel.append(row);
+    }
+  }
+
+  private openPlayerMessageDraft(targetPlayerId: string, name: string): void {
+    const sameParty = this.partyMemberIds.has(targetPlayerId);
+    this.openChatWithDraft(sameParty ? '/p ' : '');
+    this.pushSystemMessage(sameParty ? `Chat do grupo aberto para falar com ${name}.` : `Chat local aberto para falar com ${name}.`);
+  }
+
+  private syncFriendPresenceFeedback(friends: readonly FriendState[]): void {
+    this.friendIds.clear();
+    const seen = new Set<string>();
+    for (const friend of friends) {
+      seen.add(friend.id);
+      this.friendIds.add(friend.id);
+      const previous = this.friendOnlineById.get(friend.id);
+      if (this.friendPresenceInitialized && previous !== undefined && previous !== friend.online) {
+        const name = friend.name || friend.id;
+        this.pushSystemMessage(friend.online ? `${name} entrou no jogo.` : `${name} saiu do jogo.`);
+      }
+      this.friendOnlineById.set(friend.id, friend.online);
+    }
+
+    for (const id of this.friendOnlineById.keys()) {
+      if (!seen.has(id)) this.friendOnlineById.delete(id);
+    }
+    this.friendPresenceInitialized = true;
+    this.updatePlayerContextFriendAction(this.activePlayerContextId);
+  }
+
+  private updatePlayerContextFriendAction(playerId: string | null): void {
+    const alreadyFriend = !!playerId && this.friendIds.has(playerId);
+    this.playerContextFriend.disabled = alreadyFriend;
+    this.playerContextFriend.textContent = alreadyFriend ? 'Amigo adicionado' : 'Adicionar amigo';
+    this.playerContextFriend.title = alreadyFriend ? 'Jogador ja esta na sua lista de amigos.' : 'Adicionar jogador aos amigos.';
+  }
+
+  private renderPartyInvites(invites: readonly PartyInviteState[]): void {
+    const key = invites.map((invite) => `${invite.inviteId}:${invite.fromPlayerId}:${invite.expiresAt}`).join('|');
+    if (key === this.partyInviteRenderKey) return;
+    this.partyInviteRenderKey = key;
+    this.partyInvitePanel.replaceChildren();
+    this.partyInvitePanel.hidden = invites.length === 0;
+    for (const invite of invites) {
+      const card = document.createElement('div');
+      card.className = 'party-invite-card';
+      const title = document.createElement('strong');
+      title.textContent = 'Convite de grupo';
+      const text = document.createElement('span');
+      text.textContent = `${invite.fromName} quer formar um grupo.`;
+      const actions = document.createElement('div');
+      actions.className = 'party-invite-actions';
+      const accept = document.createElement('button');
+      accept.type = 'button';
+      accept.textContent = 'Aceitar';
+      accept.addEventListener('click', () => this.onPartyInviteAccept(invite.inviteId));
+      const decline = document.createElement('button');
+      decline.type = 'button';
+      decline.textContent = 'Recusar';
+      decline.addEventListener('click', () => this.onPartyInviteDecline(invite.inviteId));
+      actions.append(accept, decline);
+      card.append(title, text, actions);
+      this.partyInvitePanel.append(card);
+    }
+  }
+
+  private renderTalents(state: TalentState): void {
+    const ranksKey = Object.entries(state.talents).map(([id, rank]) => `${id}:${rank}`).sort().join('|');
+    const key = `${state.talentPoints}:${state.spentPoints}:${state.availablePoints}:${ranksKey}`;
+    if (key === this.talentRenderKey) return;
+    this.talentRenderKey = key;
+
+    this.talentSummary.replaceChildren();
+    const points = document.createElement('strong');
+    points.textContent = `${state.availablePoints} disponivel${state.availablePoints === 1 ? '' : 'is'}`;
+    const spent = document.createElement('span');
+    spent.textContent = `${state.spentPoints}/${state.talentPoints} gastos`;
+    const reset = document.createElement('button');
+    reset.type = 'button';
+    reset.className = 'talent-reset';
+    reset.textContent = 'Reset';
+    reset.title = state.spentPoints > 0 ? 'Reiniciar talentos e devolver pontos' : 'Nenhum talento gasto';
+    reset.disabled = state.spentPoints <= 0;
+    reset.addEventListener('click', () => this.onTalentReset());
+    this.talentSummary.append(points, spent, reset);
+
+    this.talentTrees.replaceChildren();
+    const trees: readonly TalentTree[] = ['fury', 'defense', 'weapons'];
+    for (const tree of trees) {
+      const column = document.createElement('section');
+      column.className = 'talent-tree';
+      const heading = document.createElement('h3');
+      heading.textContent = WARRIOR_TALENT_TREE_LABELS[tree];
+      column.append(heading);
+
+      for (const talent of WARRIOR_TALENTS.filter((candidate) => candidate.tree === tree)) {
+        const rank = talentRank(state, talent.id);
+        const maxed = rank >= talent.maxRank;
+        const requirementsMet = (talent.requires ?? []).every((requirement) => talentRank(state, requirement.talentId) >= requirement.rank);
+        const learnable = canLearnTalent(state, talent);
+        const card = document.createElement('article');
+        card.className = 'talent-card';
+        card.classList.toggle('locked', !requirementsMet);
+        card.classList.toggle('maxed', maxed);
+        card.classList.toggle('learnable', learnable);
+
+        const top = document.createElement('div');
+        top.className = 'talent-card-top';
+        const name = document.createElement('strong');
+        name.textContent = talent.name;
+        const rankLabel = document.createElement('span');
+        rankLabel.textContent = `${rank}/${talent.maxRank}`;
+        top.append(name, rankLabel);
+
+        const description = document.createElement('p');
+        description.textContent = talent.description;
+
+        const meta = document.createElement('small');
+        const requirement = talentRequirementLabel(talent);
+        meta.textContent = requirement ? `Requer ${requirement}` : 'Base';
+
+        const learn = document.createElement('button');
+        learn.type = 'button';
+        learn.textContent = maxed ? 'Max' : '+';
+        learn.title = maxed
+          ? 'Nivel maximo'
+          : !requirementsMet
+            ? `Requer ${requirement}`
+            : state.availablePoints < talent.cost
+              ? 'Sem pontos'
+              : `Aprender ${talent.name}`;
+        learn.disabled = !learnable;
+        learn.addEventListener('click', () => this.onTalentLearn(talent.id));
+
+        card.append(top, description, meta, learn);
+        column.append(card);
+      }
+      this.talentTrees.append(column);
     }
   }
 
@@ -1145,7 +1956,7 @@ export class HUD {
 
     const hpRatio = barRatio(target.hp, target.maxHp);
     this.targetHpFill.style.width = `${hpRatio * 100}%`;
-    this.targetHpText.textContent = `${Math.ceil(Math.max(0, target.hp))} / ${target.maxHp}`;
+    this.targetHpText.textContent = `${Math.ceil(Math.max(0, target.hp))} / ${Math.round(target.maxHp)}`;
 
     const mana = target.mana ?? 0;
     const maxMana = target.maxMana ?? 0;
@@ -1186,6 +1997,53 @@ export class HUD {
       : 'Nova Arcana';
     this.hotbarArcaneNovaShade.style.height = `${cooldownRatio * 100}%`;
     this.hotbarArcaneNovaCooldown.textContent = onCooldown ? String(Math.ceil(cooldown)) : '';
+  }
+
+  private updateWarCryHotbar(player: EntityState): void {
+    const skill = player.skills?.find((entry) => entry.id === 'war-cry');
+    const cooldown = Math.max(0, skill?.cooldownRemaining ?? 0);
+    const cooldownDuration = Math.max(0.01, skill?.cooldown ?? 1);
+    const cooldownRatio = barRatio(cooldown, cooldownDuration);
+    const onCooldown = cooldown > 0.05;
+
+    this.hotbarWarCrySlot.classList.toggle('on-cooldown', onCooldown);
+    this.hotbarWarCrySlot.title = skill
+      ? `${skill.label} - bonus de combate`
+      : 'Grito de Guerra';
+    this.hotbarWarCryShade.style.height = `${cooldownRatio * 100}%`;
+    this.hotbarWarCryCooldown.textContent = onCooldown ? String(Math.ceil(cooldown)) : '';
+  }
+
+  private updateHeavyStrikeHotbar(player: EntityState): void {
+    const skill = player.skills?.find((entry) => entry.id === 'heavy-strike');
+    const cooldown = Math.max(0, skill?.cooldownRemaining ?? 0);
+    const cooldownDuration = Math.max(0.01, skill?.cooldown ?? 1);
+    const cooldownRatio = barRatio(cooldown, cooldownDuration);
+    const onCooldown = cooldown > 0.05;
+
+    this.hotbarHeavyStrikeSlot.classList.toggle('on-cooldown', onCooldown);
+    this.hotbarHeavyStrikeSlot.classList.toggle('skill-queued', skill?.pending === true);
+    this.hotbarHeavyStrikeSlot.title = skill
+      ? `${skill.label} - alvo selecionado`
+      : 'Golpe Pesado';
+    this.hotbarHeavyStrikeShade.style.height = `${cooldownRatio * 100}%`;
+    this.hotbarHeavyStrikeCooldown.textContent = onCooldown ? String(Math.ceil(cooldown)) : '';
+  }
+
+  private updateChargeHotbar(player: EntityState): void {
+    const skill = player.skills?.find((entry) => entry.id === 'charge');
+    const cooldown = Math.max(0, skill?.cooldownRemaining ?? 0);
+    const cooldownDuration = Math.max(0.01, skill?.cooldown ?? 1);
+    const cooldownRatio = barRatio(cooldown, cooldownDuration);
+    const onCooldown = cooldown > 0.05;
+
+    this.hotbarChargeSlot.classList.toggle('on-cooldown', onCooldown);
+    this.hotbarChargeSlot.classList.toggle('skill-queued', skill?.pending === true);
+    this.hotbarChargeSlot.title = skill
+      ? `${skill.label} - avance ate o alvo`
+      : 'Investida';
+    this.hotbarChargeShade.style.height = `${cooldownRatio * 100}%`;
+    this.hotbarChargeCooldown.textContent = onCooldown ? String(Math.ceil(cooldown)) : '';
   }
 
   private updateConsumableHotbar(snapshot: WorldSnapshot): void {
@@ -1640,7 +2498,11 @@ export class HUD {
       }
 
       const image = this.createItemIcon(item);
+      image.draggable = false;
       slot.append(image);
+      // Arrastar para fora do menu dropa o item no chao (moeda nao dropa;
+      // o backend tambem bloqueia).
+      if (item.kind !== 'coin') this.bindInventoryDragOut(slot, item);
 
       // Empilháveis mostram a quantidade; armas marcam "E" quando equipadas.
       if (item.stackable && item.count > 1) {
@@ -1672,6 +2534,14 @@ export class HUD {
         badge.style.color = '#6ed8ff';
         slot.append(badge);
       }
+      const gearBonus = gearBonusLabel(item);
+      if (gearBonus) {
+        const badge = document.createElement('span');
+        badge.className = 'weapon-damage-bonus';
+        badge.textContent = gearBonus;
+        if (item.rarity) badge.style.color = RARITY_COLORS[item.rarity];
+        slot.append(badge);
+      }
       const upgrade = upgradeLabel(item);
       if (upgrade) {
         const badge = document.createElement('span');
@@ -1690,9 +2560,142 @@ export class HUD {
     }
   }
 
+  /** Slot da hotbar correspondente a cada acao reorganizavel. */
+  private hotbarActionSlots(): Record<HotbarAction, HTMLElement> {
+    return {
+      'potion': this.hotbarHealthPotionSlot,
+      'arcane-nova': this.hotbarArcaneNovaSlot,
+      'mana-potion': this.hotbarManaPotionSlot,
+      'war-cry': this.hotbarWarCrySlot,
+      'heavy-strike': this.hotbarHeavyStrikeSlot,
+      'charge': this.hotbarChargeSlot,
+    };
+  }
+
+  /**
+   * Aplica o layout dos slots 1-6: reordena o DOM (a posicao define a tecla),
+   * atualiza os keycaps e garante o bind de drag & drop de cada slot.
+   */
+  setHotbarLayout(layout: readonly HotbarAction[]): void {
+    const slots = this.hotbarActionSlots();
+    const anchor = this.hotbarEl.querySelector('.hotbar-number-slot');
+    layout.forEach((action, index) => {
+      const slot = slots[action];
+      if (!slot) return;
+      if (anchor) this.hotbarEl.insertBefore(slot, anchor);
+      else this.hotbarEl.append(slot);
+      const keycap = slot.querySelector('.hotbar-keycap');
+      if (keycap) keycap.textContent = String(index + 1);
+      slot.dataset.hotbarAction = action;
+      this.bindHotbarDrag(slot, action);
+    });
+  }
+
+  private bindHotbarDrag(slot: HTMLElement, action: HotbarAction): void {
+    if (this.hotbarDragBound.has(slot)) return;
+    this.hotbarDragBound.add(slot);
+    slot.draggable = true;
+    // Clique simples usa a acao (apos um drag real o browser nao emite click).
+    slot.addEventListener('click', () => this.onHotbarUse(action));
+    slot.addEventListener('dragstart', (event) => {
+      event.dataTransfer?.setData('text/aranna-hotbar', action);
+      if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
+      slot.classList.add('hotbar-dragging');
+    });
+    slot.addEventListener('dragend', () => this.clearHotbarDragState());
+    slot.addEventListener('dragover', (event) => {
+      if (!event.dataTransfer?.types.includes('text/aranna-hotbar')) return;
+      event.preventDefault();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+      slot.classList.add('hotbar-drag-over');
+    });
+    slot.addEventListener('dragleave', () => slot.classList.remove('hotbar-drag-over'));
+    slot.addEventListener('drop', (event) => {
+      const from = event.dataTransfer?.getData('text/aranna-hotbar') as HotbarAction | '';
+      this.clearHotbarDragState();
+      if (!from) return;
+      event.preventDefault();
+      if (from !== action) this.onHotbarSwap(from, action);
+    });
+  }
+
+  private clearHotbarDragState(): void {
+    for (const el of this.hotbarDragBound) el.classList.remove('hotbar-drag-over', 'hotbar-dragging');
+  }
+
+  /**
+   * Arrastar um item da bag para FORA do menu dropa o item no chao.
+   * Implementado com pointer events (ghost segue o cursor); o click de
+   * equipar/usar que seguiria o pointerup e suprimido apos um drag real.
+   */
+  private bindInventoryDragOut(slot: HTMLElement, item: InventoryItem): void {
+    slot.addEventListener('pointerdown', (down) => {
+      if (down.button !== 0) return;
+      const startX = down.clientX;
+      const startY = down.clientY;
+      let ghost: HTMLElement | null = null;
+      const cleanup = () => {
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', onUp);
+        window.removeEventListener('pointercancel', onCancel);
+        ghost?.remove();
+        ghost = null;
+        slot.classList.remove('dragging-out');
+      };
+      const onMove = (move: PointerEvent) => {
+        if (!ghost) {
+          if (Math.hypot(move.clientX - startX, move.clientY - startY) < 8) return;
+          ghost = document.createElement('div');
+          ghost.className = 'inventory-drag-ghost';
+          const icon = this.createItemIcon(item);
+          icon.draggable = false;
+          ghost.append(icon);
+          document.body.append(ghost);
+          slot.classList.add('dragging-out');
+        }
+        ghost.style.transform = `translate(${move.clientX + 8}px, ${move.clientY + 10}px)`;
+      };
+      const onCancel = () => cleanup();
+      const onUp = (up: PointerEvent) => {
+        const dragged = ghost !== null;
+        cleanup();
+        if (!dragged) return;
+        // Depois de um drag real, o browser ainda dispara `click` no slot se o
+        // pointerup cair sobre ele — suprime para nao equipar/usar sem querer.
+        const suppress = (clickEvent: MouseEvent) => {
+          clickEvent.stopPropagation();
+          clickEvent.preventDefault();
+        };
+        window.addEventListener('click', suppress, { capture: true, once: true });
+        window.setTimeout(() => window.removeEventListener('click', suppress, { capture: true }), 0);
+        // Soltar sobre um slot do paper doll = equipar NAQUELE slot (se o
+        // tipo do item permitir; ex.: arma 1H na 2a mao, anel no Anel 2).
+        const under = document.elementFromPoint(up.clientX, up.clientY);
+        const slotCell = under instanceof Element ? (under.closest('[data-equip-slot]') as HTMLElement | null) : null;
+        const targetSlot = slotCell?.dataset.equipSlot as EquipmentSlot | undefined;
+        if (targetSlot) {
+          if (equipSlotsForKind(item.kind).includes(targetSlot)) {
+            this.onEquipItemToSlot(item.id, targetSlot);
+          }
+          return;
+        }
+        const withinRect = (rect: DOMRect) =>
+          up.clientX >= rect.left && up.clientX <= rect.right && up.clientY >= rect.top && up.clientY <= rect.bottom;
+        // Soltar dentro do menu = cancelar; sobre a hotbar tambem (gesto de
+        // "colocar na barra" nao pode virar drop acidental no chao).
+        if (!withinRect(this.gameMenu.getBoundingClientRect()) && !withinRect(this.hotbarEl.getBoundingClientRect())) {
+          this.onDropItem(item);
+        }
+      };
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', onUp);
+      window.addEventListener('pointercancel', onCancel);
+    });
+  }
+
   private renderHotbarEquipment(snapshot: WorldSnapshot): void {
-    this.renderHotbarEquipmentSlot(this.hotbarWeaponSlot, snapshot, 'weapon', 'Espada');
-    this.renderHotbarEquipmentSlot(this.hotbarOffhandSlot, snapshot, 'offhand', 'Off');
+    this.renderHotbarEquipmentSlot(this.hotbarWeaponSlot, snapshot, 'weapon', 'Arma');
+    this.renderHotbarEquipmentSlot(this.hotbarOffhandSlot, snapshot, 'offhand', 'Mão 2');
   }
 
   private renderHotbarEquipmentSlot(
@@ -1754,16 +2757,18 @@ export class HUD {
     const hasMagic = mMax > 0;
     const stats = [
       ['Arma', hasWeapon ? `${wMin}–${wMax} dano` : 'Sem arma'],
-      ['Dano magico', hasMagic ? `${mMin}â€“${mMax}` : '0'],
+      ['Dano magico', hasMagic ? `${mMin}–${mMax}` : '0'],
       ['Mana', `${Math.ceil(player.mana ?? 0)} / ${player.maxMana ?? 0}`],
       ['Dano base', String(base)],
       ['Dano total', hasWeapon ? `${base + wMin}–${base + wMax}` : String(base)],
       ['Total + mag', hasWeapon ? `${base + wMin}-${base + wMax}${hasMagic ? ` + ${mMin}-${mMax}` : ''}` : String(base)],
       ['Vel. ataque', `x${(player.attackSpeed ?? 1).toFixed(2)}`],
       ['Esquiva', percent(player.dodgeChance ?? 0)],
+      ['Armadura', String(player.armor ?? 0)],
+      ['Critico', percent(player.criticalChance ?? 0)],
       ['Regen vida', `${(player.healthRegen ?? 0).toFixed(1)} /s`],
       ['Nível', String(player.level)],
-      ['Vida', `${Math.ceil(player.hp)} / ${player.maxHp}`],
+      ['Vida', `${Math.ceil(player.hp)} / ${Math.round(player.maxHp)}`],
       ['EXP', `${xp} / ${xpToNext}`],
       ['Área', snapshot.zone === 'overworld' ? 'Terras de Aranna' : 'Câmara das Sombras'],
     ];
@@ -1787,6 +2792,7 @@ export class HUD {
       const item = equippedId ? snapshot.inventory.find((candidate) => candidate.id === equippedId) : undefined;
       const cell = document.createElement(equippedId ? 'button' : 'div');
       cell.className = `equipment-slot equipment-slot-${slot}`;
+      cell.dataset.equipSlot = slot;
       cell.setAttribute('aria-label', item ? `${label}: ${item.name}` : `${label}: vazio`);
 
       const labelEl = document.createElement('span');
@@ -1821,6 +2827,14 @@ export class HUD {
           badge.className = 'weapon-damage-bonus equipment-bonus magic-equipment-bonus';
           badge.textContent = `Mag ${magic}`;
           badge.style.color = '#6ed8ff';
+          content.append(badge);
+        }
+        const gearBonus = gearBonusLabel(item);
+        if (gearBonus) {
+          const badge = document.createElement('span');
+          badge.className = 'weapon-damage-bonus equipment-bonus';
+          badge.textContent = gearBonus;
+          if (item.rarity) badge.style.color = RARITY_COLORS[item.rarity];
           content.append(badge);
         }
         const upgrade = upgradeLabel(item);

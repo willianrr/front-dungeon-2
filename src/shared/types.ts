@@ -15,12 +15,30 @@ export type GemKind = 'jewel_bless' | 'jewel_soul';
 export type WeaponGlowGem = 'bless' | 'soul';
 export type WeaponElement = 'fire';
 export type DamageKind = 'physical' | 'magic';
-export type CombatTextKind = DamageKind | 'incoming' | 'miss';
-export type SkillId = 'arcane-nova';
-export type ItemKind = 'coin' | 'mana_potion' | 'potion' | 'sword' | GemKind;
+export type CombatTextKind = DamageKind | 'incoming' | 'miss' | 'critical';
+export type SkillId = 'arcane-nova' | 'war-cry' | 'charge' | 'heavy-strike';
+/** Acoes que ocupam os slots 1-6 da hotbar (reorganizaveis via drag & drop). */
+export type HotbarAction = 'potion' | 'arcane-nova' | 'mana-potion' | 'war-cry' | 'heavy-strike' | 'charge';
+export type ItemKind =
+  | 'coin'
+  | 'mana_potion'
+  | 'potion'
+  | 'sword'
+  | 'axe'
+  | 'great_sword'
+  | 'great_axe'
+  | 'war_hammer'
+  | 'armor'
+  | 'helmet'
+  | 'gloves'
+  | 'ring'
+  | 'necklace'
+  | GemKind;
+/** Armas que causam dano fisico quando empunhadas. */
+export type WeaponKind = 'sword' | 'axe' | 'great_sword' | 'great_axe' | 'war_hammer';
 /** Tiers de raridade de uma arma — definem (e colorem) a faixa de dano. */
 export type ItemRarity = 'comum' | 'incomum' | 'raro' | 'epico' | 'lendario';
-export type EquipmentSlot = 'head' | 'chest' | 'hands' | 'legs' | 'feet' | 'weapon' | 'offhand' | 'trinket';
+export type EquipmentSlot = 'head' | 'chest' | 'hands' | 'legs' | 'feet' | 'weapon' | 'offhand' | 'trinket' | 'ring' | 'ring2';
 /** Cada slot guarda o ID da INSTÂNCIA de item equipada (ou null), não o tipo. */
 export type EquipmentState = Record<EquipmentSlot, string | null>;
 
@@ -54,7 +72,12 @@ export interface InventoryItem {
   damageMax?: number;
   magicDamageMin?: number;
   magicDamageMax?: number;
-  /** True quando ESTA instância está equipada. */
+  /** Peças de armadura e acessórios (anéis/colar). */
+  armor?: number;
+  bonusHp?: number;
+  bonusMana?: number;
+  bonusCrit?: number;
+  /** True quando ESTA instância está equipada em algum slot. */
   equipped?: boolean;
 }
 
@@ -76,6 +99,13 @@ export interface LootState {
   damageMax?: number;
   magicDamageMin?: number;
   magicDamageMax?: number;
+  /** +N de uma arma dropada da mochila (preservado na coleta). */
+  upgradeLevel?: number;
+  /** Peças de armadura e acessórios. */
+  armor?: number;
+  bonusHp?: number;
+  bonusMana?: number;
+  bonusCrit?: number;
 }
 
 /** Baú persistente da zona atual; abrir gera loot físico no chão. */
@@ -85,9 +115,9 @@ export interface ChestState {
   opened: boolean;
 }
 
-/** Pequeno estado visual da arma equipada que o cliente precisa renderizar. */
+/** Pequeno estado visual de uma peca de gear equipada (arma/elmo/peitoral). */
 export interface EquippedWeaponVisualState {
-  kind: 'sword';
+  kind: ItemKind;
   rarity: ItemRarity;
   upgradeLevel: number;
   glowGem?: WeaponGlowGem;
@@ -146,6 +176,107 @@ export interface NpcState {
 }
 
 /** Atributos distribuídos pelo jogador no painel de personagem. */
+export interface PartyMemberState {
+  id: string;
+  name: string;
+  class: string;
+  level: number;
+  hp: number;
+  maxHp: number;
+  online: boolean;
+}
+
+export interface PartyState {
+  id: string;
+  leaderId: string;
+  members: PartyMemberState[];
+}
+
+export interface PartyInviteState {
+  inviteId: string;
+  fromPlayerId: string;
+  fromName: string;
+  expiresAt: number;
+}
+
+export interface PartyEvent {
+  id: string;
+  type: string;
+  message: string;
+  inviteId?: string;
+  fromPlayerId?: string;
+  fromName?: string;
+  party?: PartyState;
+}
+
+export interface FriendState {
+  id: string;
+  name: string;
+  level: number;
+  online: boolean;
+}
+
+export type ChatChannel = 'local' | 'party' | 'global' | 'system';
+
+export interface ChatMessageState {
+  id: string;
+  channel: ChatChannel;
+  senderId: string;
+  senderName: string;
+  message: string;
+  position: V3;
+  timestamp: number;
+}
+
+export type TalentTree = 'fury' | 'defense' | 'weapons';
+export type TalentEffectType =
+  | 'physical_damage_percent'
+  | 'attack_speed_proc'
+  | 'execute_damage_percent'
+  | 'armor_percent'
+  | 'max_hp_percent'
+  | 'low_hp_damage_reduction'
+  | 'sword_damage_percent'
+  | 'fire_damage_on_hit'
+  | 'critical_chance_percent';
+
+export interface TalentRequirement {
+  talentId: string;
+  rank: number;
+}
+
+export interface TalentEffectDefinition {
+  type: TalentEffectType;
+  valuePerRank?: number;
+  value?: number;
+  chancePerRank?: number;
+  attackSpeedPercent?: number;
+  durationSeconds?: number;
+  cooldownSeconds?: number;
+  hpBelowPercent?: number;
+  enemyHpBelowPercent?: number;
+}
+
+export interface TalentDefinition {
+  id: string;
+  classId: 'warrior';
+  name: string;
+  description: string;
+  tree: TalentTree;
+  maxRank: number;
+  cost: number;
+  requires?: TalentRequirement[];
+  effects: TalentEffectDefinition[];
+  position?: { x: number; y: number };
+}
+
+export interface TalentState {
+  talentPoints: number;
+  spentPoints: number;
+  availablePoints: number;
+  talents: Record<string, number>;
+}
+
 export interface PlayerAttributes {
   strength: number;
   agility: number;
@@ -161,6 +292,16 @@ export interface SkillState {
   manaCost: number;
   cooldown: number;
   cooldownRemaining: number;
+  /** Skill "armada": cast pedido fora de alcance; dispara ao chegar no range. */
+  pending?: boolean;
+}
+
+/** Efeito temporario autoritativo; o cliente decide a apresentacao visual. */
+export interface BuffState {
+  id: string;
+  label: string;
+  remaining: number;
+  duration: number;
 }
 
 /** Estado de uma entidade num dado instante (o que o servidor transmite). */
@@ -199,9 +340,16 @@ export interface EntityState {
   dodgeChance?: number;
   /** Regeneracao de vida por segundo. */
   healthRegen?: number;
+  armor?: number;
+  criticalChance?: number;
   attributes?: PlayerAttributes;
   skills?: SkillState[];
+  buffs?: BuffState[];
   equippedWeapon?: EquippedWeaponVisualState | null;
+  /** Visuais extras de gear no corpo (dual wield, elmo, peitoral). */
+  offhandWeapon?: EquippedWeaponVisualState | null;
+  helmetVisual?: EquippedWeaponVisualState | null;
+  armorVisual?: EquippedWeaponVisualState | null;
 }
 
 export interface DamageCombatEvent {
@@ -210,6 +358,7 @@ export interface DamageCombatEvent {
   targetId: string;
   amount: number;
   damageKind: DamageKind;
+  critical?: boolean;
   position: V3;
 }
 
@@ -282,6 +431,12 @@ export interface WorldSnapshot {
   /** Quest guia. DELTA: em runtime pode chegar `null` (= não mudou). */
   quest: QuestState;
   vendorStock: Record<string, Record<string, number>>;
+  party: PartyState | null;
+  partyInvites: PartyInviteState[];
+  partyEvents: PartyEvent[];
+  friends: FriendState[];
+  chatMessages: ChatMessageState[];
+  talents: TalentState;
 }
 
 /** Comandos que o cliente envia ao servidor (intencoes do jogador). */
@@ -289,10 +444,11 @@ export type Command =
   | { type: 'move'; entityId: string; target: V3; run?: boolean }
   | { type: 'attack'; entityId: string; targetId: string }
   | { type: 'jump'; entityId: string }
-  | { type: 'cast-skill'; entityId: string; skill: SkillId }
+  | { type: 'cast-skill'; entityId: string; skill: SkillId; targetId?: string }
   | { type: 'collect'; entityId: string; lootId: string }
+  | { type: 'drop-item'; entityId: string; itemId?: string; item?: ItemKind }
   | { type: 'open-chest'; entityId: string; chestId: string }
-  | { type: 'equip-item'; entityId: string; itemId: string }
+  | { type: 'equip-item'; entityId: string; itemId: string; slot?: EquipmentSlot }
   | { type: 'buy-vendor-item'; entityId: string; vendorId: string; itemId: string }
   | { type: 'sell-unused-gear-at-vendor'; entityId: string; vendorId: string }
   | { type: 'deposit-stash-item'; entityId: string; npcId: string; item?: ItemKind; itemId?: string }
@@ -309,4 +465,15 @@ export type Command =
   | { type: 'allocate-attribute'; entityId: string; attribute: PlayerAttribute }
   | { type: 'enter-dungeon'; entityId: string }
   | { type: 'leave-dungeon'; entityId: string }
+  | { type: 'party_invite_send'; entityId: string; targetPlayerId: string }
+  | { type: 'party_invite_accept'; entityId: string; inviteId: string }
+  | { type: 'party_invite_decline'; entityId: string; inviteId: string }
+  | { type: 'party_leave'; entityId: string }
+  | { type: 'party_kick'; entityId: string; targetPlayerId: string }
+  | { type: 'party_leader_transfer'; entityId: string; targetPlayerId: string }
+  | { type: 'friend_add'; entityId: string; targetPlayerId: string }
+  | { type: 'friend_remove'; entityId: string; targetPlayerId: string }
+  | { type: 'chat_send'; entityId: string; channel: ChatChannel; message: string }
+  | { type: 'talent_learn'; entityId: string; talentId: string }
+  | { type: 'talent_reset'; entityId: string }
   | { type: 'respawn'; entityId: string };

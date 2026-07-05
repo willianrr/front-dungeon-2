@@ -11,12 +11,15 @@ import {
   RARITY_COLORS,
   RARITY_GLOW_SCALE,
   glowColorForGem,
+  isTwoHandedKind,
+  isWeaponKind,
   itemDisplayName,
   itemIconFor,
   lootModelUrlFor,
 } from '../shared/itemMeta';
 import type {
   ChestState,
+  ChatMessageState,
   CombatEvent,
   CombatTextKind,
   DamageKind,
@@ -24,11 +27,14 @@ import type {
   EntityState,
   EquipmentState,
   EquippedWeaponVisualState,
+  HotbarAction,
   InventoryItem,
   ItemKind,
   ItemRarity,
   LootState,
   NpcState,
+  PartyEvent,
+  PartyState,
   PlayerAttribute,
   QuestState,
   WeaponElement,
@@ -59,6 +65,7 @@ import {
 import { Input, type PointerNdc } from './Input';
 import { KeyboardMoveController } from './KeyboardMoveController';
 import { autorunMoveState } from './AutorunMove';
+import { chatBubbleTextColor, chatBubbleToneFor, type ChatBubbleTone } from './ChatPresentation';
 import { ClientMovementPredictor } from './ClientMovementPredictor';
 import { canStartClickAutomove, canStartNpcDestinationAutomove } from './ClickAutomovePolicy';
 import { clickMoveArrivalStep } from './ClickMoveArrival';
@@ -133,6 +140,13 @@ interface View {
   weaponStage?: WeaponGlowStage;
   /** Materiais clonados da arma com emissivo turbinado (para o item brilhar). */
   weaponBoostMaterials?: pc.StandardMaterial[];
+  /** Gear extra no corpo: segunda arma (mao esquerda), elmo e peitoral. */
+  offhandKey?: string | null;
+  offhandAnchor?: pc.Entity;
+  helmetKey?: string | null;
+  helmetAnchor?: pc.Entity;
+  armorKey?: string | null;
+  armorAnchor?: pc.Entity;
   anim?: PcClipController;
   initialized?: boolean;
   jumpArc?: number;
@@ -145,6 +159,11 @@ interface LootView {
   label: WorldLabel;
   labelColor: string;
   labelText: string;
+  rarityAccentKey?: string;
+  rarityRing?: pc.Entity;
+  rarityRingMaterial?: pc.StandardMaterial;
+  rarityLight?: pc.Entity;
+  rarityGlowScale: number;
   baseY: number;
   phase: number;
 }
@@ -230,7 +249,6 @@ type TargetMarkerKind = 'move' | 'interact';
 type PathGuidanceKind = TargetMarkerKind | 'preview';
 
 const HERO_MODEL_URL = '/models/warrior.glb';
-const EQUIPPED_SWORD_MODEL_URL = '/items/Sword_Golden.glb';
 const HERO_VISUAL_SCALE = 1.0;
 const ZOMBIE_VISUAL_SCALE = 0.0108;
 const ZOMBIE_MODEL_URLS = [
@@ -244,7 +262,7 @@ const PRELOAD_LOOT_MODEL_URLS = [
   '/items/Coin.glb',
   '/items/Potion2_Filled.glb',
   '/items/Potion1_Filled.glb',
-  EQUIPPED_SWORD_MODEL_URL,
+  '/items/Sword_Golden.glb',
   GEM_DEFINITIONS.jewel_bless.modelUrl,
   GEM_DEFINITIONS.jewel_soul.modelUrl,
 ] as const;
@@ -277,18 +295,49 @@ const NPC_INTERACTION_TURN_RATE = 12;
 // Espacamento minimo entre comandos 'move' (coalescing): spam de clique vira no
 // maximo ~11 pacotes/s, sempre enviando o alvo MAIS RECENTE (trailing send).
 const MOVE_COMMAND_MIN_INTERVAL = 0.09;
+const HELD_CLICK_MOVE_REFRESH_INTERVAL = 0.1;
+const HELD_CLICK_MOVE_MIN_TARGET_DELTA = 0.55;
 
 const MARKER_DURATION = 0.6;
 const PATH_GUIDANCE_SPACING = 2.35;
 const PATH_GUIDANCE_MAX_POINTS = 12;
+const CHAT_BUBBLE_DURATION = 5;
+const MAX_SPEECH_BUBBLES = 8;
 const NPC_APPROACH_PREVIEW_MAX_POINTS = 8;
 const CLOSE_TARGET_RADIUS = 3.4;
 // Cone (meia-abertura 60 graus) NA DIRECAO DO CLIQUE para converter clique de
 // chao em ataque. Clicar atras do personagem = recuo, NUNCA vira ataque.
 const CLOSE_ATTACK_CONE_COS = Math.cos(Math.PI / 3);
 const CLOSE_CLICK_RADIUS = 2.8;
-const LOOT_CLICK_RADIUS = 1.25;
+// Raio de clique de loot reduzido (era 1.25): junto com a prioridade de
+// inimigo sobre loot no handleClick, evita que drops "roubem" o ataque.
+const LOOT_CLICK_RADIUS = 1.0;
 const CHEST_CLICK_RADIUS = 1.45;
+// Hold do botao esquerdo sobre inimigo: reenvia o attack no maximo a cada
+// intervalo abaixo (o retarget para OUTRO inimigo e imediato).
+const HELD_ATTACK_REFRESH_INTERVAL = 0.35;
+// Layout da hotbar (slots 1-6) e persistido localmente; drag & drop troca as
+// posicoes e a tecla passa a disparar o que estiver no slot.
+const HOTBAR_LAYOUT_STORAGE_KEY = 'aranna.hotbar-layout.v1';
+const DEFAULT_HOTBAR_LAYOUT: readonly HotbarAction[] = ['potion', 'arcane-nova', 'mana-potion', 'war-cry', 'heavy-strike', 'charge'];
+
+function loadHotbarLayout(): HotbarAction[] {
+  try {
+    const raw = window.localStorage.getItem(HOTBAR_LAYOUT_STORAGE_KEY);
+    if (!raw) return [...DEFAULT_HOTBAR_LAYOUT];
+    const parsed = JSON.parse(raw) as unknown;
+    if (
+      Array.isArray(parsed) &&
+      parsed.length === DEFAULT_HOTBAR_LAYOUT.length &&
+      DEFAULT_HOTBAR_LAYOUT.every((action) => parsed.includes(action))
+    ) {
+      return parsed as HotbarAction[];
+    }
+  } catch {
+    // Preferencia opcional; layout padrao cobre falhas de storage/parse.
+  }
+  return [...DEFAULT_HOTBAR_LAYOUT];
+}
 const ENEMY_HEALTH_BAR_HEIGHT = 2.6;
 // Culling de inimigos: dentro de NEAR sempre desenha; alem de FAR nunca; no meio,
 // so desenha se estiver na tela. Inimigo desabilitado nao renderiza/anima/sombra.
@@ -421,6 +470,7 @@ class HealthBarOverlay {
 
   constructor(layer: HTMLElement) {
     this.root = document.createElement('div');
+    this.root.className = 'healthbar-overlay';
     this.root.style.cssText = [
       'position:absolute',
       'left:0',
@@ -446,6 +496,12 @@ class HealthBarOverlay {
     const ratio = maxHp > 0 ? clamp01(hp / maxHp) : 0;
     this.fill.style.width = `${ratio * 100}%`;
     this.label.textContent = name ? `${name} ${level}` : `Nv ${level}`;
+  }
+
+  setPartyMember(active: boolean): void {
+    this.root.classList.toggle('party-healthbar', active);
+    this.fill.style.background = active ? 'linear-gradient(90deg,#1fbfd1,#8fe6ff)' : 'linear-gradient(90deg,#d72f45,#ff7467)';
+    this.label.style.color = active ? '#8fe6ff' : '#fff';
   }
 
   setWorldPosition(x: number, y: number, z: number): void {
@@ -479,9 +535,11 @@ class FloatingText {
         ? '#ff8f7a'
         : kind === 'miss'
           ? '#d7e3ef'
-          : '#fff3b5';
+          : kind === 'critical'
+            ? '#ffd874'
+            : '#fff3b5';
     this.start = { ...position };
-    this.label = new WorldLabel(layer, 'combat-text', String(amount), color);
+    this.label = new WorldLabel(layer, kind === 'critical' ? 'combat-text critical-text' : 'combat-text', String(amount), color);
     this.label.el.style.font = '800 18px/1 ui-sans-serif,system-ui,sans-serif';
     this.label.el.style.zIndex = '9';
   }
@@ -491,7 +549,36 @@ class FloatingText {
     const t = this.age / 0.82;
     this.label.setWorldPosition(this.start.x, this.start.y + t * 1.15, this.start.z);
     this.label.el.style.opacity = String(clamp01(1 - Math.max(0, t - 0.45) / 0.55));
-    this.label.el.style.fontSize = this.kind === 'miss' ? '15px' : '18px';
+    this.label.el.style.fontSize = this.kind === 'miss' ? '15px' : this.kind === 'critical' ? '24px' : '18px';
+    this.label.update(world);
+    if (t < 1) return false;
+    this.dispose();
+    return true;
+  }
+
+  dispose(): void {
+    this.label.dispose();
+  }
+}
+
+class SpeechBubble {
+  private readonly label: WorldLabel;
+  private age = 0;
+
+  constructor(layer: HTMLElement, readonly entityId: string, text: string, tone: ChatBubbleTone) {
+    this.label = new WorldLabel(layer, 'speech-bubble', text, chatBubbleTextColor(tone));
+    this.label.el.dataset.channel = tone;
+    this.label.el.classList.add(`speech-bubble-${tone}`);
+    this.label.el.style.whiteSpace = 'normal';
+    this.label.el.style.font = "800 12px/1.25 'Segoe UI', system-ui, sans-serif";
+    this.label.el.style.zIndex = '10';
+  }
+
+  update(dt: number, world: PcWorld, position: Vec3Like): boolean {
+    this.age += dt;
+    const t = this.age / CHAT_BUBBLE_DURATION;
+    this.label.setWorldPosition(position.x, position.y, position.z);
+    this.label.el.style.opacity = String(clamp01(1 - Math.max(0, t - 0.72) / 0.28));
     this.label.update(world);
     if (t < 1) return false;
     this.dispose();
@@ -538,6 +625,51 @@ class PulseEffect implements TimedEffect {
   }
 }
 
+interface ChargeTrailSegment {
+  entity: pc.Entity;
+  material: pc.StandardMaterial;
+  opacity: number;
+  scale: Vec3Like;
+}
+
+class ChargeTrailEffect implements TimedEffect {
+  private age = 0;
+
+  constructor(
+    private readonly segments: ChargeTrailSegment[],
+    private readonly duration: number,
+  ) {}
+
+  update(dt: number): boolean {
+    this.age += dt;
+    const t = clamp01(this.age / this.duration);
+    for (let i = 0; i < this.segments.length; i++) {
+      const segment = this.segments[i];
+      // Divisor proporcional ao atraso do segmento: todos chegam a opacidade 0
+      // exatamente em t=1 (antes o ultimo segmento sumia com ~9% -> "pop").
+      const localT = clamp01((t - i * 0.055) / Math.max(0.2, 1 - i * 0.055));
+      segment.material.opacity = segment.opacity * (1 - localT);
+      segment.material.update();
+      segment.entity.setLocalScale(
+        segment.scale.x * (1 - localT * 0.24),
+        segment.scale.y,
+        segment.scale.z * (1 + localT * 0.7),
+      );
+    }
+    if (t < 1) return false;
+    this.dispose();
+    return true;
+  }
+
+  dispose(): void {
+    for (const segment of this.segments) {
+      destroyEntity(segment.entity);
+      segment.material.destroy();
+    }
+    this.segments.length = 0;
+  }
+}
+
 type VisualAnimState = EntityAction | 'jump';
 
 interface ClipConfig {
@@ -552,6 +684,15 @@ const WEAPON_GRIP_FROM_BOTTOM = 0.16;
 // Distancia (mundo) do punho ate o centro da lamina — referencia p/ luz/fogo.
 const WEAPON_BLADE_CENTER = WEAPON_WORLD_LENGTH * (0.5 - WEAPON_GRIP_FROM_BOTTOM);
 const WEAPON_SOCKET_BONE_NAMES = ['mixamorigWeapon', 'mixamorig:Weapon', 'RightHand', 'mixamorigRightHand', 'mixamorig:RightHand', 'Hand_R'] as const;
+// Sockets para o gear extra no corpo (dual wield, elmo, peitoral).
+const OFFHAND_SOCKET_BONE_NAMES = ['LeftHand', 'mixamorigLeftHand', 'mixamorig:LeftHand', 'Hand_L'] as const;
+const HEAD_SOCKET_BONE_NAMES = ['mixamorigHead', 'mixamorig:Head', 'Head', 'head'] as const;
+const CHEST_SOCKET_BONE_NAMES = ['mixamorigSpine2', 'mixamorig:Spine2', 'Spine2', 'mixamorigSpine1', 'mixamorig:Spine1', 'Spine1', 'Chest', 'mixamorigSpine', 'Spine'] as const;
+// Tamanhos-alvo (em unidades de mundo) das pecas anexadas ao corpo.
+const HELMET_WORLD_SIZE = 0.34;
+const CHEST_ARMOR_WORLD_SIZE = 0.72;
+// Armas 2H sao desenhadas maiores que as 1H.
+const TWO_HANDED_LENGTH_MULTIPLIER = 1.32;
 const HERO_RIG_ROOT_NAME = 'ANDANDO';
 const HERO_DUPLICATE_RIG_ROOTS = new Set(['ANDANDO', 'PARADO', 'ATACANDO']);
 // Cor das chamas (mesma do Three.js: flameColor 0xff4f12).
@@ -563,6 +704,9 @@ const ATTACK_AIM_TURN_RATE = 18;
 // expira a ~90% do cooldown). A mira local segura o yaw por esta janela para o
 // heroi NAO virar para o rotationY do servidor entre um golpe e outro.
 const ATTACK_AIM_HOLD_SECONDS = 1.2;
+const CHARGE_TRAIL_SEGMENTS = 5;
+const CHARGE_TRAIL_DURATION = 0.44;
+const CHARGE_TRAIL_COLOR = '#ffb75f';
 
 // ---------------------------------------------------------------------------
 // Glow estilo Mu Online 99B, dirigido pelo NIVEL da arma (+0..+15) como no
@@ -766,6 +910,10 @@ function isRootPositionAnimPath(path: unknown): boolean {
   if (!path || typeof path !== 'object') return false;
   const source = path as PcAnimPathLike;
   if (source.propertyPath?.[0] !== 'localPosition') return false;
+  return isRootAnimTarget(source);
+}
+
+function isRootAnimTarget(source: PcAnimPathLike): boolean {
   const target = source.entityPath?.[source.entityPath.length - 1];
   if (!target) return false;
   const normalized = normalizedName(target);
@@ -799,6 +947,9 @@ function prepareGameplayTrack(track: pc.AnimTrack, retargetRootName?: string): p
   const curves = track.curves.map((curve) => {
     const paths = curve.paths.map((path) => cloneAnimPath(path, retargetRootName));
     let output = curve.output;
+    // Nao normalize localRotation da raiz/hips aqui: o warrior.glb ja traz a
+    // compensacao de eixo no proprio rig; mexer nessa rotacao vira humanoides
+    // de ponta cabeca.
     if (paths.some(isRootPositionAnimPath)) {
       const existing = clonedOutputs.get(output);
       if (existing !== undefined) {
@@ -957,11 +1108,17 @@ export class Game {
   private readonly npcViews = new Map<string, NpcView>();
   private readonly latestEntities = new Map<string, EntityState>();
   private readonly lootViews = new Map<string, LootView>();
+  private readonly notableLootSoundIds = new Set<string>();
   private readonly chestViews = new Map<string, ChestView>();
   private readonly enemyHp = new Map<string, number>();
   private readonly damageTexts: FloatingText[] = [];
+  private readonly speechBubbles: SpeechBubble[] = [];
+  private readonly partyMemberIds = new Set<string>();
+  private readonly partyBadges = new Map<string, WorldLabel>();
   private readonly effects: TimedEffect[] = [];
   private readonly seenCombatEvents = new Set<string>();
+  private readonly seenPartyEvents = new Set<string>();
+  private readonly seenChatMessages = new Set<string>();
   private readonly keyboardMove = new KeyboardMoveController();
   private readonly clientMovement = new ClientMovementPredictor();
   private autorunActive = false;
@@ -1016,6 +1173,10 @@ export class Game {
    * mesmo que os snapshots atrasem, ele nunca fica "andando parado".
    */
   private clickMoveTarget: ClickMoveTarget | null = null;
+  private heldGroundMoveActive = false;
+  private lastHeldGroundMoveAt = -Infinity;
+  private lastHeldAttackCommandAt = -Infinity;
+  private readonly hotbarLayout: HotbarAction[] = loadHotbarLayout();
   /** Ate quando (elapsed) a mira local e dona do yaw — cobre o vao entre golpes. */
   private localAimHoldUntil = 0;
   /** Interacao adiada (clique distante em loot/bau/npc): anda ate la e executa. */
@@ -1048,7 +1209,7 @@ export class Game {
   private cachedQuest: QuestState = { title: '', objective: '', progress: 0, goal: 0, accepted: false, completed: false, rewardClaimed: false, rewardText: '' };
   private cachedVendorStock: Record<string, Record<string, number>> = {};
   private cachedEquipment: EquipmentState = {
-    head: null, chest: null, hands: null, legs: null, feet: null, weapon: null, offhand: null, trinket: null,
+    head: null, chest: null, hands: null, legs: null, feet: null, weapon: null, offhand: null, trinket: null, ring: null, ring2: null,
   };
   private cachedEquippedWeapon: EquippedWeaponVisualState | null = null;
 
@@ -1075,7 +1236,21 @@ export class Game {
 
     this.hud.onRespawn = () => this.net.send({ type: 'respawn', entityId: this.net.playerId });
     this.hud.onEquipItem = (itemId) => this.net.send({ type: 'equip-item', entityId: this.net.playerId, itemId });
+    this.hud.onEquipItemToSlot = (itemId, slot) => this.net.send({ type: 'equip-item', entityId: this.net.playerId, itemId, slot });
     this.hud.onUseItem = (item) => this.net.send({ type: 'use-item', entityId: this.net.playerId, item });
+    this.hud.onHotbarSwap = (from, to) => this.swapHotbarSlots(from, to);
+    this.hud.onHotbarUse = (action) => this.triggerHotbarAction(action);
+    this.hud.onDropItem = (item) => {
+      // Arrastar item para fora da bag: empilhavel dropa 1 unidade por vez;
+      // arma dropa a instancia exata (raridade/upgrade preservados).
+      if (item.stackable) {
+        this.net.send({ type: 'drop-item', entityId: this.net.playerId, item: item.kind });
+      } else {
+        this.net.send({ type: 'drop-item', entityId: this.net.playerId, itemId: item.id });
+      }
+      this.sfx.play('pickup');
+    };
+    this.hud.setHotbarLayout(this.hotbarLayout);
     this.hud.onUnequipSlot = (slot) => this.net.send({ type: 'unequip-slot', entityId: this.net.playerId, slot });
     this.hud.onAllocateAttribute = (attribute) => this.handleAllocateAttribute(attribute);
     this.hud.onVendorBuy = (vendorId, itemId) => this.handleVendorBuy(vendorId, itemId);
@@ -1201,6 +1376,50 @@ export class Game {
       }
       this.closeNpcDialogue();
     };
+    this.hud.onPartyInviteSend = (targetPlayerId) => {
+      this.sfx.play('ui');
+      this.net.send({ type: 'party_invite_send', entityId: this.net.playerId, targetPlayerId });
+    };
+    this.hud.onPartyInviteAccept = (inviteId) => {
+      this.sfx.play('ui');
+      this.net.send({ type: 'party_invite_accept', entityId: this.net.playerId, inviteId });
+    };
+    this.hud.onPartyInviteDecline = (inviteId) => {
+      this.sfx.play('ui');
+      this.net.send({ type: 'party_invite_decline', entityId: this.net.playerId, inviteId });
+    };
+    this.hud.onPartyLeave = () => {
+      this.sfx.play('ui');
+      this.net.send({ type: 'party_leave', entityId: this.net.playerId });
+    };
+    this.hud.onPartyKick = (targetPlayerId) => {
+      this.sfx.play('ui');
+      this.net.send({ type: 'party_kick', entityId: this.net.playerId, targetPlayerId });
+    };
+    this.hud.onPartyLeaderTransfer = (targetPlayerId) => {
+      this.sfx.play('ui');
+      this.net.send({ type: 'party_leader_transfer', entityId: this.net.playerId, targetPlayerId });
+    };
+    this.hud.onFriendAdd = (targetPlayerId) => {
+      this.sfx.play('ui');
+      this.net.send({ type: 'friend_add', entityId: this.net.playerId, targetPlayerId });
+    };
+    this.hud.onFriendRemove = (targetPlayerId) => {
+      this.sfx.play('ui');
+      this.net.send({ type: 'friend_remove', entityId: this.net.playerId, targetPlayerId });
+    };
+    this.hud.onChatSend = (channel, message) => {
+      this.sfx.play('ui');
+      this.net.send({ type: 'chat_send', entityId: this.net.playerId, channel, message });
+    };
+    this.hud.onTalentLearn = (talentId) => {
+      this.sfx.play('ui');
+      this.net.send({ type: 'talent_learn', entityId: this.net.playerId, talentId });
+    };
+    this.hud.onTalentReset = () => {
+      this.sfx.play('ui');
+      this.net.send({ type: 'talent_reset', entityId: this.net.playerId });
+    };
     this.hud.setNpcMinimapMarkers(this.npcMinimapMarkers());
     this.updateNpcServiceDestinations();
     this.createNpcViews();
@@ -1273,6 +1492,9 @@ export class Game {
     this.syncZone(snapshot.zone);
     this.reconcile(snapshot.entities, 0, true);
     this.syncCombatEvents(snapshot.combatEvents);
+    this.syncPartyEvents(snapshot.partyEvents);
+    this.syncPartyPresentation(snapshot.party);
+    this.syncChatMessages(snapshot.chatMessages);
     this.reconcileLoot(snapshot.loot);
     this.reconcileChests(snapshot.chests);
     this.updateLootViews();
@@ -1360,6 +1582,11 @@ export class Game {
       this.syncNpcDefinitions(incomingNpcs);
     }
     snapshot.npcs = this.cachedNpcStates;
+    snapshot.party = snapshot.party ?? null;
+    snapshot.partyInvites = snapshot.partyInvites ?? [];
+    snapshot.partyEvents = snapshot.partyEvents ?? [];
+    snapshot.chatMessages = snapshot.chatMessages ?? [];
+    snapshot.talents = snapshot.talents ?? { talentPoints: 0, spentPoints: 0, availablePoints: 0, talents: {} };
 
     // Inventario com DELTA: o servidor manda `null` quando NAO mudou — nesse caso
     // reaproveitamos o cache. Quando vem o array (mudou ou reenvio periodico),
@@ -1369,7 +1596,7 @@ export class Game {
     const incoming = snapshot.inventory as InventoryItem[] | null | undefined;
     if (incoming != null) {
       for (const item of incoming) {
-        if (!item.icon) item.icon = itemIconFor(item.kind);
+        if (!item.icon) item.icon = itemIconFor(item.kind, item.rarity);
         if (!item.name) item.name = itemDisplayName(item);
       }
       this.cachedInventory = incoming;
@@ -1386,7 +1613,7 @@ export class Game {
     const incomingStash = snapshot.stash as InventoryItem[] | null | undefined;
     if (incomingStash != null) {
       for (const item of incomingStash) {
-        if (!item.icon) item.icon = itemIconFor(item.kind);
+        if (!item.icon) item.icon = itemIconFor(item.kind, item.rarity);
         if (!item.name) item.name = itemDisplayName(item);
       }
       this.cachedStash = incomingStash;
@@ -1428,9 +1655,9 @@ export class Game {
     snapshot.equippedWeapon = this.cachedEquippedWeapon;
 
     for (const loot of snapshot.loot) {
-      if (!loot.icon) loot.icon = itemIconFor(loot.kind);
+      if (!loot.icon) loot.icon = itemIconFor(loot.kind, loot.rarity);
       if (!loot.name) loot.name = itemDisplayName(loot);
-      if (!loot.modelUrl) loot.modelUrl = lootModelUrlFor(loot.kind);
+      if (!loot.modelUrl) loot.modelUrl = lootModelUrlFor(loot.kind, loot.rarity);
     }
   }
 
@@ -1452,6 +1679,9 @@ export class Game {
       this.hydrateSnapshotPresentation(snapshot);
       this.syncZone(snapshot.zone);
       this.syncCombatEvents(snapshot.combatEvents);
+      this.syncPartyEvents(snapshot.partyEvents);
+      this.syncPartyPresentation(snapshot.party);
+      this.syncChatMessages(snapshot.chatMessages);
       this.reconcileLoot(snapshot.loot);
       this.reconcileChests(snapshot.chests);
     }
@@ -1472,6 +1702,7 @@ export class Game {
     this.updateViewVisuals(snapshot.entities, dt);
     this.updateEnemyCulling();
     this.updateDamageTexts(dt);
+    this.updateSpeechBubbles(dt);
     this.updateEffects(dt);
     this.updateOverlays();
     if (snapshotChanged) this.refreshActiveServiceDialogue(playerState);
@@ -1501,6 +1732,11 @@ export class Game {
       this.sfx.play('ui');
       this.hud.toggleMenu();
     }
+    if (this.input.takeTalentsToggle()) {
+      this.hudDirty = true;
+      this.sfx.play('ui');
+      this.hud.toggleTalents();
+    }
     if (this.input.takeSfxMuteToggle()) this.sfx.toggleMuted();
     if (this.input.takeQualityToggle()) {
       this.sfx.play('ui');
@@ -1518,17 +1754,8 @@ export class Game {
       this.sfx.unlock();
       this.net.send({ type: 'jump', entityId: this.net.playerId });
     }
-    if (this.input.takeUsePotion()) {
-      this.sfx.play('potion');
-      this.net.send({ type: 'use-item', entityId: this.net.playerId, item: 'potion' });
-    }
-    if (this.input.takeUseManaPotion()) {
-      this.sfx.play('potion');
-      this.net.send({ type: 'use-item', entityId: this.net.playerId, item: 'mana_potion' });
-    }
-    if (this.input.takeArcaneNova()) {
-      this.sfx.unlock();
-      this.net.send({ type: 'cast-skill', entityId: this.net.playerId, skill: 'arcane-nova' });
+    for (const slot of this.input.takeHotbarPresses()) {
+      this.triggerHotbarSlot(slot);
     }
 
     this.processKeyboardMove(dt);
@@ -1546,6 +1773,7 @@ export class Game {
       if (target.npcId) this.interactWithNpc(target.npcId, this.isMovementRunning(), target.allowAutomove);
     }
     for (const ndc of this.input.takeClicks()) this.handleClick(ndc);
+    this.updateHeldGroundMove();
   }
 
   private processKeyboardMove(dt: number): void {
@@ -1835,6 +2063,7 @@ export class Game {
 
   private cancelAutomoveIntent(): void {
     this.clickMoveTarget = null;
+    this.heldGroundMoveActive = false;
     this.pendingInteraction = null;
     this.queuedMoveCommand = null;
     this.hudDirty = true;
@@ -2014,7 +2243,148 @@ export class Game {
     return this.lastAttackAimPoint;
   }
 
+  private issueGroundMove(point: Vec3Like, start?: Pick<Vec3Like, 'x' | 'z'>): void {
+    const run = this.isMovementRunning();
+    const { commandTarget, prediction } = this.createClickMoveTarget(point, run, start);
+    this.clickMoveTarget = prediction;
+    this.sendMoveCommand(commandTarget, run);
+    this.showMarker(commandTarget.x, commandTarget.y, commandTarget.z, 'move');
+    this.lastHeldGroundMoveAt = this.elapsed;
+  }
+
+  /** Pick de inimigo sob um ray (mesma geometria do clique). */
+  private pickEnemyForRay(ray: WorldRay, onlyAlive: boolean) {
+    return rayPickBest(
+      ray,
+      [...this.views.entries()].filter(
+        ([id, view]) => view.kind === 'enemy' && (!onlyAlive || this.latestEntities.get(id)?.alive === true),
+      ),
+      ([, view]) => {
+        const p = entityPosition(view.entity);
+        return { x: p.x, y: p.y + 1.2 * view.entity.getLocalScale().x, z: p.z };
+      },
+      ([, view]) => 1.25 * Math.max(1, view.entity.getLocalScale().x),
+    );
+  }
+
+  /** Dispara a acao que ocupa o slot (1-6) no layout atual da hotbar. */
+  private triggerHotbarSlot(slot: number): void {
+    const action = this.hotbarLayout[slot - 1];
+    if (!action) return;
+    this.triggerHotbarAction(action);
+  }
+
+  /** Executa uma acao da hotbar (via tecla 1-6 ou clique no slot). */
+  private triggerHotbarAction(action: HotbarAction): void {
+    switch (action) {
+      case 'potion':
+        this.sfx.play('potion');
+        this.net.send({ type: 'use-item', entityId: this.net.playerId, item: 'potion' });
+        return;
+      case 'mana-potion':
+        this.sfx.play('potion');
+        this.net.send({ type: 'use-item', entityId: this.net.playerId, item: 'mana_potion' });
+        return;
+      case 'arcane-nova':
+        this.sfx.unlock();
+        this.net.send({ type: 'cast-skill', entityId: this.net.playerId, skill: 'arcane-nova' });
+        return;
+      case 'war-cry':
+        this.sfx.unlock();
+        this.net.send({ type: 'cast-skill', entityId: this.net.playerId, skill: 'war-cry' });
+        return;
+      case 'heavy-strike':
+        this.castTargetedSkill('heavy-strike', 'Selecione um inimigo para Golpe Pesado.');
+        return;
+      case 'charge':
+        this.castTargetedSkill('charge', 'Selecione um inimigo para Investida.');
+        return;
+    }
+  }
+
+  private castTargetedSkill(skill: 'heavy-strike' | 'charge', missingTargetMessage: string): void {
+    this.sfx.unlock();
+    const targetId = this.selectedEnemyId;
+    const target = targetId ? this.latestEntities.get(targetId) : undefined;
+    if (targetId && target?.alive && target.kind === 'enemy') {
+      this.lastAttackAimPoint = target.position;
+      // Um move coalescido pendente cancelaria a skill armada 1 frame depois.
+      this.queuedMoveCommand = null;
+      this.net.send({ type: 'cast-skill', entityId: this.net.playerId, skill, targetId });
+    } else {
+      this.hud.pushSystemMessage(missingTargetMessage);
+    }
+  }
+
+  /** Troca as posicoes de duas acoes da hotbar (drag & drop) e persiste. */
+  private swapHotbarSlots(from: HotbarAction, to: HotbarAction): void {
+    const a = this.hotbarLayout.indexOf(from);
+    const b = this.hotbarLayout.indexOf(to);
+    if (a < 0 || b < 0 || a === b) return;
+    [this.hotbarLayout[a], this.hotbarLayout[b]] = [this.hotbarLayout[b], this.hotbarLayout[a]];
+    try {
+      window.localStorage.setItem(HOTBAR_LAYOUT_STORAGE_KEY, JSON.stringify(this.hotbarLayout));
+    } catch {
+      // Persistencia opcional.
+    }
+    this.hud.setHotbarLayout(this.hotbarLayout);
+    this.sfx.play('ui');
+  }
+
+  private updateHeldGroundMove(): void {
+    if (!this.input.isPrimaryActionDown()) {
+      this.heldGroundMoveActive = false;
+      return;
+    }
+    if (!this.heldGroundMoveActive) return;
+    if (this.isKeyboardMovementActive() || this.pendingInteraction) {
+      this.heldGroundMoveActive = false;
+      return;
+    }
+    const state = this.latestEntities.get(this.net.playerId);
+    if (state && (!state.alive || state.jumping)) return;
+
+    const ray = this.world.screenRay(this.input.pointer);
+    // ARPG classico: segurar o botao com o cursor sobre um inimigo ATACA o
+    // inimigo (retarget imediato; reenvio throttled), em vez de andar por baixo.
+    const enemyPick = this.pickEnemyForRay(ray, true);
+    if (enemyPick) {
+      const [id, enemyView] = enemyPick;
+      const ep = entityPosition(enemyView.entity);
+      this.lastAttackAimPoint = { x: ep.x, y: ep.y, z: ep.z };
+      const retarget = this.selectedEnemyId !== id;
+      if (retarget || this.elapsed - this.lastHeldAttackCommandAt >= HELD_ATTACK_REFRESH_INTERVAL) {
+        if (retarget) {
+          this.setSelectedEnemy(id);
+          this.closeNpcPanels();
+          this.clickMoveTarget = null;
+          // Um move coalescido pendente (janela de 90ms) flusharia logo apos o
+          // attack e cancelaria alvo/skill armada no servidor.
+          this.queuedMoveCommand = null;
+        }
+        this.net.send({ type: 'attack', entityId: this.net.playerId, targetId: id });
+        this.lastHeldAttackCommandAt = this.elapsed;
+      }
+      return;
+    }
+
+    if (this.elapsed - this.lastHeldGroundMoveAt < HELD_CLICK_MOVE_REFRESH_INTERVAL) return;
+    const ground = this.world.pickGround(ray);
+    if (!ground) return;
+    if (this.clickMoveTarget) {
+      const movedTarget = Math.hypot(ground.point.x - this.clickMoveTarget.x, ground.point.z - this.clickMoveTarget.z);
+      if (movedTarget < HELD_CLICK_MOVE_MIN_TARGET_DELTA) return;
+    }
+
+    const player = this.views.get(this.net.playerId)?.entity;
+    const playerPos = player ? entityPosition(player) : undefined;
+    this.localAimHoldUntil = 0;
+    this.issueGroundMove(ground.point, playerPos);
+  }
+
   private handleClick(ndc: PointerNdc): void {
+    this.heldGroundMoveActive = false;
+    this.hud.hidePlayerContextMenu();
     this.sfx.unlock();
     const ray = this.world.screenRay(ndc);
     const allowClickAutomove = canStartClickAutomove({ keyboardMovementActive: this.isKeyboardMovementActive() });
@@ -2077,6 +2447,26 @@ export class Game {
       return;
     }
 
+    // Inimigo ANTES de loot: em combate o clique de ataque nao pode ser
+    // "roubado" por itens no chao ao redor do alvo (cata-se o loot depois).
+    // Apenas inimigos VIVOS: um cadaver (1.1s ate sumir) em cima do proprio
+    // drop nao pode engolir o clique de coleta.
+    const enemyPick = this.pickEnemyForRay(ray, true);
+    if (enemyPick) {
+      const [id, enemyView] = enemyPick;
+      this.setSelectedEnemy(id);
+      this.cancelAutomoveIntent();
+      this.closeNpcPanels();
+      const ep = entityPosition(enemyView.entity);
+      this.lastAttackAimPoint = { x: ep.x, y: ep.y, z: ep.z };
+      this.net.send({ type: 'attack', entityId: this.net.playerId, targetId: id });
+      // Depois do cancelAutomoveIntent: segurar o botao mantem o modo hold
+      // (continua atacando sob o cursor, ou anda se o cursor sair do inimigo).
+      this.heldGroundMoveActive = this.input.isPrimaryActionDown();
+      this.lastHeldAttackCommandAt = this.elapsed;
+      return;
+    }
+
     const lootPick = rayPickBest(
       ray,
       this.lootViews.entries(),
@@ -2110,23 +2500,35 @@ export class Game {
       return;
     }
 
-    const enemyPick = rayPickBest(
+    const playerPick = rayPickBest(
       ray,
-      [...this.views.entries()].filter(([, view]) => view.kind === 'enemy'),
+      [...this.views.entries()].filter(([id, view]) => id !== this.net.playerId && view.kind === 'player'),
       ([, view]) => {
         const p = entityPosition(view.entity);
-        return { x: p.x, y: p.y + 1.2 * view.entity.getLocalScale().x, z: p.z };
+        return { x: p.x, y: p.y + 1.2, z: p.z };
       },
-      ([, view]) => 1.25 * Math.max(1, view.entity.getLocalScale().x),
+      () => 1.15,
     );
-    if (enemyPick) {
-      const [id, enemyView] = enemyPick;
-      this.setSelectedEnemy(id);
+    if (playerPick) {
+      const [id, playerView] = playerPick;
+      const state = this.latestEntities.get(id);
+      if (!state || !state.alive) return;
+      this.setSelectedNpc(null);
+      this.setSelectedEnemy(null);
       this.cancelAutomoveIntent();
       this.closeNpcPanels();
-      const ep = entityPosition(enemyView.entity);
-      this.lastAttackAimPoint = { x: ep.x, y: ep.y, z: ep.z };
-      this.net.send({ type: 'attack', entityId: this.net.playerId, targetId: id });
+      const p = entityPosition(playerView.entity);
+      const screen = this.world.project({ x: p.x, y: p.y + 1.8, z: p.z });
+      this.hud.showPlayerContextMenu({
+        id,
+        name: state.name ?? id,
+        level: state.level,
+        hp: state.hp,
+        maxHp: state.maxHp,
+        x: screen.visible ? screen.x + 14 : window.innerWidth * 0.5,
+        y: screen.visible ? screen.y : window.innerHeight * 0.5,
+      });
+      this.sfx.play('ui');
       return;
     }
 
@@ -2170,6 +2572,8 @@ export class Game {
       const targetPos = this.latestEntities.get(closeTarget)?.position ?? ground.point;
       this.lastAttackAimPoint = { x: targetPos.x, y: targetPos.y, z: targetPos.z };
       this.net.send({ type: 'attack', entityId: this.net.playerId, targetId: closeTarget });
+      this.heldGroundMoveActive = this.input.isPrimaryActionDown();
+      this.lastHeldAttackCommandAt = this.elapsed;
       return;
     }
 
@@ -2184,19 +2588,21 @@ export class Game {
     this.closeNpcPanels();
     // Predicao local: o heroi comeca a andar JA NESTE frame; o servidor confirma
     // e corrige pelo reconcile (mesmas margens da predicao de teclado).
-    const { commandTarget, prediction } = this.createClickMoveTarget(ground.point, this.isMovementRunning(), playerPos);
-    this.clickMoveTarget = prediction;
-    this.sendMoveCommand(commandTarget, this.isMovementRunning());
-    this.showMarker(commandTarget.x, commandTarget.y, commandTarget.z, 'move');
+    this.heldGroundMoveActive = this.input.isPrimaryActionDown();
+    this.issueGroundMove(ground.point, playerPos);
   }
 
   private reconcile(entities: EntityState[], dt: number, snapshotChanged = true): void {
     const seen = new Set<string>();
+    const availablePlayerContextIds = new Set<string>();
     this.latestEntities.clear();
 
     for (const e of entities) {
       seen.add(e.id);
       this.latestEntities.set(e.id, e);
+      if (e.kind === 'player' && e.id !== this.net.playerId && e.alive) {
+        availablePlayerContextIds.add(e.id);
+      }
       const view = this.views.get(e.id) ?? this.createView(e);
       const visualScale = e.kind === 'enemy' ? e.scale ?? 1 : 1;
       view.entity.setLocalScale(visualScale, visualScale, visualScale);
@@ -2276,6 +2682,7 @@ export class Game {
       if (e.kind === 'player') this.ensureHero(view, e);
       else this.ensureZombie(view);
       this.syncViewEquipment(view, this.visibleWeaponFor(e));
+      if (e.kind === 'player') this.syncViewGearExtras(view, e);
     }
 
     for (const [id, view] of this.views) {
@@ -2285,6 +2692,7 @@ export class Game {
       this.views.delete(id);
       this.enemyHp.delete(id);
     }
+    this.hud.syncPlayerContextTargets(availablePlayerContextIds);
   }
 
   private createView(e: EntityState): View {
@@ -3259,7 +3667,7 @@ export class Game {
         id: item.id,
         kind: item.kind,
         name: item.name || itemDisplayName(item),
-        icon: item.icon || itemIconFor(item.kind),
+        icon: item.icon || itemIconFor(item.kind, item.rarity),
         count: item.count,
         stackable: item.stackable,
         rarity: item.rarity,
@@ -3809,13 +4217,17 @@ export class Game {
         this.hud.setStashStatus('Sem confirmacao do servidor. Aproxime-se da banqueira e tente novamente.');
       }
     }, 1200);
-    this.net.send({
-      type: action === 'deposit' ? 'deposit-stash-item' : 'withdraw-stash-item',
-      entityId: this.net.playerId,
-      npcId,
-      item: item.stackable ? item.kind : undefined,
-      itemId: item.stackable ? undefined : item.id,
-    });
+    if (action === 'deposit') {
+      if (item.stackable) {
+        this.net.send({ type: 'deposit-stash-item', entityId: this.net.playerId, npcId, item: item.kind });
+      } else {
+        this.net.send({ type: 'deposit-stash-item', entityId: this.net.playerId, npcId, itemId: item.id });
+      }
+    } else if (item.stackable) {
+      this.net.send({ type: 'withdraw-stash-item', entityId: this.net.playerId, npcId, item: item.kind });
+    } else {
+      this.net.send({ type: 'withdraw-stash-item', entityId: this.net.playerId, npcId, itemId: item.id });
+    }
   }
 
   private currentCoinCount(): number {
@@ -3853,6 +4265,12 @@ export class Game {
     view.weaponGlowLength = undefined;
     view.anim = undefined;
     view.equippedWeaponKey = undefined;
+    view.offhandKey = undefined;
+    view.offhandAnchor = undefined;
+    view.helmetKey = undefined;
+    view.helmetAnchor = undefined;
+    view.armorKey = undefined;
+    view.armorAnchor = undefined;
   }
 
   private getZombieClipConfigs(): Promise<Partial<Record<VisualAnimState, ClipConfig>>> {
@@ -3899,6 +4317,9 @@ export class Game {
       view.anim = new PcClipController(model, buildHeroClipConfigs(tracks));
       view.heroLoading = false;
       view.equippedWeaponKey = undefined;
+      view.offhandKey = undefined;
+      view.helmetKey = undefined;
+      view.armorKey = undefined;
     }).catch((error) => {
       view.heroLoading = false;
       view.heroFailedUrl = modelUrl;
@@ -4314,11 +4735,13 @@ export class Game {
     view.weaponAttachedToBone = undefined;
     view.weaponGlowLength = undefined;
 
-    if (weapon?.kind !== 'sword') return;
+    if (!weapon || !isWeaponKind(weapon.kind)) return;
+    // Armas 2H (espadao/machado duplo/martelo) sao desenhadas maiores.
+    const worldLength = isTwoHandedKind(weapon.kind) ? WEAPON_WORLD_LENGTH * TWO_HANDED_LENGTH_MULTIPLIER : WEAPON_WORLD_LENGTH;
     const socketParent = findDescendantEntity(view.visual, WEAPON_SOCKET_BONE_NAMES);
     const attachToBone = !!socketParent;
     const inheritedScale = attachToBone ? maxWorldScale(socketParent) : 1;
-    const localWeaponLength = WEAPON_WORLD_LENGTH / inheritedScale;
+    const localWeaponLength = worldLength / inheritedScale;
     const anchor = makeEntity('weapon-anchor', this.world.app);
     (socketParent ?? view.visual).addChild(anchor);
     if (attachToBone) {
@@ -4328,15 +4751,15 @@ export class Game {
     view.weaponAnchor = anchor;
     view.weaponAttachedToBone = attachToBone;
     view.weaponGlowLength = localWeaponLength;
-    void this.world.models.instantiate(EQUIPPED_SWORD_MODEL_URL).then((model) => {
+    void this.world.models.instantiate(lootModelUrlFor(weapon.kind, weapon.rarity)).then((model) => {
       if (view.equippedWeaponKey !== key || !view.entity.parent || view.weaponAnchor !== anchor || !anchor.parent) {
         destroyEntity(model);
         return;
       }
-      model.name = 'equipped-sword';
+      model.name = 'equipped-weapon';
       model.setLocalPosition(0, 0, 0);
       model.setLocalScale(1, 1, 1);
-      fitWeaponToGrip(model, WEAPON_WORLD_LENGTH, WEAPON_GRIP_FROM_BOTTOM, inheritedScale);
+      fitWeaponToGrip(model, worldLength, WEAPON_GRIP_FROM_BOTTOM, inheritedScale);
       anchor.addChild(model);
       view.weapon = model;
       const stage = weaponGlowStageFor(weapon.upgradeLevel, weapon.rarity, weapon.element);
@@ -4427,6 +4850,73 @@ export class Game {
       : null;
   }
 
+  /**
+   * Gear extra no CORPO: segunda arma na mao esquerda (dual wield), elmo na
+   * cabeca e peitoral no tronco. Sem estagios de glow (a arma principal cobre
+   * o show) — as pecas sao anexadas ao osso com escala compensada.
+   */
+  private syncViewGearExtras(view: View, entity: EntityState): void {
+    this.syncBodyAttachment(view, 'offhand', entity.offhandWeapon ?? null);
+    this.syncBodyAttachment(view, 'helmet', entity.helmetVisual ?? null);
+    this.syncBodyAttachment(view, 'armor', entity.armorVisual ?? null);
+  }
+
+  private syncBodyAttachment(view: View, slot: 'offhand' | 'helmet' | 'armor', visual: EquippedWeaponVisualState | null): void {
+    const key = this.equippedWeaponKeyFor(visual);
+    const currentKey = slot === 'offhand' ? view.offhandKey : slot === 'helmet' ? view.helmetKey : view.armorKey;
+    if (key === currentKey) return;
+    const anchorField = slot === 'offhand' ? 'offhandAnchor' : slot === 'helmet' ? 'helmetAnchor' : 'armorAnchor';
+    destroyEntity(view[anchorField]);
+    view[anchorField] = undefined;
+    if (slot === 'offhand') view.offhandKey = key;
+    else if (slot === 'helmet') view.helmetKey = key;
+    else view.armorKey = key;
+    if (!visual) return;
+
+    const boneNames = slot === 'offhand' ? OFFHAND_SOCKET_BONE_NAMES : slot === 'helmet' ? HEAD_SOCKET_BONE_NAMES : CHEST_SOCKET_BONE_NAMES;
+    const socketParent = findDescendantEntity(view.visual, boneNames);
+    if (!socketParent) {
+      // Rig sem o osso correspondente: pula silenciosamente (sem fallback no
+      // chao dos pes — melhor nao desenhar do que desenhar errado).
+      return;
+    }
+    const inheritedScale = maxWorldScale(socketParent);
+    const anchor = makeEntity(`gear-${slot}-anchor`, this.world.app);
+    socketParent.addChild(anchor);
+    anchor.setLocalPosition(0, 0, 0);
+    if (slot === 'offhand') {
+      // Espelha o anchor da mao direita (que usa -90).
+      anchor.setLocalEulerAngles(0, 0, 90);
+    }
+    view[anchorField] = anchor;
+
+    void this.world.models.instantiate(lootModelUrlFor(visual.kind, visual.rarity)).then((model) => {
+      const stillCurrent = (slot === 'offhand' ? view.offhandKey : slot === 'helmet' ? view.helmetKey : view.armorKey) === key;
+      if (!stillCurrent || view[anchorField] !== anchor || !anchor.parent) {
+        destroyEntity(model);
+        return;
+      }
+      model.name = `gear-${slot}`;
+      model.setLocalPosition(0, 0, 0);
+      model.setLocalScale(1, 1, 1);
+      if (slot === 'offhand') {
+        fitWeaponToGrip(model, WEAPON_WORLD_LENGTH, WEAPON_GRIP_FROM_BOTTOM, inheritedScale);
+      } else {
+        const safeScale = Math.max(inheritedScale, 0.0001);
+        const target = (slot === 'helmet' ? HELMET_WORLD_SIZE : CHEST_ARMOR_WORLD_SIZE) / safeScale;
+        const bounds = fitEntityToLargest(model, target);
+        if (bounds && slot === 'armor') {
+          // Centraliza o peitoral verticalmente no osso do tronco.
+          const scale = target / bounds.largest;
+          model.setLocalPosition(-bounds.center.x * scale, -bounds.center.y * scale, -bounds.center.z * scale);
+        }
+      }
+      anchor.addChild(model);
+    }).catch((error) => {
+      console.warn(`[Game] falha ao anexar gear (${slot}):`, error);
+    });
+  }
+
   private reconcileLoot(loot: LootState[]): void {
     const seen = new Set<string>();
     for (const item of loot) {
@@ -4450,28 +4940,89 @@ export class Game {
         this.world.root.addChild(entity);
         const labelColor = this.lootLabelColor(item);
         const label = new WorldLabel(this.uiLayer, 'loot-label', item.name, labelColor);
+        // Labels menores: com varios drops no chao durante combate, o texto
+        // grande poluia a cena e "escondia" os inimigos atras.
+        label.el.style.font = "700 10.5px/1.1 ui-sans-serif,system-ui,sans-serif";
+        label.el.style.opacity = '0.92';
         view = {
           entity,
           label,
           labelColor,
           labelText: item.name,
+          rarityGlowScale: 1,
           baseY: item.position.y,
           phase: this.lootViews.size * 0.9,
         };
         this.lootViews.set(item.id, view);
+        this.playNotableLootSound(item);
         void this.replaceLootModel(entity, item.modelUrl);
       }
       view.baseY = item.position.y;
       view.labelText = item.name;
+      this.syncLootRarityVisual(view, item);
       setEntityPosition(view.entity, { x: item.position.x, y: item.position.y, z: item.position.z });
     }
 
     for (const [id, view] of this.lootViews) {
       if (seen.has(id)) continue;
       view.label.dispose();
+      this.disposeLootRarityVisual(view);
       destroyEntity(view.entity);
       this.lootViews.delete(id);
+      this.notableLootSoundIds.delete(id);
     }
+  }
+
+  private playNotableLootSound(item: LootState): void {
+    if (!this.lootAccentColor(item)) return;
+    if (this.notableLootSoundIds.has(item.id)) return;
+    this.notableLootSoundIds.add(item.id);
+    this.sfx.play('rare-loot');
+  }
+
+  private syncLootRarityVisual(view: LootView, item: LootState): void {
+    const accentColor = this.lootAccentColor(item);
+    const key = accentColor ? `${accentColor}:${item.rarity ?? ''}:${item.glowGem ?? ''}:${item.element ?? ''}` : '';
+    if (view.rarityAccentKey === key) return;
+    this.disposeLootRarityVisual(view);
+    view.rarityAccentKey = key;
+    view.rarityGlowScale = item.rarity ? RARITY_GLOW_SCALE[item.rarity] : item.glowGem ? 1.12 : 1;
+    if (!accentColor) return;
+
+    const color = colorFromCss(accentColor);
+    const ringMaterial = createMaterial(color, {
+      emissive: color,
+      emissiveIntensity: 0.95,
+      opacity: item.rarity === 'lendario' ? 0.48 : item.rarity === 'epico' ? 0.4 : 0.32,
+      additive: true,
+      unlit: true,
+    });
+    const ringScale = 0.78 * view.rarityGlowScale;
+    view.rarityRing = this.world.createPrimitive('loot-rarity-ring', 'torus', ringMaterial, { x: 0, y: 0.06, z: 0 }, { x: ringScale, y: 0.018, z: ringScale });
+    this.world.root.addChild(view.rarityRing);
+    view.rarityRingMaterial = ringMaterial;
+
+    if (item.rarity === 'epico' || item.rarity === 'lendario' || item.glowGem) {
+      const light = makeEntity('loot-rarity-light', this.world.app);
+      light.addComponent('light', {
+        type: 'omni',
+        color,
+        intensity: item.rarity === 'lendario' ? 0.85 : 0.56,
+        range: item.rarity === 'lendario' ? 3.4 : 2.6,
+        falloffMode: pc.LIGHTFALLOFF_INVERSESQUARED,
+      });
+      this.world.root.addChild(light);
+      view.rarityLight = light;
+    }
+  }
+
+  private disposeLootRarityVisual(view: LootView): void {
+    destroyEntity(view.rarityRing);
+    destroyEntity(view.rarityLight);
+    view.rarityRingMaterial?.destroy();
+    view.rarityRing = undefined;
+    view.rarityLight = undefined;
+    view.rarityRingMaterial = undefined;
   }
 
   private async replaceLootModel(container: pc.Entity, url: string): Promise<void> {
@@ -4497,6 +5048,13 @@ export class Game {
       view.entity.setLocalPosition(p.x, view.baseY + 0.16 + Math.sin(this.elapsed * 3 + view.phase) * 0.1, p.z);
       setYaw(view.entity, this.elapsed * 1.7 + view.phase);
       const current = entityPosition(view.entity);
+      if (view.rarityRing) {
+        const pulse = 1 + (Math.sin(this.elapsed * 3.2 + view.phase) + 1) * 0.045;
+        const ringScale = 0.78 * view.rarityGlowScale * pulse;
+        view.rarityRing.setLocalPosition(p.x, view.baseY + 0.08, p.z);
+        view.rarityRing.setLocalScale(ringScale, 0.018, ringScale);
+      }
+      if (view.rarityLight) view.rarityLight.setLocalPosition(p.x, view.baseY + 0.7, p.z);
       view.label.setWorldPosition(current.x, current.y + 0.98, current.z);
       view.label.update(this.world);
     }
@@ -4558,6 +5116,13 @@ export class Game {
     return '#f0dfb2';
   }
 
+  private lootAccentColor(item: LootState): string | null {
+    if (item.element === 'fire') return '#ff7a2f';
+    if (item.glowGem) return glowColorForGem(item.glowGem);
+    if (!item.rarity || item.rarity === 'comum') return null;
+    return RARITY_COLORS[item.rarity];
+  }
+
   private syncCombatEvents(events: readonly CombatEvent[]): void {
     for (const event of events) {
       if (this.seenCombatEvents.has(event.id)) continue;
@@ -4566,6 +5131,11 @@ export class Game {
         if (event.skill === 'arcane-nova') {
           this.sfx.play('arcane-nova');
           this.showArcaneNova(event.position, event.radius);
+        }
+        if (event.skill === 'charge') {
+          this.sfx.play('hit-physical');
+          this.showChargeTrail(event.position, event.casterId, event.radius);
+          this.showHitImpact(event.position, 'physical');
         }
         continue;
       }
@@ -4584,7 +5154,7 @@ export class Game {
         continue;
       }
       this.sfx.play(event.damageKind === 'magic' ? 'hit-magic' : 'hit-physical');
-      this.showDamageText(event.amount, event.position, event.damageKind);
+      this.showDamageText(event.amount, event.position, event.critical ? 'critical' : event.damageKind);
       this.showHitImpact(event.position, event.damageKind);
     }
     if (this.seenCombatEvents.size > 256) {
@@ -4593,9 +5163,94 @@ export class Game {
     }
   }
 
-  private showDamageText(amount: number, position: Vec3Like, damageKind: DamageKind): void {
-    // Numero de dano flutuante (apresentacao; client-side).
-    this.showCombatText(amount, position, damageKind);
+  private syncPartyEvents(events: readonly PartyEvent[]): void {
+    for (const event of events) {
+      if (this.seenPartyEvents.has(event.id)) continue;
+      this.seenPartyEvents.add(event.id);
+      if (event.message) this.hud.pushSystemMessage(event.message);
+    }
+    if (this.seenPartyEvents.size > 128) {
+      const keep = new Set(events.map((event) => event.id));
+      for (const id of this.seenPartyEvents) if (!keep.has(id)) this.seenPartyEvents.delete(id);
+    }
+  }
+
+  private syncPartyPresentation(party: PartyState | null | undefined): void {
+    const next = new Set<string>();
+    for (const member of party?.members ?? []) {
+      if (member.id === this.net.playerId || !member.online) continue;
+      next.add(member.id);
+    }
+
+    this.partyMemberIds.clear();
+    for (const id of next) this.partyMemberIds.add(id);
+
+    for (const id of next) {
+      if (this.partyBadges.has(id)) continue;
+      const badge = new WorldLabel(this.uiLayer, 'party-badge', 'Grupo', '#8fe6ff');
+      badge.el.style.font = "900 10px/1 'Segoe UI', system-ui, sans-serif";
+      badge.el.style.zIndex = '11';
+      this.partyBadges.set(id, badge);
+    }
+    for (const [id, badge] of this.partyBadges) {
+      if (next.has(id)) continue;
+      badge.dispose();
+      this.partyBadges.delete(id);
+    }
+  }
+
+  private syncChatMessages(messages: readonly ChatMessageState[]): void {
+    for (const message of messages) {
+      if (this.seenChatMessages.has(message.id)) continue;
+      this.seenChatMessages.add(message.id);
+      this.hud.pushChatMessage(message, this.net.playerId);
+      this.showSpeechBubble(message);
+    }
+    if (this.seenChatMessages.size > 160) {
+      const keep = new Set(messages.map((message) => message.id));
+      for (const id of this.seenChatMessages) if (!keep.has(id)) this.seenChatMessages.delete(id);
+    }
+  }
+
+  private showSpeechBubble(message: ChatMessageState): void {
+    const tone = chatBubbleToneFor(message.channel);
+    if (!tone) return;
+    for (let i = this.speechBubbles.length - 1; i >= 0; i--) {
+      if (this.speechBubbles[i].entityId !== message.senderId) continue;
+      this.speechBubbles[i].dispose();
+      this.speechBubbles.splice(i, 1);
+    }
+    if (this.speechBubbles.length >= MAX_SPEECH_BUBBLES) this.speechBubbles.shift()?.dispose();
+    this.speechBubbles.push(new SpeechBubble(this.uiLayer, message.senderId, message.message, tone));
+  }
+
+  private updateSpeechBubbles(dt: number): void {
+    for (let i = this.speechBubbles.length - 1; i >= 0; i--) {
+      const bubble = this.speechBubbles[i];
+      const anchor = this.speechBubbleAnchor(bubble.entityId);
+      if (!anchor || bubble.update(dt, this.world, anchor)) {
+        if (!anchor) bubble.dispose();
+        this.speechBubbles.splice(i, 1);
+      }
+    }
+  }
+
+  private speechBubbleAnchor(entityId: string): Vec3Like | null {
+    const view = this.views.get(entityId);
+    if (view) {
+      const p = entityPosition(view.entity);
+      const scale = view.entity.getLocalScale().x || 1;
+      return { x: p.x, y: p.y + 2.45 * scale, z: p.z };
+    }
+    const state = this.latestEntities.get(entityId);
+    if (!state) return null;
+    return { x: state.position.x, y: state.position.y + 2.45, z: state.position.z };
+  }
+
+  private showDamageText(amount: number, position: Vec3Like, damageKind: DamageKind | 'critical'): void {
+    // Numero de dano flutuante (apresentacao; client-side). O backend manda
+    // valores com fracao (Round2, ex.: 14.85) — arredonda para leitura.
+    this.showCombatText(Math.round(amount), position, damageKind);
   }
 
   private showCombatText(text: number | string, position: Vec3Like, textKind: CombatTextKind): void {
@@ -4610,6 +5265,93 @@ export class Game {
     const material = createMaterial(color, { emissive: color, emissiveIntensity: 1.4, opacity: 0.66, additive: true, unlit: true });
     const entity = this.world.createPrimitive('hit-impact', 'sphere', material, { x: position.x, y: position.y + 1.1, z: position.z }, { x: 0.22, y: 0.22, z: 0.22 });
     this.effects.push(new PulseEffect(entity, material, 0.34, 0.18, 1.8, 1));
+  }
+
+  private showChargeTrail(position: Vec3Like, casterId: string, radius: number): void {
+    const casterView = this.views.get(casterId);
+    const casterState = this.latestEntities.get(casterId);
+    // Direcao real do dash: o evento chega no mesmo snapshot que teleporta o
+    // caster e syncCombatEvents roda ANTES do reconcile, entao a view ainda
+    // esta na posicao de origem. O vetor origem->pouso da a direcao exata;
+    // o yaw da view seria o do frame anterior (errado p/ alvo lateral/atras).
+    let yaw = casterView ? entityYaw(casterView.entity) : casterState?.rotationY ?? 0;
+    // Rastro cobre o trajeto REAL do dash (origem -> pouso): com o range maior
+    // da Investida um comprimento fixo ficava invisivel em dashes longos.
+    let dashLength = 0;
+    if (casterView) {
+      const from = casterView.entity.getPosition();
+      const dx = position.x - from.x;
+      const dz = position.z - from.z;
+      const lengthSq = dx * dx + dz * dz;
+      if (lengthSq > 0.04) {
+        yaw = Math.atan2(dx, dz);
+        dashLength = Math.sqrt(lengthSq);
+      }
+    }
+    const dirX = Math.sin(yaw);
+    const dirZ = Math.cos(yaw);
+    const sideX = Math.cos(yaw);
+    const sideZ = -Math.sin(yaw);
+    const color = colorFromCss(CHARGE_TRAIL_COLOR);
+    const segments: ChargeTrailSegment[] = [];
+
+    const span = Math.max(2.3, Math.min(dashLength * 0.92, 13.5));
+    const count = Math.max(CHARGE_TRAIL_SEGMENTS, Math.min(14, Math.round(span / 0.62)));
+    for (let i = 0; i < count; i++) {
+      const t = count > 1 ? i / (count - 1) : 0;
+      const offset = 0.36 + t * (span - 0.36);
+      const side = (i % 2 === 0 ? 1 : -1) * (0.05 + t * 0.26);
+      const opacity = Math.max(0.14, 0.44 - t * 0.28);
+      const scale = {
+        x: 0.16 + t * 0.13,
+        y: 0.028,
+        z: 0.52 + t * 0.85,
+      };
+      const material = createMaterial(color, {
+        emissive: color,
+        emissiveIntensity: 1.25,
+        opacity,
+        additive: true,
+        unlit: true,
+      });
+      const entity = this.world.createPrimitive(
+        'charge-trail',
+        'box',
+        material,
+        {
+          x: position.x - dirX * offset + sideX * side,
+          y: position.y + 0.11 + i * 0.008,
+          z: position.z - dirZ * offset + sideZ * side,
+        },
+        scale,
+      );
+      setYaw(entity, yaw);
+      segments.push({ entity, material, opacity, scale });
+    }
+
+    this.effects.push(new ChargeTrailEffect(segments, CHARGE_TRAIL_DURATION));
+
+    const ringColor = colorFromCss('#ffe09a');
+    const ringMaterial = createMaterial(ringColor, {
+      emissive: ringColor,
+      emissiveIntensity: 1.45,
+      opacity: 0.48,
+      additive: true,
+      unlit: true,
+    });
+    const startRadius = Math.max(0.48, radius * 0.34);
+    const endRadius = Math.max(1.1, radius * 0.92);
+    const ring = this.world.createPrimitive(
+      'charge-impact-ring',
+      'torus',
+      ringMaterial,
+      { x: position.x, y: position.y + 0.075, z: position.z },
+      { x: startRadius, y: 0.024, z: startRadius },
+    );
+    this.effects.push(new PulseEffect(ring, ringMaterial, 0.34, startRadius, endRadius, 0.024));
+    // Shake so quando a Investida e do proprio jogador: sem o filtro, cada
+    // charge de outros players proximos sacudia a camera de todo mundo.
+    if (casterId === this.net.playerId) this.world.rig.addShake(0.18);
   }
 
   private showArcaneNova(position: Vec3Like, radius: number): void {
@@ -4650,12 +5392,24 @@ export class Game {
   }
 
   private updateOverlays(): void {
-    for (const view of this.views.values()) {
+    for (const [id, view] of this.views) {
       if (view.healthBar) {
+        view.healthBar.setPartyMember(this.partyMemberIds.has(id));
         const p = entityPosition(view.entity);
         view.healthBar.setWorldPosition(p.x, p.y + ENEMY_HEALTH_BAR_HEIGHT * view.entity.getLocalScale().x, p.z);
         view.healthBar.update(this.world, view.entity.enabled);
       }
+    }
+    for (const [id, badge] of this.partyBadges) {
+      const view = this.views.get(id);
+      if (!view || !view.entity.enabled) {
+        badge.el.style.display = 'none';
+        continue;
+      }
+      const p = entityPosition(view.entity);
+      const scale = view.entity.getLocalScale().x || 1;
+      badge.setWorldPosition(p.x, p.y + 3.05 * scale, p.z);
+      badge.update(this.world);
     }
     for (const view of this.lootViews.values()) view.label.update(this.world);
   }
@@ -4973,6 +5727,12 @@ export class Game {
     this.autorunActive = false;
     this.cancelAutomoveIntent();
     this.closeNpcPanels();
+    // Overworld e dungeon compartilham coordenadas: um efeito/texto ainda vivo
+    // da zona anterior apareceria flutuando na zona nova. Descarta tudo.
+    for (const effect of this.effects) effect.dispose();
+    this.effects.length = 0;
+    for (const text of this.damageTexts) text.dispose();
+    this.damageTexts.length = 0;
     this.world.setZone(zone);
     this.hud.showZoneBanner(zone);
     this.updateNpcServiceDestinations();
@@ -5012,7 +5772,12 @@ export class Game {
     this.hud.setRenderQuality(this.renderQualityMode, level);
     // Forca o reequip visual das armas no proximo frame: as particulas do glow
     // sao puladas na qualidade baixa, entao trocar de preset exige rebuild.
-    for (const view of this.views.values()) view.equippedWeaponKey = undefined;
+    for (const view of this.views.values()) {
+      view.equippedWeaponKey = undefined;
+      view.offhandKey = undefined;
+      view.helmetKey = undefined;
+      view.armorKey = undefined;
+    }
   }
 
   private resize(): void {

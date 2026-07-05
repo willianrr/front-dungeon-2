@@ -514,7 +514,19 @@ body {
   width: max-content;
   max-width: calc(100vw - 24px);
   transform: translateX(-50%);
-  pointer-events: none;
+  /* A barra e um ESCUDO de clique: sem isso o drag & drop dos slots nunca
+     recebia eventos e o clique atravessava para o canvas (heroi andava ao
+     clicar na hotbar). */
+  pointer-events: auto;
+}
+
+/* Slots reorganizaveis: feedback de cursor para arrastar. */
+.hotbar-slot[draggable='true'] {
+  cursor: grab;
+}
+
+.hotbar-slot[draggable='true']:active {
+  cursor: grabbing;
 }
 
 .hotbar-slot {
@@ -603,6 +615,46 @@ body {
   filter: drop-shadow(0 0 7px rgba(110, 202, 229, 0.42)) drop-shadow(0 1px 2px rgba(0, 0, 0, 0.86));
 }
 
+.hotbar-warrior-skill {
+  border-color: rgba(255, 174, 93, 0.72);
+  background:
+    radial-gradient(circle at 50% 38%, rgba(255, 216, 116, 0.2), transparent 48%),
+    linear-gradient(180deg, rgba(64, 34, 20, 0.92), rgba(12, 12, 17, 0.94)),
+    rgba(14, 18, 26, 0.92);
+  box-shadow:
+    inset 0 1px 6px rgba(255, 216, 116, 0.14),
+    0 8px 22px rgba(0, 0, 0, 0.48);
+}
+
+#hotbar-heavy-strike {
+  border-color: rgba(255, 216, 116, 0.76);
+  background:
+    radial-gradient(circle at 50% 38%, rgba(255, 244, 186, 0.18), transparent 48%),
+    linear-gradient(180deg, rgba(70, 47, 24, 0.92), rgba(13, 12, 15, 0.94)),
+    rgba(14, 18, 26, 0.92);
+}
+
+#hotbar-charge {
+  border-color: rgba(255, 126, 72, 0.78);
+  background:
+    radial-gradient(circle at 50% 38%, rgba(255, 174, 93, 0.24), transparent 48%),
+    linear-gradient(180deg, rgba(80, 34, 22, 0.94), rgba(14, 12, 15, 0.96)),
+    rgba(14, 18, 26, 0.92);
+}
+
+.hotbar-skill-glyph {
+  display: grid;
+  width: 76%;
+  height: 76%;
+  place-items: center;
+  border: 1px solid rgba(255, 216, 116, 0.28);
+  border-radius: 7px;
+  color: #ffe09a !important;
+  background: linear-gradient(180deg, rgba(86, 45, 22, 0.92), rgba(22, 14, 10, 0.94));
+  font: 900 18px/1 'Segoe UI', system-ui, sans-serif;
+  text-shadow: 0 1px 2px #000, 0 0 8px rgba(255, 174, 93, 0.36);
+}
+
 .hotbar-keycap {
   position: absolute;
   right: 3px;
@@ -638,6 +690,69 @@ body {
 .hotbar-skill-slot.not-enough-mana {
   border-color: rgba(77, 128, 206, 0.48);
   filter: saturate(0.62) brightness(0.72);
+}
+
+/* Slot em cooldown: esmaece o glyph alem do shade que sobe (a classe ja era
+   alternada pelo HUD, mas nao existia regra correspondente). */
+.hotbar-skill-slot.on-cooldown {
+  border-color: rgba(140, 122, 84, 0.5);
+  filter: saturate(0.45) brightness(0.8);
+}
+
+/* Skill "armada" (cast fora de alcance aguardando chegar no range): o slot
+   pulsa ate a skill disparar sozinha ou o jogador cancelar (mover/trocar). */
+.hotbar-skill-slot.skill-queued {
+  border-color: rgba(255, 214, 130, 0.95);
+  animation: hotbar-queued-pulse 0.9s ease-in-out infinite;
+}
+
+@keyframes hotbar-queued-pulse {
+  0%,
+  100% {
+    box-shadow:
+      inset 0 0 0 1px rgba(255, 232, 168, 0.12),
+      0 0 4px rgba(255, 206, 110, 0.35);
+  }
+  50% {
+    box-shadow:
+      inset 0 0 0 1px rgba(255, 232, 168, 0.28),
+      0 0 14px rgba(255, 206, 110, 0.85);
+  }
+}
+
+/* Drag & drop da hotbar (trocar slots de posicao). */
+.hotbar-slot.hotbar-dragging {
+  opacity: 0.55;
+}
+
+.hotbar-slot.hotbar-drag-over {
+  border-color: rgba(143, 230, 255, 0.95);
+  box-shadow:
+    inset 0 0 0 1px rgba(143, 230, 255, 0.35),
+    0 0 12px rgba(143, 230, 255, 0.6);
+}
+
+/* Ghost do item arrastado da bag (segue o cursor; dropa fora do menu). */
+.inventory-drag-ghost {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 10000;
+  width: 40px;
+  height: 40px;
+  pointer-events: none;
+  opacity: 0.9;
+  filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.6));
+}
+
+.inventory-drag-ghost img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.inventory-slot.dragging-out {
+  opacity: 0.45;
 }
 
 .hotbar-consumable-slot {
@@ -816,6 +931,615 @@ body {
   box-shadow: 0 8px 23px rgba(0, 0, 0, 0.56), 0 0 15px rgba(255, 216, 116, 0.14);
 }
 
+.party-panel {
+  position: absolute;
+  left: 18px;
+  top: 110px;
+  z-index: 12;
+  width: 270px;
+  padding: 10px;
+  border: 1px solid rgba(120, 201, 255, 0.42);
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(22, 31, 42, 0.92), rgba(8, 12, 18, 0.9));
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.48);
+  pointer-events: auto;
+}
+
+.friend-panel {
+  top: 315px;
+  max-height: 170px;
+  overflow: auto;
+  border-color: rgba(184, 242, 122, 0.34);
+}
+
+.party-panel[hidden],
+.party-invite-panel[hidden],
+.player-context-menu[hidden] {
+  display: none;
+}
+
+.party-heading,
+.party-member-top,
+.party-invite-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.party-heading {
+  margin-bottom: 8px;
+}
+
+.party-heading-title {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.party-heading strong,
+.party-member strong,
+.party-invite-card strong,
+.player-context-menu strong {
+  color: #f8efd9;
+  font: 900 13px/1.1 'Segoe UI', system-ui, sans-serif;
+}
+
+.party-heading small {
+  color: #aebdca;
+  font: 800 10px/1 'Segoe UI', system-ui, sans-serif;
+}
+
+.party-heading button,
+.party-message,
+.party-promote,
+.party-kick,
+.party-invite-card button,
+.player-context-menu button {
+  border: 1px solid rgba(255, 216, 116, 0.36);
+  border-radius: 6px;
+  color: #1a140a;
+  background: linear-gradient(180deg, #ffd874, #d6a23a);
+  font: 800 11px/1 'Segoe UI', system-ui, sans-serif;
+  cursor: pointer;
+}
+
+.party-heading button {
+  padding: 6px 9px;
+}
+
+.party-member {
+  display: grid;
+  gap: 5px;
+  padding: 7px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.party-member.self strong {
+  color: #8fe6ff;
+}
+
+.party-member.offline {
+  opacity: 0.62;
+}
+
+.party-member small {
+  color: #aebdca;
+  font: 700 10px/1.1 'Segoe UI', system-ui, sans-serif;
+}
+
+.party-member-info {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.party-member-info strong,
+.party-member-info small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.party-member-actions {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+}
+
+.party-message,
+.party-promote,
+.party-kick {
+  padding: 5px 7px;
+}
+
+.party-message {
+  color: #07131a;
+  background: linear-gradient(180deg, #8fe6ff, #45a9ce);
+  border-color: rgba(143, 230, 255, 0.48);
+}
+
+.party-promote {
+  color: #152012;
+  background: linear-gradient(180deg, #b8f27a, #70b64d);
+  border-color: rgba(184, 242, 122, 0.45);
+}
+
+.party-kick {
+  color: #f8efd9;
+  background: rgba(42, 16, 18, 0.72);
+  border-color: rgba(255, 116, 103, 0.45);
+}
+
+.party-message:disabled,
+.party-promote:disabled,
+.party-kick:disabled {
+  color: #aebdca;
+  background: rgba(30, 36, 44, 0.72);
+  border-color: rgba(174, 189, 202, 0.22);
+  cursor: default;
+  opacity: 0.72;
+}
+
+.party-hp {
+  position: relative;
+  height: 13px;
+  overflow: hidden;
+  border: 1px solid rgba(0, 0, 0, 0.74);
+  border-radius: 5px;
+  background: rgba(15, 6, 8, 0.78);
+}
+
+.party-hp div {
+  height: 100%;
+  background: linear-gradient(90deg, #d72f45, #ff7467);
+}
+
+.party-hp span {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: #fff4e6;
+  font: 800 9px/1 'Segoe UI', system-ui, sans-serif;
+  text-shadow: 0 1px 2px #000;
+}
+
+.party-invite-panel {
+  position: absolute;
+  z-index: 32;
+  top: 118px;
+  left: 50%;
+  display: grid;
+  width: min(340px, calc(100vw - 24px));
+  gap: 8px;
+  transform: translateX(-50%);
+  pointer-events: auto;
+}
+
+.party-invite-card {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid rgba(255, 216, 116, 0.5);
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(35, 32, 25, 0.96), rgba(10, 12, 18, 0.94));
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.58);
+}
+
+.party-invite-card span {
+  color: #c9d2dc;
+  font: 700 12px/1.3 'Segoe UI', system-ui, sans-serif;
+}
+
+.party-invite-card button {
+  min-width: 88px;
+  padding: 8px 10px;
+}
+
+.party-invite-card button + button {
+  color: #e8e2d0;
+  background: rgba(20, 24, 32, 0.94);
+}
+
+.player-context-menu {
+  position: fixed;
+  z-index: 36;
+  display: grid;
+  width: 214px;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid rgba(255, 216, 116, 0.44);
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(27, 32, 42, 0.96), rgba(7, 10, 15, 0.95));
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.62);
+  pointer-events: auto;
+}
+
+.player-context-menu small {
+  margin-bottom: 3px;
+  color: #9fb0c4;
+  font: 700 11px/1.2 'Segoe UI', system-ui, sans-serif;
+}
+
+.player-context-menu button {
+  width: 100%;
+  padding: 8px 9px;
+  text-align: left;
+}
+
+.player-context-menu button:disabled {
+  cursor: default;
+  color: #8f98a4;
+  border-color: rgba(255, 255, 255, 0.1);
+  background: rgba(18, 22, 29, 0.78);
+}
+
+.system-feed {
+  position: absolute;
+  left: 18px;
+  bottom: 236px;
+  z-index: 18;
+  display: grid;
+  width: min(380px, calc(100vw - 36px));
+  gap: 6px;
+  pointer-events: none;
+}
+
+.system-feed-message {
+  width: fit-content;
+  max-width: 100%;
+  padding: 7px 10px;
+  border: 1px solid rgba(255, 216, 116, 0.24);
+  border-radius: 7px;
+  color: #f4ead0;
+  background: rgba(8, 11, 16, 0.82);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.36);
+  font: 800 12px/1.25 'Segoe UI', system-ui, sans-serif;
+}
+
+.chat-panel {
+  position: absolute;
+  left: 18px;
+  bottom: 18px;
+  z-index: 18;
+  display: grid;
+  width: min(390px, calc(100vw - 36px));
+  max-height: 200px;
+  grid-template-rows: minmax(54px, 1fr) auto;
+  gap: 7px;
+  padding: 9px;
+  border: 1px solid rgba(143, 230, 255, 0.24);
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(14, 20, 27, 0.86), rgba(5, 7, 10, 0.78));
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.42);
+  pointer-events: auto;
+}
+
+.chat-messages {
+  display: grid;
+  align-content: end;
+  gap: 5px;
+  min-height: 54px;
+  max-height: 138px;
+  overflow: hidden auto;
+  padding-right: 3px;
+  scrollbar-width: thin;
+}
+
+.chat-message {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  min-width: 0;
+  color: #d9e4ee;
+  font: 700 12px/1.28 'Segoe UI', system-ui, sans-serif;
+  text-shadow: 0 1px 2px #000;
+}
+
+.chat-message.self .chat-body strong {
+  color: #8fe6ff;
+}
+
+.chat-message[data-channel="party"] .chat-channel,
+.chat-message[data-channel="party"] .chat-body strong {
+  color: #8fe6ff;
+}
+
+.chat-message[data-channel="system"] {
+  color: #ffd874;
+}
+
+.chat-channel {
+  flex: 0 0 auto;
+  min-width: 48px;
+  color: #9fb0c4;
+  font: 900 10px/1 'Segoe UI', system-ui, sans-serif;
+  text-transform: uppercase;
+}
+
+.chat-message[data-channel="system"] .chat-channel {
+  color: #ffd874;
+}
+
+.chat-body {
+  display: inline-flex;
+  min-width: 0;
+  gap: 4px;
+  overflow-wrap: anywhere;
+}
+
+.chat-body strong {
+  flex: 0 0 auto;
+  color: #f8efd9;
+}
+
+.chat-form {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 7px;
+  opacity: 0.7;
+}
+
+.chat-panel[data-active="true"] .chat-form {
+  opacity: 1;
+}
+
+.chat-form select {
+  padding: 5px 7px;
+  border: 1px solid rgba(255, 216, 116, 0.28);
+  border-radius: 6px;
+  color: #f8efd9;
+  background: rgba(18, 22, 29, 0.84);
+  font: 900 10px/1 'Segoe UI', system-ui, sans-serif;
+  text-transform: uppercase;
+  outline: none;
+}
+
+.chat-form[data-channel="party"] select {
+  border-color: rgba(143, 230, 255, 0.46);
+  color: #07131a;
+  background: linear-gradient(180deg, #8fe6ff, #45a9ce);
+}
+
+.chat-form[data-channel="global"] select {
+  border-color: rgba(255, 216, 116, 0.46);
+  color: #1a140a;
+  background: linear-gradient(180deg, #ffd874, #d6a23a);
+}
+
+.chat-form input {
+  min-width: 0;
+  height: 30px;
+  padding: 0 9px;
+  border: 1px solid rgba(143, 230, 255, 0.26);
+  border-radius: 6px;
+  color: #f4ead0;
+  background: rgba(6, 9, 13, 0.86);
+  font: 700 12px/1 'Segoe UI', system-ui, sans-serif;
+  outline: none;
+}
+
+.chat-form input:focus {
+  border-color: rgba(143, 230, 255, 0.62);
+  box-shadow: 0 0 0 2px rgba(143, 230, 255, 0.12);
+}
+
+.speech-bubble {
+  width: max-content;
+  max-width: 220px;
+  padding: 7px 9px;
+  border: 1px solid rgba(255, 216, 116, 0.32);
+  border-radius: 8px;
+  background: rgba(8, 11, 16, 0.86);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.46);
+  overflow-wrap: anywhere;
+  text-align: center;
+}
+
+.speech-bubble[data-channel="party"] {
+  border-color: rgba(143, 230, 255, 0.44);
+  background: rgba(6, 14, 21, 0.88);
+  box-shadow: 0 0 14px rgba(143, 230, 255, 0.16), 0 4px 16px rgba(0, 0, 0, 0.46);
+}
+
+.combat-text.critical-text {
+  filter: drop-shadow(0 0 7px rgba(255, 216, 116, 0.7)) drop-shadow(0 2px 2px rgba(0, 0, 0, 0.9));
+}
+
+.party-badge {
+  width: max-content;
+  padding: 4px 7px;
+  border: 1px solid rgba(143, 230, 255, 0.38);
+  border-radius: 999px;
+  background: rgba(7, 12, 18, 0.82);
+  box-shadow: 0 0 14px rgba(143, 230, 255, 0.16), 0 4px 12px rgba(0, 0, 0, 0.42);
+  text-transform: uppercase;
+}
+
+.healthbar-overlay.party-healthbar {
+  filter: drop-shadow(0 0 8px rgba(143, 230, 255, 0.28));
+}
+
+.talent-panel {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 42;
+  display: grid;
+  width: min(980px, calc(100vw - 40px));
+  max-height: min(760px, calc(100vh - 40px));
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: 12px;
+  padding: 16px;
+  overflow: hidden;
+  transform: translate(-50%, -50%);
+  pointer-events: auto;
+}
+
+.talent-panel[hidden] {
+  display: none;
+}
+
+.talent-heading,
+.talent-summary,
+.talent-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.talent-heading strong {
+  display: block;
+  color: #fff8e6;
+  font: 900 22px/1.1 'Segoe UI', system-ui, sans-serif;
+}
+
+.talent-close {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border: 1px solid rgba(255, 216, 116, 0.32);
+  border-radius: 6px;
+  color: #f7edcf;
+  background: rgba(18, 22, 29, 0.92);
+  cursor: pointer;
+  font: 900 14px/1 'Segoe UI', system-ui, sans-serif;
+}
+
+.talent-summary {
+  padding: 8px 10px;
+  border: 1px solid rgba(143, 230, 255, 0.18);
+  border-radius: 7px;
+  color: #aebdca;
+  background: rgba(7, 10, 15, 0.58);
+  font: 800 12px/1 'Segoe UI', system-ui, sans-serif;
+}
+
+.talent-summary strong {
+  color: #8fe6ff;
+}
+
+.talent-reset {
+  padding: 6px 9px;
+  border: 1px solid rgba(255, 216, 116, 0.36);
+  border-radius: 6px;
+  color: #1a140a;
+  background: linear-gradient(180deg, #ffd874, #d6a23a);
+  cursor: pointer;
+  font: 900 11px/1 'Segoe UI', system-ui, sans-serif;
+}
+
+.talent-reset:disabled {
+  color: #88929e;
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(18, 22, 29, 0.84);
+  cursor: default;
+}
+
+.talent-trees {
+  display: grid;
+  min-height: 0;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.talent-tree {
+  display: grid;
+  align-content: start;
+  gap: 9px;
+  min-width: 0;
+}
+
+.talent-tree h3 {
+  padding: 8px 9px;
+  border: 1px solid rgba(255, 216, 116, 0.26);
+  border-radius: 7px;
+  color: #f8efd9;
+  background: rgba(18, 22, 29, 0.78);
+  font: 900 13px/1.1 'Segoe UI', system-ui, sans-serif;
+}
+
+.talent-card {
+  position: relative;
+  display: grid;
+  min-height: 122px;
+  gap: 7px;
+  padding: 10px 44px 10px 10px;
+  border: 1px solid rgba(143, 230, 255, 0.22);
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, rgba(24, 31, 39, 0.88), rgba(7, 10, 14, 0.84)),
+    rgba(9, 12, 17, 0.82);
+}
+
+.talent-card.learnable {
+  border-color: rgba(141, 255, 178, 0.36);
+  box-shadow: 0 0 16px rgba(141, 255, 178, 0.1);
+}
+
+.talent-card.locked {
+  opacity: 0.58;
+}
+
+.talent-card.maxed {
+  border-color: rgba(255, 216, 116, 0.38);
+}
+
+.talent-card strong {
+  min-width: 0;
+  overflow: hidden;
+  color: #fff8e6;
+  font: 900 13px/1.15 'Segoe UI', system-ui, sans-serif;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.talent-card-top span {
+  flex: 0 0 auto;
+  color: #8fe6ff;
+  font: 900 11px/1 'Segoe UI', system-ui, sans-serif;
+}
+
+.talent-card p {
+  color: #cdd8e3;
+  font: 700 12px/1.3 'Segoe UI', system-ui, sans-serif;
+}
+
+.talent-card small {
+  color: #9fb0c4;
+  font: 800 10px/1.2 'Segoe UI', system-ui, sans-serif;
+}
+
+.talent-card button {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 1px solid rgba(255, 216, 116, 0.44);
+  border-radius: 6px;
+  color: #1a140a;
+  background: linear-gradient(180deg, #ffd874, #d6a23a);
+  cursor: pointer;
+  font: 900 17px/1 'Segoe UI', system-ui, sans-serif;
+}
+
+.talent-card button:disabled {
+  color: #88929e;
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(18, 22, 29, 0.84);
+  cursor: default;
+}
+
 @keyframes target-frame-in {
   from {
     opacity: 0;
@@ -872,6 +1596,79 @@ body {
   display: grid;
   min-width: 0;
   gap: 5px;
+}
+
+.buff-tray {
+  display: flex;
+  min-height: 30px;
+  align-items: center;
+  gap: 5px;
+}
+
+.buff-tray[hidden] {
+  display: none;
+}
+
+.buff-icon {
+  --buff-ratio: 1;
+  position: relative;
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid rgba(255, 216, 116, 0.42);
+  border-radius: 6px;
+  background:
+    conic-gradient(rgba(255, 216, 116, 0.72) calc(var(--buff-ratio) * 1turn), rgba(16, 18, 24, 0.88) 0),
+    linear-gradient(180deg, rgba(46, 38, 22, 0.96), rgba(9, 12, 17, 0.96));
+  box-shadow: 0 0 10px rgba(255, 216, 116, 0.12), 0 4px 11px rgba(0, 0, 0, 0.42);
+}
+
+.buff-icon::before {
+  position: absolute;
+  inset: 3px;
+  border-radius: 4px;
+  background: linear-gradient(180deg, rgba(34, 38, 48, 0.96), rgba(8, 11, 16, 0.98));
+  content: '';
+}
+
+.buff-icon[data-buff="warrior_combat_fury"] {
+  border-color: rgba(255, 128, 96, 0.58);
+  background:
+    conic-gradient(rgba(255, 128, 96, 0.82) calc(var(--buff-ratio) * 1turn), rgba(16, 18, 24, 0.88) 0),
+    linear-gradient(180deg, rgba(55, 24, 18, 0.96), rgba(9, 12, 17, 0.96));
+}
+
+.buff-icon[data-buff="warrior_last_stand"] {
+  border-color: rgba(143, 230, 255, 0.62);
+  background:
+    conic-gradient(rgba(143, 230, 255, 0.82) calc(var(--buff-ratio) * 1turn), rgba(16, 18, 24, 0.88) 0),
+    linear-gradient(180deg, rgba(18, 43, 55, 0.96), rgba(9, 12, 17, 0.96));
+}
+
+.buff-icon[data-buff="war-cry"] {
+  border-color: rgba(255, 174, 93, 0.7);
+  background:
+    conic-gradient(rgba(255, 174, 93, 0.86) calc(var(--buff-ratio) * 1turn), rgba(16, 18, 24, 0.88) 0),
+    linear-gradient(180deg, rgba(62, 34, 18, 0.96), rgba(9, 12, 17, 0.96));
+}
+
+.buff-icon strong,
+.buff-icon span {
+  position: relative;
+  z-index: 1;
+  color: #fff8e6;
+  font: 900 9px/1 'Segoe UI', system-ui, sans-serif;
+  text-shadow: 0 1px 2px #000;
+}
+
+.buff-icon span {
+  position: absolute;
+  right: 3px;
+  bottom: 2px;
+  color: #8fe6ff;
+  font-size: 8px;
 }
 
 .unit-heading {
@@ -1995,6 +2792,10 @@ body {
   display: block;
 }
 
+.hud-window.talent-panel.open {
+  display: grid;
+}
+
 .game-menu {
   left: 50%;
   top: 50%;
@@ -2810,6 +3611,8 @@ button.equipment-slot {
   .npc-dialogue,
   .vendor-panel,
   .stash-panel,
+  .party-panel,
+  .talent-panel,
   .hud-panel,
   .target-frame,
   .inventory-panel,
@@ -2840,8 +3643,42 @@ button.equipment-slot {
     bottom: auto;
   }
 
-  .quest-panel {
+  .party-panel {
     top: 188px;
+  }
+
+  .quest-panel {
+    top: 332px;
+  }
+
+  .system-feed {
+    left: 12px;
+    right: 12px;
+    bottom: 228px;
+    width: auto;
+  }
+
+  .chat-panel {
+    left: 12px;
+    right: 12px;
+    bottom: 52px;
+    width: auto;
+    max-height: 166px;
+  }
+
+  .chat-messages {
+    max-height: 104px;
+  }
+
+  .talent-panel {
+    top: 12px;
+    bottom: 12px;
+    max-height: none;
+    transform: none;
+  }
+
+  .talent-trees {
+    grid-template-columns: 1fr;
   }
 
   .zone-banner {
@@ -2867,7 +3704,7 @@ button.equipment-slot {
     top: auto;
     left: auto;
     right: 12px;
-    bottom: 62px;
+    bottom: 230px;
     width: min(31vw, 128px);
     min-width: 102px;
     padding: 5px;

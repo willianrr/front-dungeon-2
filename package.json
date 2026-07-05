@@ -7,6 +7,13 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0 --port 5174",
     "build": "tsc --noEmit && vite build",
+    "probe:chat": "node scripts/probe-chat-flow.mjs",
+    "probe:combat": "node scripts/probe-combat-flow.mjs",
+    "probe:gear": "node scripts/probe-gear-flow.mjs",
+    "probe:loot": "node scripts/probe-loot-flow.mjs",
+    "probe:party": "node scripts/probe-party-flow.mjs",
+    "probe:quest": "node scripts/probe-quest-flow.mjs",
+    "probe:talents": "node scripts/probe-talents-flow.mjs",
     "probe:ws": "node scripts/probe-backend-ws.mjs",
     "verify:movement": "node scripts/verify-keyboard-move.mjs",
     "optimize:assets": "node scripts/optimize-assets.mjs",

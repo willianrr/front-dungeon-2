@@ -36,6 +36,7 @@ await mkdir(outDir, { recursive: true });
 
 const keyboardMovePath = await compileModule('src/core/KeyboardMoveController.ts', 'KeyboardMoveController.mjs');
 const autorunMovePath = await compileModule('src/core/AutorunMove.ts', 'AutorunMove.mjs');
+const chatPresentationPath = await compileModule('src/core/ChatPresentation.ts', 'ChatPresentation.mjs');
 const clickAutomovePolicyPath = await compileModule('src/core/ClickAutomovePolicy.ts', 'ClickAutomovePolicy.mjs');
 const clickMoveArrivalPath = await compileModule('src/core/ClickMoveArrival.ts', 'ClickMoveArrival.mjs');
 const clientMovementPath = await compileModule('src/core/ClientMovementPredictor.ts', 'ClientMovementPredictor.mjs');
@@ -70,6 +71,7 @@ const vendorOfferPath = await compileModule('src/core/VendorOffer.ts', 'VendorOf
 
 const { KeyboardMoveController } = await import(`${pathToFileURL(keyboardMovePath).href}?t=${Date.now()}`);
 const { autorunMoveState } = await import(`${pathToFileURL(autorunMovePath).href}?t=${Date.now()}`);
+const { chatBubbleTextColor, chatBubbleToneFor } = await import(`${pathToFileURL(chatPresentationPath).href}?t=${Date.now()}`);
 const { canStartClickAutomove, canStartNpcDestinationAutomove } = await import(`${pathToFileURL(clickAutomovePolicyPath).href}?t=${Date.now()}`);
 const { clickMoveArrivalStep } = await import(`${pathToFileURL(clickMoveArrivalPath).href}?t=${Date.now()}`);
 const { ClientMovementPredictor } = await import(`${pathToFileURL(clientMovementPath).href}?t=${Date.now()}`);
@@ -149,6 +151,14 @@ function collect(controller, samples) {
   return samples
     .map((sample) => controller.update(sample))
     .filter((decision) => decision.type !== 'none');
+}
+
+{
+  assert.equal(chatBubbleToneFor('local'), 'local', 'local chat should create a speech bubble');
+  assert.equal(chatBubbleToneFor('party'), 'party', 'party chat should create a speech bubble when the sender is visible');
+  assert.equal(chatBubbleToneFor('global'), null, 'global chat should stay in the HUD feed only');
+  assert.equal(chatBubbleToneFor('system'), null, 'system chat must stay in the HUD feed only');
+  assert.equal(chatBubbleTextColor('party'), '#d8f7ff', 'party bubbles should use the party/social tone');
 }
 
 {

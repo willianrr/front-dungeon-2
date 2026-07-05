@@ -3,6 +3,12 @@ export interface PointerNdc {
   y: number;
 }
 
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  if (target.isContentEditable) return true;
+  return target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement;
+}
+
 // Captura de entrada do usuario. Nao reage diretamente; apenas registra o que
 // aconteceu para o Game consumir a cada frame.
 export class Input {
@@ -16,11 +22,12 @@ export class Input {
   private clickQueue: PointerNdc[] = [];
   private zoomDelta = 0;
   private jumpQueued = false;
-  private potionQueued = false;
-  private manaPotionQueued = false;
-  private arcaneNovaQueued = false;
+  /** Slots da hotbar (1-6) pressionados desde o ultimo frame. A ACAO de cada
+   * slot e decidida pelo Game via layout reorganizavel (drag & drop). */
+  private hotbarQueue: number[] = [];
   private inventoryToggleQueued = false;
   private characterToggleQueued = false;
+  private talentsToggleQueued = false;
   private sfxMuteToggleQueued = false;
   private qualityToggleQueued = false;
   private autorunToggleQueued = false;
@@ -29,16 +36,44 @@ export class Input {
   private cancelQueued = false;
   private movementChangedQueued = false;
   private readonly movementKeys = new Set<string>();
+  private primaryPointerId: number | null = null;
+  private primaryActionDown = false;
 
   constructor(canvas: HTMLCanvasElement) {
     canvas.addEventListener('pointerdown', (e) => {
       if (e.button !== 0) return;
-      this.clickQueue.push(this.toNDC(e, canvas));
+      this.toNDC(e, canvas, this.pointer);
+      this.clickQueue.push({ x: this.pointer.x, y: this.pointer.y });
+      this.primaryPointerId = e.pointerId;
+      this.primaryActionDown = true;
+      try {
+        canvas.setPointerCapture(e.pointerId);
+      } catch {
+        // Pointer capture is best-effort; movement still works without it.
+      }
+      e.preventDefault();
     });
 
     canvas.addEventListener('pointermove', (e) => {
       this.toNDC(e, canvas, this.pointer);
     });
+
+    const releasePrimaryPointer = (e: PointerEvent) => {
+      if (this.primaryPointerId !== null && e.pointerId !== this.primaryPointerId) return;
+      this.primaryPointerId = null;
+      this.primaryActionDown = false;
+      try {
+        canvas.releasePointerCapture(e.pointerId);
+      } catch {
+        // Ignore stale captures; browsers differ after pointercancel/blur.
+      }
+    };
+
+    canvas.addEventListener('pointerup', (e) => {
+      if (e.button !== 0) return;
+      releasePrimaryPointer(e);
+    });
+    canvas.addEventListener('pointercancel', releasePrimaryPointer);
 
     canvas.addEventListener(
       'wheel',
@@ -54,6 +89,7 @@ export class Input {
     window.addEventListener('contextmenu', (e) => e.preventDefault());
 
     window.addEventListener('keydown', (e) => {
+      if (isEditableTarget(e.target)) return;
       if (e.key === 'q' || e.key === 'Q') this.rotateDir = -1;
       if (e.key === 'e' || e.key === 'E') this.rotateDir = 1;
       if (e.key === 'Shift' && !this.running) {
@@ -73,11 +109,15 @@ export class Input {
         this.jumpQueued = true;
         e.preventDefault();
       }
-      if (e.code === 'Digit1') this.potionQueued = true;
-      if (e.code === 'Digit2') this.arcaneNovaQueued = true;
-      if (e.code === 'Digit3') this.manaPotionQueued = true;
+      if (e.code === 'Digit1') this.hotbarQueue.push(1);
+      if (e.code === 'Digit2') this.hotbarQueue.push(2);
+      if (e.code === 'Digit3') this.hotbarQueue.push(3);
+      if (e.code === 'Digit4') this.hotbarQueue.push(4);
+      if (e.code === 'Digit5') this.hotbarQueue.push(5);
+      if (e.code === 'Digit6') this.hotbarQueue.push(6);
       if (e.code === 'KeyI') this.inventoryToggleQueued = true;
       if (e.code === 'KeyC') this.characterToggleQueued = true;
+      if (e.code === 'KeyN') this.talentsToggleQueued = true;
       if (e.code === 'KeyM') this.sfxMuteToggleQueued = true;
       if (e.code === 'Escape') {
         this.cancelQueued = true;
@@ -97,6 +137,9 @@ export class Input {
       }
     });
 
+    // Keyup NAO tem guard de input focado: soltar tecla e sempre seguro, e o
+    // guard fazia teclas de movimento ficarem "presas" quando o keydown
+    // acontecia no jogo e o keyup dentro do chat (ex.: segurando W + Enter).
     window.addEventListener('keyup', (e) => {
       if (['q', 'Q', 'e', 'E'].includes(e.key)) this.rotateDir = 0;
       if (e.key === 'Shift' && this.running) {
@@ -111,6 +154,8 @@ export class Input {
       this.movementKeys.clear();
       this.running = false;
       this.rotateDir = 0;
+      this.primaryPointerId = null;
+      this.primaryActionDown = false;
       if (hadMovement) this.movementChangedQueued = true;
     });
   }
@@ -119,6 +164,10 @@ export class Input {
     const clicks = this.clickQueue;
     this.clickQueue = [];
     return clicks;
+  }
+
+  isPrimaryActionDown(): boolean {
+    return this.primaryActionDown;
   }
 
   takeZoom(): number {
@@ -133,21 +182,11 @@ export class Input {
     return j;
   }
 
-  takeUsePotion(): boolean {
-    const queued = this.potionQueued;
-    this.potionQueued = false;
-    return queued;
-  }
-
-  takeUseManaPotion(): boolean {
-    const queued = this.manaPotionQueued;
-    this.manaPotionQueued = false;
-    return queued;
-  }
-
-  takeArcaneNova(): boolean {
-    const queued = this.arcaneNovaQueued;
-    this.arcaneNovaQueued = false;
+  /** Slots (1-6) pressionados desde o ultimo frame, na ordem. */
+  takeHotbarPresses(): number[] {
+    if (this.hotbarQueue.length === 0) return this.hotbarQueue;
+    const queued = this.hotbarQueue;
+    this.hotbarQueue = [];
     return queued;
   }
 
@@ -160,6 +199,12 @@ export class Input {
   takeCharacterToggle(): boolean {
     const queued = this.characterToggleQueued;
     this.characterToggleQueued = false;
+    return queued;
+  }
+
+  takeTalentsToggle(): boolean {
+    const queued = this.talentsToggleQueued;
+    this.talentsToggleQueued = false;
     return queued;
   }
 

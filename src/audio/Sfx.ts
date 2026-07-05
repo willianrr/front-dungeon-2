@@ -1,14 +1,30 @@
-type SfxCue = 'arcane-nova' | 'boss-slam' | 'chest' | 'hit-magic' | 'hit-physical' | 'miss' | 'pickup' | 'potion' | 'ui';
+export type SfxCue = 'arcane-nova' | 'boss-slam' | 'chest' | 'hit-magic' | 'hit-physical' | 'miss' | 'pickup' | 'potion' | 'rare-loot' | 'ui';
+type SfxCueStatus = 'played' | 'muted' | 'throttled' | 'unavailable';
+
+export interface SfxDebugEvent {
+  cue: SfxCue;
+  status: SfxCueStatus;
+  at: number;
+}
+
+declare global {
+  interface Window {
+    __arannaSfxEvents?: SfxDebugEvent[];
+  }
+}
 
 type AudioContextConstructor = typeof AudioContext;
 
 const SFX_MUTED_KEY = 'aranna:sfx-muted:v1';
+const SFX_DEBUG_EVENT_LIMIT = 80;
+const RARE_LOOT_THROTTLE_SECONDS = 0.45;
 
 export class Sfx {
   private context: AudioContext | null = null;
   private master: GainNode | null = null;
   private muted = this.readMuted();
   private lastHitAt = 0;
+  private lastRareLootAt = 0;
 
   constructor() {
     window.addEventListener('pointerdown', this.unlock, { passive: true });
@@ -33,10 +49,16 @@ export class Sfx {
   }
 
   play(cue: SfxCue): void {
-    if (this.muted) return;
+    if (this.muted) {
+      this.recordCue(cue, 'muted');
+      return;
+    }
     const context = this.ensureContext();
     const master = this.master;
-    if (!context || !master) return;
+    if (!context || !master) {
+      this.recordCue(cue, 'unavailable');
+      return;
+    }
     if (context.state === 'suspended') void context.resume().catch(() => undefined);
 
     const now = context.currentTime;
@@ -55,6 +77,17 @@ export class Sfx {
         this.tone(420, now, 0.08, 'triangle', 0.045);
         this.tone(560, now + 0.055, 0.1, 'sine', 0.045);
         this.tone(720, now + 0.12, 0.1, 'sine', 0.035);
+        break;
+      case 'rare-loot':
+        if (now - this.lastRareLootAt < RARE_LOOT_THROTTLE_SECONDS) {
+          this.recordCue(cue, 'throttled');
+          return;
+        }
+        this.lastRareLootAt = now;
+        this.tone(523, now, 0.11, 'sine', 0.046);
+        this.tone(784, now + 0.055, 0.13, 'triangle', 0.044);
+        this.tone(1175, now + 0.12, 0.16, 'sine', 0.04);
+        this.noise(now + 0.02, 0.1, 0.018, 4200);
         break;
       case 'arcane-nova':
         this.sweep(210, 82, now, 0.34, 'sawtooth', 0.055);
@@ -81,6 +114,7 @@ export class Sfx {
         this.tone(740, now + 0.045, 0.07, 'sine', 0.03);
         break;
     }
+    this.recordCue(cue, 'played');
   }
 
   private playHit(now: number, toneFrequency: number, gain: number, noiseFilter: number): void {
@@ -181,6 +215,13 @@ export class Sfx {
     this.context = context;
     this.master = master;
     return context;
+  }
+
+  private recordCue(cue: SfxCue, status: SfxCueStatus): void {
+    const events = window.__arannaSfxEvents ?? [];
+    events.push({ cue, status, at: performance.now() });
+    if (events.length > SFX_DEBUG_EVENT_LIMIT) events.splice(0, events.length - SFX_DEBUG_EVENT_LIMIT);
+    window.__arannaSfxEvents = events;
   }
 
   private readMuted(): boolean {

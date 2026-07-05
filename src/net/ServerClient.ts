@@ -23,18 +23,31 @@ function emptySnapshot(): WorldSnapshot {
     npcs: [],
     inventory: [],
     stash: [],
-    equipment: { head: null, chest: null, hands: null, legs: null, feet: null, weapon: null, offhand: null, trinket: null },
+    equipment: { head: null, chest: null, hands: null, legs: null, feet: null, weapon: null, offhand: null, trinket: null, ring: null, ring2: null },
     equippedWeapon: null,
     combatEvents: [],
     quest: { title: '', objective: '', progress: 0, goal: 0, accepted: false, completed: false, rewardClaimed: false, rewardText: '' },
     vendorStock: {},
+    party: null,
+    partyInvites: [],
+    partyEvents: [],
+    friends: [],
+    chatMessages: [],
+    talents: { talentPoints: 0, spentPoints: 0, availablePoints: 0, talents: {} },
   };
 }
 
 export class ServerClient implements NetworkClient {
   playerId = 'player-1';
 
+  /**
+   * Chamado (no maximo uma vez) se a conexao cair DEPOIS do boot inicial.
+   * Sem isso o jogo congelava em silencio: snapshot parado e send() virando no-op.
+   */
+  onDisconnect: ((reason: string) => void) | null = null;
+
   private ws: WebSocket | null = null;
+  private disconnectNotified = false;
   private world: WorldData | null = null;
   private snapshot: WorldSnapshot = emptySnapshot();
   private pendingSnapshotRaw: string | null = null;
@@ -72,7 +85,10 @@ export class ServerClient implements NetworkClient {
       };
 
       ws.addEventListener('error', () => settleFail('Falha na conexao com o servidor'));
-      ws.addEventListener('close', () => settleFail('Conexao fechada antes de iniciar'));
+      ws.addEventListener('close', () => {
+        settleFail('Conexao fechada antes de iniciar');
+        this.notifyDisconnect('A conexao com o servidor foi perdida.');
+      });
       ws.addEventListener('message', (event) => {
         const raw = event.data as string;
         if (this.ready && raw.includes('"type":"snapshot"')) {
@@ -180,5 +196,11 @@ export class ServerClient implements NetworkClient {
 
   getSnapshot(): WorldSnapshot {
     return this.snapshot;
+  }
+
+  private notifyDisconnect(reason: string): void {
+    if (!this.ready || this.disconnectNotified) return;
+    this.disconnectNotified = true;
+    this.onDisconnect?.(reason);
   }
 }
