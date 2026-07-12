@@ -12,6 +12,7 @@ export interface NpcServicePriorityInput {
   };
   blacksmith?: {
     disabled: boolean;
+    forgeableBatches?: number;
   };
   trainer?: {
     unspentPoints: number;
@@ -47,6 +48,7 @@ export function npcServicePriorityScore(input: NpcServicePriorityInput): number 
   }
 
   if (input.kind === 'blacksmith') {
+    if ((input.blacksmith?.forgeableBatches ?? 0) > 0) return 72;
     return input.blacksmith && !input.blacksmith.disabled ? 66 : 18;
   }
 

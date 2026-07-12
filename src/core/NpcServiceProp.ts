@@ -70,9 +70,42 @@ const PROP_PARTS: Record<NpcKind, NpcServicePropPart[]> = {
     { id: 'cross-horizontal', primitive: 'box', color: 0x76e2ff, position: { x: -1.0, y: 1.04, z: 0.58 }, scale: { x: 0.42, y: 0.12, z: 0.08 }, opacity: 0.86, additive: true, unlit: true, ambient: 'pulse', ambientPhase: 0.2 },
   ],
   blacksmith: [
-    { id: 'anvil-base', primitive: 'box', color: 0x4d5662, position: { x: -1.02, y: 0.32, z: 0.58 }, scale: { x: 0.62, y: 0.36, z: 0.42 }, blockerRadius: 0.36 },
-    { id: 'anvil-top', primitive: 'box', color: 0x77808b, position: { x: -1.02, y: 0.62, z: 0.58 }, scale: { x: 0.86, y: 0.22, z: 0.36 } },
-    { id: 'ember', primitive: 'sphere', color: 0xff9d5c, position: { x: -0.48, y: 0.76, z: 0.34 }, scale: { x: 0.12, y: 0.08, z: 0.12 }, opacity: 0.78, additive: true, unlit: true, ambient: 'flicker', ambientPhase: 2.4 },
+    // Oficina completa atras do Borin. O eixo Z negativo e o fundo do NPC:
+    // assim a fornalha ganha silhueta propria sem ocupar a area de abordagem.
+    { id: 'forge-foundation', primitive: 'cylinder', color: 0x3b3531, position: { x: 0, y: 0.08, z: -2.38 }, scale: { x: 3.05, y: 0.16, z: 2.25 } },
+    { id: 'forge-foundation-rim', primitive: 'torus', color: 0x8b6444, position: { x: 0, y: 0.18, z: -2.38 }, scale: { x: 2.72, y: 0.055, z: 1.92 } },
+
+    // Corpo de pedra e ferro, com a boca voltada para o Borin/jogador.
+    { id: 'forge-body', primitive: 'box', color: 0x433b38, position: { x: 0.52, y: 0.77, z: -2.55 }, scale: { x: 1.34, y: 1.34, z: 1.02 }, blockerRadius: 0.82 },
+    { id: 'forge-left-pillar', primitive: 'box', color: 0x5b504a, position: { x: 0.03, y: 0.77, z: -1.99 }, scale: { x: 0.3, y: 1.16, z: 0.22 } },
+    { id: 'forge-right-pillar', primitive: 'box', color: 0x5b504a, position: { x: 1.01, y: 0.77, z: -1.99 }, scale: { x: 0.3, y: 1.16, z: 0.22 } },
+    { id: 'forge-lintel', primitive: 'box', color: 0x6d5c51, position: { x: 0.52, y: 1.38, z: -1.99 }, scale: { x: 1.28, y: 0.3, z: 0.24 } },
+    { id: 'forge-iron-band', primitive: 'box', color: 0x68717a, position: { x: 0.52, y: 1.05, z: -3.08 }, scale: { x: 1.43, y: 0.13, z: 1.08 } },
+    { id: 'forge-mouth', primitive: 'box', color: 0x130f0e, position: { x: 0.52, y: 0.72, z: -1.865 }, scale: { x: 0.72, y: 0.72, z: 0.065 } },
+    { id: 'forge-inner-glow', primitive: 'box', color: 0xff672e, position: { x: 0.52, y: 0.7, z: -1.825 }, scale: { x: 0.56, y: 0.54, z: 0.035 }, opacity: 0.7, additive: true, unlit: true, ambient: 'flicker', ambientPhase: 0.7 },
+    { id: 'forge-lip', primitive: 'box', color: 0x9a6542, position: { x: 0.52, y: 0.34, z: -1.78 }, scale: { x: 0.92, y: 0.16, z: 0.34 } },
+    { id: 'forge-coals', primitive: 'sphere', color: 0xff4d22, position: { x: 0.52, y: 0.43, z: -1.65 }, scale: { x: 0.52, y: 0.12, z: 0.22 }, opacity: 0.82, additive: true, unlit: true, ambient: 'flicker', ambientPhase: 1.2 },
+    { id: 'forge-flame-main', primitive: 'cone', color: 0xffbd52, position: { x: 0.52, y: 0.76, z: -1.61 }, scale: { x: 0.3, y: 0.7, z: 0.22 }, opacity: 0.9, additive: true, unlit: true, ambient: 'flicker', ambientPhase: 2.4 },
+    { id: 'forge-flame-core', primitive: 'cone', color: 0xfff0a1, position: { x: 0.52, y: 0.68, z: -1.57 }, scale: { x: 0.13, y: 0.42, z: 0.11 }, opacity: 0.92, additive: true, unlit: true, ambient: 'flicker', ambientPhase: 4.1 },
+
+    // Chamine alta: torna o servico reconhecivel mesmo com a camera afastada.
+    { id: 'forge-chimney-base', primitive: 'cylinder', color: 0x3c4147, position: { x: 0.52, y: 1.82, z: -2.58 }, scale: { x: 0.4, y: 1.14, z: 0.4 } },
+    { id: 'forge-chimney-top', primitive: 'cylinder', color: 0x505860, position: { x: 0.52, y: 2.5, z: -2.58 }, scale: { x: 0.3, y: 0.46, z: 0.3 } },
+    { id: 'forge-chimney-cap', primitive: 'cylinder', color: 0x727b84, position: { x: 0.52, y: 2.77, z: -2.58 }, scale: { x: 0.5, y: 0.12, z: 0.5 } },
+
+    // Estacao de trabalho: bigorna, martelo, tanque e amostra das tres barras.
+    { id: 'anvil-base', primitive: 'box', color: 0x454d57, position: { x: -0.78, y: 0.38, z: -1.98 }, scale: { x: 0.68, y: 0.5, z: 0.55 }, blockerRadius: 0.46 },
+    { id: 'anvil-top', primitive: 'box', color: 0x87929e, position: { x: -0.78, y: 0.71, z: -1.98 }, scale: { x: 1.08, y: 0.22, z: 0.5 } },
+    { id: 'anvil-horn', primitive: 'cone', color: 0x87929e, position: { x: -1.38, y: 0.71, z: -1.98 }, scale: { x: 0.24, y: 0.62, z: 0.24 }, rotation: { x: 0, y: 0, z: 90 } },
+    { id: 'quench-trough', primitive: 'box', color: 0x4d3527, position: { x: -1.22, y: 0.35, z: -2.88 }, scale: { x: 0.78, y: 0.54, z: 0.86 }, blockerRadius: 0.48 },
+    { id: 'quench-water', primitive: 'box', color: 0x65c7dd, position: { x: -1.22, y: 0.64, z: -2.88 }, scale: { x: 0.66, y: 0.035, z: 0.72 }, opacity: 0.62, additive: true, unlit: true, ambient: 'pulse', ambientPhase: 1.7 },
+    { id: 'ingot-copper', primitive: 'box', color: 0xc87945, position: { x: -0.98, y: 0.88, z: -2.28 }, scale: { x: 0.42, y: 0.1, z: 0.18 }, rotation: { x: 0, y: -12, z: 0 } },
+    { id: 'ingot-iron', primitive: 'box', color: 0xb9c4cb, position: { x: -0.56, y: 0.88, z: -2.3 }, scale: { x: 0.42, y: 0.1, z: 0.18 }, rotation: { x: 0, y: 4, z: 0 } },
+    { id: 'ingot-mithril', primitive: 'box', color: 0x65dce9, position: { x: -0.13, y: 0.88, z: -2.29 }, scale: { x: 0.42, y: 0.1, z: 0.18 }, rotation: { x: 0, y: 15, z: 0 }, unlit: true, ambient: 'pulse', ambientPhase: 2.8 },
+
+    { id: 'forge-spark-left', primitive: 'sphere', color: 0xffdf93, position: { x: 0.34, y: 1.13, z: -1.52 }, scale: { x: 0.05, y: 0.05, z: 0.05 }, opacity: 0.82, additive: true, unlit: true, ambient: 'bob', ambientPhase: 0.3 },
+    { id: 'forge-spark-center', primitive: 'sphere', color: 0xffa45c, position: { x: 0.59, y: 1.28, z: -1.55 }, scale: { x: 0.04, y: 0.04, z: 0.04 }, opacity: 0.76, additive: true, unlit: true, ambient: 'bob', ambientPhase: 1.4 },
+    { id: 'forge-spark-right', primitive: 'sphere', color: 0xffc36f, position: { x: 0.78, y: 1.05, z: -1.5 }, scale: { x: 0.045, y: 0.045, z: 0.045 }, opacity: 0.8, additive: true, unlit: true, ambient: 'bob', ambientPhase: 2.4 },
   ],
   trainer: [
     { id: 'banner-pole', primitive: 'cylinder', color: 0x6d5a3b, position: { x: -1.04, y: 0.78, z: 0.62 }, scale: { x: 0.08, y: 1.56, z: 0.08 } },

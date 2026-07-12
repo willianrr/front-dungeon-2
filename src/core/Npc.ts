@@ -1,5 +1,5 @@
-import { itemDisplayName, itemIconFor } from '../shared/itemMeta';
-import type { ItemKind, ItemRarity, NpcKind, NpcShopItemState, NpcState, WorldZone } from '../shared/types';
+import { equipSlotsForKind, isGemKind, itemDisplayName, itemIconFor } from '../shared/itemMeta';
+import type { EquipmentSlot, ForgeIngredientState, ForgeRecipeState, ItemAffix, ItemKind, ItemRarity, NpcKind, NpcShopItemState, NpcState, WeaponElement, WeaponGlowGem, WorldZone } from '../shared/types';
 import type { WorldData } from '../shared/worldgen';
 
 export interface VendorShopItem {
@@ -9,8 +9,26 @@ export interface VendorShopItem {
   icon: string;
   price: number;
   rarity?: ItemRarity;
+  itemLevel?: number;
+  affixes?: ItemAffix[];
+  upgradeLevel?: number;
+  glowGem?: WeaponGlowGem;
+  element?: WeaponElement;
+  damageMin?: number;
+  damageMax?: number;
+  magicDamageMin?: number;
+  magicDamageMax?: number;
+  armor?: number;
+  bonusHp?: number;
+  bonusMana?: number;
+  bonusCrit?: number;
+  equipSlot?: EquipmentSlot;
+  stackable?: boolean;
+  usable?: boolean;
+  count?: number;
   stock?: number;
   tagline?: string;
+	service?: 'expedition_mule';
 }
 
 export interface NpcDefinition {
@@ -26,6 +44,7 @@ export interface NpcDefinition {
   clickRadius: number;
   collisionRadius: number;
   shopItems?: VendorShopItem[];
+  forgeRecipes?: ForgeRecipeState[];
   dialogue?: {
     greeting: string;
     actionLabel: string;
@@ -39,18 +58,64 @@ const NPC_ITEM_TAGLINES: Record<string, string> = {
   'vendor-mana-potion': 'Mana para manter habilidades ativas.',
   'vendor-starter-sword': 'Arma de entrada para testar loja.',
   'vendor-jewel-soul': 'Gema rara para upgrades futuros.',
+	'vendor-expedition-mule': 'Companheira permanente com 12 espaços para materiais e poções.',
 };
 
 function shopItemFromState(item: NpcShopItemState): VendorShopItem {
+  const equipSlot = equipSlotsForKind(item.kind)[0];
+  const stackable = item.kind === 'coin' || item.kind === 'potion' || item.kind === 'mana_potion' || isGemKind(item.kind);
   return {
     id: item.id,
     kind: item.kind,
-    name: itemDisplayName(item),
-    icon: itemIconFor(item.kind),
+	name: item.service === 'expedition_mule' ? 'Mula de Expedição' : itemDisplayName(item),
+	icon: item.service === 'expedition_mule' ? '/hud/runtime/expedition-mule.svg' : itemIconFor(item.kind, item.rarity),
     price: item.price,
     rarity: item.rarity || undefined,
+    itemLevel: item.itemLevel,
+    affixes: item.affixes,
+    upgradeLevel: item.upgradeLevel,
+    glowGem: item.glowGem,
+    element: item.element,
+    damageMin: item.damageMin,
+    damageMax: item.damageMax,
+    magicDamageMin: item.magicDamageMin,
+    magicDamageMax: item.magicDamageMax,
+    armor: item.armor,
+    bonusHp: item.bonusHp,
+    bonusMana: item.bonusMana,
+    bonusCrit: item.bonusCrit,
+    count: item.count,
+    equipSlot,
+    stackable,
+    usable: item.kind === 'potion' || item.kind === 'mana_potion',
     stock: item.stock,
     tagline: NPC_ITEM_TAGLINES[item.id],
+	service: item.service,
+  };
+}
+
+/** Completa o contrato novo sem quebrar snapshots de servidores anteriores. */
+function forgeRecipeFromState(recipe: ForgeRecipeState): ForgeRecipeState {
+  const legacy = recipe as ForgeRecipeState & {
+    recipeType?: ForgeRecipeState['recipeType'];
+    ingredients?: ForgeIngredientState[];
+    requiredLevel?: number;
+    xpReward?: number;
+  };
+  const ingredients = legacy.ingredients?.filter((ingredient) => ingredient.count > 0) ?? [];
+  if (ingredients.length === 0 && legacy.inputKind && legacy.inputCount > 0) {
+    ingredients.push({ kind: legacy.inputKind, count: legacy.inputCount });
+  }
+  const primary = ingredients[0];
+  const inferredLevel = recipe.id.includes('mithril') ? 3 : recipe.id.includes('iron') ? 2 : 1;
+  return {
+    ...recipe,
+    recipeType: legacy.recipeType ?? 'smelting',
+    ingredients,
+    inputKind: legacy.inputKind ?? primary?.kind,
+    inputCount: legacy.inputCount || primary?.count || 1,
+    requiredLevel: Math.max(1, Math.floor(legacy.requiredLevel ?? inferredLevel)),
+    xpReward: Math.max(0, Math.floor(legacy.xpReward ?? 0)),
   };
 }
 
@@ -69,6 +134,7 @@ export function npcDefinitionsFromSnapshot(npcs: readonly NpcState[] | null | un
     clickRadius: npc.clickRadius,
     collisionRadius: npc.collisionRadius,
     shopItems: npc.kind === 'vendor' ? (npc.shopItems ?? []).map(shopItemFromState) : undefined,
+    forgeRecipes: npc.kind === 'blacksmith' ? (npc.forgeRecipes ?? []).map(forgeRecipeFromState) : undefined,
     dialogue: npc.dialogue,
   }));
 }
@@ -115,6 +181,13 @@ function fallbackNpcStates(world: WorldData): NpcState[] {
       clickRadius: 1.35,
       collisionRadius: 0.72,
       shopItems: [
+		{
+		  id: 'vendor-expedition-mule',
+		  kind: 'coin',
+		  price: 180,
+		  stock: 1,
+		  service: 'expedition_mule',
+		},
         {
           id: 'vendor-health-potion',
           kind: 'potion',
@@ -208,9 +281,132 @@ function fallbackNpcStates(world: WorldData): NpcState[] {
       clickRadius: 1.35,
       collisionRadius: 0.72,
       dialogue: {
-        greeting: 'Traga uma joia e uma arma equipada. Eu bato o metal, voce segura firme.',
+        greeting: 'Traga minérios para fundir barras ou uma joia para fortalecer sua arma.',
         actionLabel: 'Forjar',
       },
+      forgeRecipes: [
+        {
+          id: 'smelt-copper-bar', label: 'Barra de Cobre', recipeType: 'smelting',
+          ingredients: [{ kind: 'copper_ore', count: 3 }], inputKind: 'copper_ore', inputCount: 3,
+          outputKind: 'copper_bar', outputCount: 1, requiredLevel: 1, xpReward: 6,
+        },
+        {
+          id: 'smelt-iron-bar', label: 'Barra de Ferro', recipeType: 'smelting',
+          ingredients: [{ kind: 'iron_ore', count: 3 }], inputKind: 'iron_ore', inputCount: 3,
+          outputKind: 'iron_bar', outputCount: 1, requiredLevel: 2, xpReward: 10,
+        },
+        {
+          id: 'smelt-mithril-bar', label: 'Barra de Mithril', recipeType: 'smelting',
+          ingredients: [{ kind: 'mithril_ore', count: 3 }], inputKind: 'mithril_ore', inputCount: 3,
+          outputKind: 'mithril_bar', outputCount: 1, requiredLevel: 3, xpReward: 16,
+        },
+        {
+          id: 'forge-copper-pickaxe', label: 'Picareta de Cobre', recipeType: 'tool',
+          ingredients: [{ kind: 'copper_bar', count: 2 }], inputKind: 'copper_bar', inputCount: 2,
+          outputKind: 'copper_pickaxe', outputCount: 1, requiredLevel: 1, xpReward: 18,
+          toolTier: 1, requiredToolTier: 0,
+        },
+        {
+          id: 'forge-iron-pickaxe', label: 'Picareta de Ferro', recipeType: 'tool',
+          ingredients: [{ kind: 'iron_bar', count: 2 }, { kind: 'copper_bar', count: 1 }],
+          inputKind: 'iron_bar', inputCount: 2, outputKind: 'iron_pickaxe', outputCount: 1,
+          requiredLevel: 2, xpReward: 30, toolTier: 2, requiredToolTier: 1,
+        },
+        {
+          id: 'forge-mithril-pickaxe', label: 'Picareta de Mithril', recipeType: 'tool',
+          ingredients: [{ kind: 'mithril_bar', count: 2 }, { kind: 'iron_bar', count: 1 }],
+          inputKind: 'mithril_bar', inputCount: 2, outputKind: 'mithril_pickaxe', outputCount: 1,
+          requiredLevel: 3, xpReward: 48, toolTier: 3, requiredToolTier: 2,
+        },
+        {
+          id: 'forge-copper-sword', label: 'Espada de Cobre', recipeType: 'equipment',
+          ingredients: [{ kind: 'copper_bar', count: 2 }], inputKind: 'copper_bar', inputCount: 2,
+          outputKind: 'sword', outputCount: 1, outputRarity: 'comum', requiredLevel: 1, xpReward: 18,
+        },
+        {
+          id: 'forge-copper-helmet', label: 'Elmo de Cobre', recipeType: 'equipment',
+          ingredients: [{ kind: 'copper_bar', count: 2 }], inputKind: 'copper_bar', inputCount: 2,
+          outputKind: 'helmet', outputCount: 1, outputRarity: 'comum', requiredLevel: 1, xpReward: 18,
+        },
+        {
+          id: 'forge-iron-axe', label: 'Machado de Ferro', recipeType: 'equipment',
+          ingredients: [{ kind: 'iron_bar', count: 3 }, { kind: 'copper_bar', count: 1 }],
+          inputKind: 'iron_bar', inputCount: 3, outputKind: 'axe', outputCount: 1,
+          outputRarity: 'incomum', itemLevelBonus: 1, requiredLevel: 2, xpReward: 35,
+        },
+        {
+          id: 'forge-iron-armor', label: 'Peitoral de Ferro', recipeType: 'equipment',
+          ingredients: [{ kind: 'iron_bar', count: 3 }, { kind: 'copper_bar', count: 1 }],
+          inputKind: 'iron_bar', inputCount: 3, outputKind: 'armor', outputCount: 1,
+          outputRarity: 'incomum', itemLevelBonus: 1, requiredLevel: 2, xpReward: 35,
+        },
+        {
+          id: 'forge-mithril-great-sword', label: 'Espadao de Mithril', recipeType: 'equipment',
+          ingredients: [{ kind: 'mithril_bar', count: 3 }, { kind: 'iron_bar', count: 1 }],
+          inputKind: 'mithril_bar', inputCount: 3, outputKind: 'great_sword', outputCount: 1,
+          outputRarity: 'raro', itemLevelBonus: 2, requiredLevel: 3, xpReward: 55,
+        },
+        {
+          id: 'forge-mithril-war-hammer', label: 'Martelo de Mithril', recipeType: 'equipment',
+          ingredients: [{ kind: 'mithril_bar', count: 3 }, { kind: 'iron_bar', count: 1 }],
+          inputKind: 'mithril_bar', inputCount: 3, outputKind: 'war_hammer', outputCount: 1,
+          outputRarity: 'raro', itemLevelBonus: 2, requiredLevel: 3, xpReward: 55,
+        },
+        {
+          id: 'forge-arhok-greatblade', label: 'Montante de Arhok · Vanguarda', recipeType: 'equipment',
+          ingredients: [{ kind: 'mithril_bar', count: 4 }, { kind: 'iron_bar', count: 2 }],
+          inputKind: 'mithril_bar', inputCount: 4, outputKind: 'great_sword', outputCount: 1,
+          outputRarity: 'epico', outputSetId: 'arhok-vanguard', outputSetPieceId: 'arhok-greatblade', itemLevelBonus: 3, requiredLevel: 4, xpReward: 75,
+        },
+        {
+          id: 'forge-arhok-visor', label: 'Viseira de Arhok · Vanguarda', recipeType: 'equipment',
+          ingredients: [{ kind: 'mithril_bar', count: 3 }, { kind: 'iron_bar', count: 2 }],
+          inputKind: 'mithril_bar', inputCount: 3, outputKind: 'helmet', outputCount: 1,
+          outputRarity: 'epico', outputSetId: 'arhok-vanguard', outputSetPieceId: 'arhok-visor', itemLevelBonus: 3, requiredLevel: 4, xpReward: 70,
+        },
+        {
+          id: 'forge-arhok-gauntlets', label: 'Manoplas de Arhok · Vanguarda', recipeType: 'equipment',
+          ingredients: [{ kind: 'mithril_bar', count: 3 }, { kind: 'iron_bar', count: 2 }],
+          inputKind: 'mithril_bar', inputCount: 3, outputKind: 'gloves', outputCount: 1,
+          outputRarity: 'epico', outputSetId: 'arhok-vanguard', outputSetPieceId: 'arhok-gauntlets', itemLevelBonus: 3, requiredLevel: 4, xpReward: 70,
+        },
+        {
+          id: 'forge-utraean-signet', label: 'Sinete Utraeano · Tempestade', recipeType: 'equipment',
+          ingredients: [{ kind: 'mithril_bar', count: 3 }, { kind: 'iron_bar', count: 2 }],
+          inputKind: 'mithril_bar', inputCount: 3, outputKind: 'ring', outputCount: 1,
+          outputRarity: 'epico', outputSetId: 'utraean-tempest', outputSetPieceId: 'utraean-signet', itemLevelBonus: 4, requiredLevel: 5, xpReward: 90,
+        },
+        {
+          id: 'forge-utraean-conduit', label: 'Condutor Utraeano · Tempestade', recipeType: 'equipment',
+          ingredients: [{ kind: 'mithril_bar', count: 4 }, { kind: 'iron_bar', count: 1 }],
+          inputKind: 'mithril_bar', inputCount: 4, outputKind: 'necklace', outputCount: 1,
+          outputRarity: 'epico', outputSetId: 'utraean-tempest', outputSetPieceId: 'utraean-conduit', itemLevelBonus: 4, requiredLevel: 5, xpReward: 90,
+        },
+        {
+          id: 'forge-utraean-wraps', label: 'Faixas Utraeanas · Tempestade', recipeType: 'equipment',
+          ingredients: [{ kind: 'mithril_bar', count: 3 }, { kind: 'iron_bar', count: 2 }],
+          inputKind: 'mithril_bar', inputCount: 3, outputKind: 'gloves', outputCount: 1,
+          outputRarity: 'epico', outputSetId: 'utraean-tempest', outputSetPieceId: 'utraean-wraps', itemLevelBonus: 4, requiredLevel: 5, xpReward: 90,
+        },
+        {
+          id: 'forge-stoneguard-maul', label: 'Malho do Guarda-Pedra · Juramento', recipeType: 'equipment',
+          ingredients: [{ kind: 'mithril_bar', count: 5 }, { kind: 'iron_bar', count: 3 }],
+          inputKind: 'mithril_bar', inputCount: 5, outputKind: 'war_hammer', outputCount: 1,
+          outputRarity: 'epico', outputSetId: 'stoneguard-oath', outputSetPieceId: 'stoneguard-maul', itemLevelBonus: 5, requiredLevel: 6, xpReward: 110,
+        },
+        {
+          id: 'forge-stoneguard-plate', label: 'Couraça do Guarda-Pedra · Juramento', recipeType: 'equipment',
+          ingredients: [{ kind: 'mithril_bar', count: 5 }, { kind: 'iron_bar', count: 3 }],
+          inputKind: 'mithril_bar', inputCount: 5, outputKind: 'armor', outputCount: 1,
+          outputRarity: 'epico', outputSetId: 'stoneguard-oath', outputSetPieceId: 'stoneguard-plate', itemLevelBonus: 5, requiredLevel: 6, xpReward: 110,
+        },
+        {
+          id: 'forge-stoneguard-crown', label: 'Coroa do Guarda-Pedra · Juramento', recipeType: 'equipment',
+          ingredients: [{ kind: 'mithril_bar', count: 4 }, { kind: 'iron_bar', count: 3 }],
+          inputKind: 'mithril_bar', inputCount: 4, outputKind: 'helmet', outputCount: 1,
+          outputRarity: 'epico', outputSetId: 'stoneguard-oath', outputSetPieceId: 'stoneguard-crown', itemLevelBonus: 5, requiredLevel: 6, xpReward: 105,
+        },
+      ],
     },
     {
       id: 'npc-trainer-toren',
@@ -344,4 +540,3 @@ function fallbackNpcStates(world: WorldData): NpcState[] {
 export function createNpcDefinitions(world: WorldData): NpcDefinition[] {
   return npcDefinitionsFromSnapshot(fallbackNpcStates(world));
 }
-

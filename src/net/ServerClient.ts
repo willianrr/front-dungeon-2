@@ -2,6 +2,7 @@ import type { NetworkClient } from './NetworkClient';
 import type { Command, WorldSnapshot } from '../shared/types';
 import { generateWorld, type WorldData } from '../shared/worldgen';
 import { WS_URL } from './runtimeConfig';
+import { legacyNormalDifficultyState } from '../shared/DifficultyTiers';
 
 // Cliente ONLINE: fala WebSocket com o servidor Go autoritativo. O servidor
 // manda a seed (regeneramos o mundo identico) e o WorldSnapshot a cada tick.
@@ -20,6 +21,41 @@ function emptySnapshot(): WorldSnapshot {
     entities: [],
     loot: [],
     chests: [],
+    oreNodes: [],
+    displacers: [],
+    difficulty: legacyNormalDifficultyState(),
+    utraeanRelay: undefined,
+    projectiles: [],
+    natureSpirits: [],
+    controlZones: [],
+    biome: {
+      version: 1,
+      id: 'arhok-frost-coast',
+      label: 'Costa Fria de Arhok',
+      active: false,
+      bounds: { minX: -38, maxX: 38, minZ: 32, maxZ: 94 },
+      exposure: 0,
+      maxExposure: 100,
+      stage: 'clear',
+      warmth: false,
+      moveSpeedMultiplier: 1,
+      warmthSources: [],
+    },
+    jungle: {
+      version: 1,
+      id: 'ironwood-corrupted-jungle',
+      label: 'Selva Corrompida de Ironwood',
+      active: false,
+      bounds: { minX: -94, maxX: -32, minZ: -58, maxZ: 12 },
+      pods: [],
+    },
+    mining: { cooldown: 0.9, cooldownRemaining: 0, interactRange: 3.4 },
+    professions: {
+      mining: { id: 'mining', label: 'Mineração', level: 1, xp: 0, xpIntoLevel: 0, xpToNext: 30, maxLevel: 10, bonusYieldChance: 0 },
+      smithing: { id: 'smithing', label: 'Ferraria', level: 1, xp: 0, xpIntoLevel: 0, xpToNext: 30, maxLevel: 10 },
+      contracts: [],
+    },
+    masteries: [{ id: 'martial', label: 'Maestria Marcial', level: 1, xp: 0, xpIntoLevel: 0, xpToNext: 30, maxLevel: 10, damageBonus: 0 }],
     npcs: [],
     inventory: [],
     stash: [],

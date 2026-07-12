@@ -13,6 +13,7 @@ export interface NpcServiceStatusInput {
   blacksmith?: {
     label: string;
     disabled: boolean;
+    forgeableBatches?: number;
   };
   trainer?: {
     unspentPoints: number;
@@ -61,7 +62,11 @@ export function npcServiceStatusLabel(input: NpcServiceStatusInput): string | un
   }
 
   if (input.kind === 'blacksmith') {
-    return input.blacksmith?.label;
+    const blacksmith = input.blacksmith;
+    if (!blacksmith) return undefined;
+    const batches = blacksmith.forgeableBatches ?? 0;
+    if (batches > 0) return batches === 1 ? 'Receita pronta' : `${batches} receitas prontas`;
+    return blacksmith.label;
   }
 
   if (input.kind === 'trainer') {

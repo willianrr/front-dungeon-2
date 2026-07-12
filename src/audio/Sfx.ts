@@ -1,4 +1,4 @@
-export type SfxCue = 'arcane-nova' | 'boss-slam' | 'chest' | 'hit-magic' | 'hit-physical' | 'miss' | 'pickup' | 'potion' | 'rare-loot' | 'ui';
+export type SfxCue = 'arcane-nova' | 'boss-slam' | 'chest' | 'evade' | 'hit-magic' | 'hit-physical' | 'miss' | 'pickup' | 'potion' | 'rare-loot' | 'ui';
 type SfxCueStatus = 'played' | 'muted' | 'throttled' | 'unavailable';
 
 export interface SfxDebugEvent {
@@ -98,6 +98,11 @@ export class Sfx {
         this.sweep(92, 38, now, 0.26, 'sawtooth', 0.075);
         this.noise(now, 0.2, 0.09, 520);
         this.tone(54, now + 0.04, 0.24, 'square', 0.035);
+        break;
+      case 'evade':
+        this.sweep(760, 230, now, 0.16, 'triangle', 0.045);
+        this.noise(now, 0.11, 0.028, 3600);
+        this.tone(980, now + 0.035, 0.09, 'sine', 0.022);
         break;
       case 'hit-magic':
         this.playHit(now, 360, 0.055, 2400);

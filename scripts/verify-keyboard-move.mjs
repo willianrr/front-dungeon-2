@@ -36,6 +36,8 @@ await mkdir(outDir, { recursive: true });
 
 const keyboardMovePath = await compileModule('src/core/KeyboardMoveController.ts', 'KeyboardMoveController.mjs');
 const autorunMovePath = await compileModule('src/core/AutorunMove.ts', 'AutorunMove.mjs');
+const stationarySkillCastPath = await compileModule('src/core/StationarySkillCast.ts', 'StationarySkillCast.mjs');
+const bagInventoryPath = await compileModule('src/ui/BagInventory.ts', 'BagInventory.mjs');
 const chatPresentationPath = await compileModule('src/core/ChatPresentation.ts', 'ChatPresentation.mjs');
 const clickAutomovePolicyPath = await compileModule('src/core/ClickAutomovePolicy.ts', 'ClickAutomovePolicy.mjs');
 const clickMoveArrivalPath = await compileModule('src/core/ClickMoveArrival.ts', 'ClickMoveArrival.mjs');
@@ -71,6 +73,8 @@ const vendorOfferPath = await compileModule('src/core/VendorOffer.ts', 'VendorOf
 
 const { KeyboardMoveController } = await import(`${pathToFileURL(keyboardMovePath).href}?t=${Date.now()}`);
 const { autorunMoveState } = await import(`${pathToFileURL(autorunMovePath).href}?t=${Date.now()}`);
+const { stationarySkillMovementPlan } = await import(`${pathToFileURL(stationarySkillCastPath).href}?t=${Date.now()}`);
+const { bagInventoryItems } = await import(`${pathToFileURL(bagInventoryPath).href}?t=${Date.now()}`);
 const { chatBubbleTextColor, chatBubbleToneFor } = await import(`${pathToFileURL(chatPresentationPath).href}?t=${Date.now()}`);
 const { canStartClickAutomove, canStartNpcDestinationAutomove } = await import(`${pathToFileURL(clickAutomovePolicyPath).href}?t=${Date.now()}`);
 const { clickMoveArrivalStep } = await import(`${pathToFileURL(clickMoveArrivalPath).href}?t=${Date.now()}`);
@@ -151,6 +155,54 @@ function collect(controller, samples) {
   return samples
     .map((sample) => controller.update(sample))
     .filter((decision) => decision.type !== 'none');
+}
+
+{
+  assert.deepEqual(
+    stationarySkillMovementPlan({
+      clickMoveActive: true,
+      pendingInteractionActive: true,
+      heldGroundMoveActive: true,
+      queuedMoveActive: true,
+      autorunActive: true,
+    }),
+    {
+      clearClickMove: true,
+      clearPendingInteraction: true,
+      clearHeldGroundMove: true,
+      clearQueuedMove: true,
+      clearAutorun: true,
+      suppressMovementForFrame: true,
+    },
+    'Iron Guard must clear every local movement source and suppress the cast frame',
+  );
+
+  const heldAfterGuard = new KeyboardMoveController();
+  const heldForward = { ...idle, axes: { strafe: 0, forward: 1 }, direction: { x: 0, z: 1 } };
+  assert.equal(heldAfterGuard.update(heldForward).type, 'move');
+  assert.equal(heldAfterGuard.update(heldForward).type, 'none');
+  heldAfterGuard.reset();
+  assert.equal(
+    heldAfterGuard.update(heldForward).type,
+    'move',
+    'movement may create a fresh command on the frame after Iron Guard resets its old intent',
+  );
+}
+
+{
+  const physicalItems = Array.from({ length: 44 }, (_, index) => ({
+    id: `item-${index + 1}`,
+    kind: 'ore',
+    equipped: false,
+  }));
+  const visible = bagInventoryItems([
+    { id: 'coins', kind: 'coin', equipped: false },
+    { id: 'equipped-sword', kind: 'sword', equipped: true },
+    ...physicalItems,
+  ]);
+  assert.equal(visible.length, 44, 'coins and equipped gear must not consume one of the 44 bag slots');
+  assert.equal(visible.some((item) => item.kind === 'coin'), false, 'coin balance must never render as a bag item');
+  assert.equal(visible.at(-1)?.id, 'item-44', 'filtering coins must prevent truncation of the last real bag item');
 }
 
 {

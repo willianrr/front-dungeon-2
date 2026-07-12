@@ -42,6 +42,11 @@ export class KeyboardMoveController {
   private intent: KeyboardMoveIntent | null = null;
   private refreshCooldown = 0;
 
+  reset(): void {
+    this.intent = null;
+    this.refreshCooldown = 0;
+  }
+
   update(sample: KeyboardMoveSample): KeyboardMoveDecision {
     const { axes, direction, movementChanged, player, running } = sample;
     const moving = axes.strafe !== 0 || axes.forward !== 0;

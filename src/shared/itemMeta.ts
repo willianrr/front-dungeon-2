@@ -1,4 +1,5 @@
-import type { EquipmentSlot, GemKind, ItemKind, ItemRarity, WeaponElement, WeaponGlowGem } from './types';
+import type { EquipmentSetId, EquipmentSlot, GemKind, ItemKind, ItemRarity, WeaponElement, WeaponGlowGem } from './types';
+import { equipmentSetPieceDefinition } from './EquipmentSets';
 
 export const ITEM_ICON_URLS: Record<ItemKind, string> = {
   coin: '/models/items/Icons/runtime/Coin.png',
@@ -16,6 +17,15 @@ export const ITEM_ICON_URLS: Record<ItemKind, string> = {
   gloves: '/models/items/Icons/runtime/Glove.png',
   ring: '/models/items/Icons/runtime/Ring1.png',
   necklace: '/models/items/Icons/runtime/Necklace1.png',
+  copper_ore: '/hud/runtime/copper-ore.svg',
+  iron_ore: '/hud/runtime/iron-ore.svg',
+  mithril_ore: '/hud/runtime/mithril-ore.svg',
+  copper_bar: '/hud/runtime/copper-bar.svg',
+  iron_bar: '/hud/runtime/iron-bar.svg',
+  mithril_bar: '/hud/runtime/mithril-bar.svg',
+  copper_pickaxe: '/hud/runtime/pickaxe-copper.svg',
+  iron_pickaxe: '/hud/runtime/pickaxe-iron.svg',
+  mithril_pickaxe: '/hud/runtime/pickaxe-mithril.svg',
 };
 
 /** Icone do peitoral por raridade (o pack tem 5 variantes de armadura). */
@@ -144,6 +154,15 @@ export const ITEM_BASE_NAMES: Record<ItemKind, string> = {
   gloves: 'Manoplas',
   ring: 'Anel',
   necklace: 'Colar',
+  copper_ore: 'Minério de Cobre',
+  iron_ore: 'Minério de Ferro',
+  mithril_ore: 'Minério de Mithril',
+  copper_bar: 'Barra de Cobre',
+  iron_bar: 'Barra de Ferro',
+  mithril_bar: 'Barra de Mithril',
+  copper_pickaxe: 'Picareta de Cobre',
+  iron_pickaxe: 'Picareta de Ferro',
+  mithril_pickaxe: 'Picareta de Mithril',
 };
 
 /** Modelo 3D do loot no chao por tipo (espelha lootModels do backend). */
@@ -163,6 +182,15 @@ export const LOOT_MODEL_URLS: Record<ItemKind, string> = {
   gloves: '/items/Glove.glb',
   ring: '/items/Ring1.glb',
   necklace: '/items/Necklace1.glb',
+  copper_ore: '/nature/glb/Rock_2.glb',
+  iron_ore: '/nature/glb/Rock_3.glb',
+  mithril_ore: '/items/Crystal1.glb',
+  copper_bar: '/items/Coin.glb',
+  iron_bar: '/items/Coin.glb',
+  mithril_bar: '/items/Coin.glb',
+  copper_pickaxe: '/items/Hammer_Double.glb',
+  iron_pickaxe: '/items/Hammer_Double.glb',
+  mithril_pickaxe: '/items/Hammer_Double.glb',
 };
 
 /** Modelo do peitoral por raridade (5 variantes do pack). */
@@ -228,6 +256,8 @@ export function lootModelUrlFor(kind: ItemKind, rarity?: ItemRarity): string {
 export interface NameableItem {
   kind: ItemKind;
   rarity?: ItemRarity;
+  setId?: EquipmentSetId;
+  setPieceId?: string;
   upgradeLevel?: number;
   element?: WeaponElement;
   damageMin?: number;
@@ -278,7 +308,7 @@ export function equipSlotsForKind(kind: ItemKind): EquipmentSlot[] {
  * Ex.: "Espada Dourada +6 [Fogo] (Comum) - 15-25 dano + 2-4 magico".
  */
 export function itemDisplayName(item: NameableItem): string {
-  const base = ITEM_BASE_NAMES[item.kind];
+  const base = equipmentSetPieceDefinition(item.setId, item.setPieceId, item.kind)?.label ?? ITEM_BASE_NAMES[item.kind];
   const rarity = RARITY_LABELS[item.rarity ?? 'comum'];
   const up = item.upgradeLevel && item.upgradeLevel > 0 ? ` +${item.upgradeLevel}` : '';
   if (isWeaponKind(item.kind)) {

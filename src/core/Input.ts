@@ -3,6 +3,10 @@ export interface PointerNdc {
   y: number;
 }
 
+export type EvadeInput =
+  | { kind: 'pointer'; ndc: PointerNdc }
+  | { kind: 'keyboard' };
+
 function isEditableTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
   if (target.isContentEditable) return true;
@@ -22,7 +26,8 @@ export class Input {
   private clickQueue: PointerNdc[] = [];
   private zoomDelta = 0;
   private jumpQueued = false;
-  /** Slots da hotbar (1-6) pressionados desde o ultimo frame. A ACAO de cada
+  private evadeQueue: EvadeInput[] = [];
+  /** Slots da hotbar (1-8) pressionados desde o ultimo frame. A ACAO de cada
    * slot e decidida pelo Game via layout reorganizavel (drag & drop). */
   private hotbarQueue: number[] = [];
   private inventoryToggleQueued = false;
@@ -41,6 +46,12 @@ export class Input {
 
   constructor(canvas: HTMLCanvasElement) {
     canvas.addEventListener('pointerdown', (e) => {
+      if (e.button === 2) {
+        const ndc = this.toNDC(e, canvas);
+        this.evadeQueue.push({ kind: 'pointer', ndc: { x: ndc.x, y: ndc.y } });
+        e.preventDefault();
+        return;
+      }
       if (e.button !== 0) return;
       this.toNDC(e, canvas, this.pointer);
       this.clickQueue.push({ x: this.pointer.x, y: this.pointer.y });
@@ -101,6 +112,10 @@ export class Input {
         this.movementChangedQueued = true;
       }
       if (e.repeat) return;
+      if (e.code === 'ControlLeft' || e.code === 'ControlRight') {
+        this.evadeQueue.push({ kind: 'keyboard' });
+        e.preventDefault();
+      }
       if (e.code === 'Tab' && !e.ctrlKey && !e.metaKey && !e.altKey) {
         this.npcCycleQueued = e.shiftKey ? -1 : 1;
         e.preventDefault();
@@ -115,6 +130,8 @@ export class Input {
       if (e.code === 'Digit4') this.hotbarQueue.push(4);
       if (e.code === 'Digit5') this.hotbarQueue.push(5);
       if (e.code === 'Digit6') this.hotbarQueue.push(6);
+      if (e.code === 'Digit7') this.hotbarQueue.push(7);
+      if (e.code === 'Digit8') this.hotbarQueue.push(8);
       if (e.code === 'KeyI') this.inventoryToggleQueued = true;
       if (e.code === 'KeyC') this.characterToggleQueued = true;
       if (e.code === 'KeyN') this.talentsToggleQueued = true;
@@ -182,7 +199,14 @@ export class Input {
     return j;
   }
 
-  /** Slots (1-6) pressionados desde o ultimo frame, na ordem. */
+  takeEvades(): EvadeInput[] {
+    if (this.evadeQueue.length === 0) return this.evadeQueue;
+    const queued = this.evadeQueue;
+    this.evadeQueue = [];
+    return queued;
+  }
+
+  /** Slots (1-8) pressionados desde o ultimo frame, na ordem. */
   takeHotbarPresses(): number[] {
     if (this.hotbarQueue.length === 0) return this.hotbarQueue;
     const queued = this.hotbarQueue;

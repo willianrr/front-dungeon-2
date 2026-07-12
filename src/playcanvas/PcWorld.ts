@@ -5,6 +5,7 @@ import type { Terrain } from '../shared/Terrain';
 import type { PropInstance, PropKind, WorldData } from '../shared/worldgen';
 import type { WorldZone } from '../shared/types';
 import type { RenderStats } from '../ui/PerfOverlay';
+import { MapArt, type MapMaterialOptions } from './MapArt';
 
 export interface Vec3Like {
   x: number;
@@ -53,15 +54,15 @@ const DUNGEON_EXIT_RADIUS = 4;
 // clima de masmorra (tochas, cristais e o glow das armas passam a POP como no Mu).
 // Nota: o glow da arma e unlit/emissivo — NAO e afetado por estes valores, entao
 // da pra escurecer o mundo a vontade sem mexer no efeito.
-const AMBIENT_OVERWORLD = 0x475467;
+const AMBIENT_OVERWORLD = 0x344050;
 const AMBIENT_DUNGEON = 0x333c4e;
 // Intensidades do sol e da luz de preenchimento no overworld (a dungeon reduz).
-const SUN_INTENSITY = 1.75;
-const FILL_INTENSITY = 0.26;
+const SUN_INTENSITY = 1.45;
+const FILL_INTENSITY = 0.22;
 // Ceu/nevoa do overworld: tom mais escuro e dessaturado — o antigo 0xaac4d6
 // (azul bem claro) "leiteava" a cena inteira com a camera afastada, porque a
 // nevoa EXP2 mistura tudo em direcao a essa cor.
-const SKY_OVERWORLD = 0x7b8fa4;
+const SKY_OVERWORLD = 0x718596;
 const FOG_DENSITY_OVERWORLD = 0.0052;
 
 // ---------------------------------------------------------------------------
@@ -71,32 +72,71 @@ const FOG_DENSITY_OVERWORLD = 0.0052;
 // A decoracao extra (grama/flores/arbustos) e client-side, sem colisao,
 // espalhada por seed. Se qualquer arquivo faltar, cai nos props primitivos.
 // ---------------------------------------------------------------------------
-const NATURE_TREE_URLS = [
+const NATURE_MAPLE_TREE_URLS = [
   '/nature/glTF/MapleTree_1.gltf',
   '/nature/glTF/MapleTree_2.gltf',
+  '/nature/glTF/MapleTree_3.gltf',
+  '/nature/glTF/MapleTree_4.gltf',
   '/nature/glTF/MapleTree_5.gltf',
+] as const;
+const NATURE_BIRCH_TREE_URLS = [
   '/nature/glTF/BirchTree_1.gltf',
+  '/nature/glTF/BirchTree_2.gltf',
+  '/nature/glTF/BirchTree_3.gltf',
   '/nature/glTF/BirchTree_4.gltf',
+  '/nature/glTF/BirchTree_5.gltf',
 ] as const;
-const NATURE_RUIN_URLS = [
+const NATURE_TREE_URLS = [...NATURE_MAPLE_TREE_URLS, ...NATURE_BIRCH_TREE_URLS] as const;
+const NATURE_DEAD_TREE_URLS = [
+  '/nature/glTF/DeadTree_1.gltf',
   '/nature/glTF/DeadTree_2.gltf',
+  '/nature/glTF/DeadTree_3.gltf',
+  '/nature/glTF/DeadTree_4.gltf',
   '/nature/glTF/DeadTree_5.gltf',
+  '/nature/glTF/DeadTree_6.gltf',
+  '/nature/glTF/DeadTree_7.gltf',
+  '/nature/glTF/DeadTree_8.gltf',
+  '/nature/glTF/DeadTree_9.gltf',
+  '/nature/glTF/DeadTree_10.gltf',
 ] as const;
-// Convertida de OBJ (o pacote nao traz rocks em glTF); cinza chapado de proposito.
-const NATURE_ROCK_URLS = ['/nature/glb/Rock_1.gltf'] as const;
+// As cinco silhuetas de rocha do pacote evitam a repeticao perceptivel da
+// antiga Rock_1 unica. Continuam ocupando exatamente o blocker autoritativo.
+const NATURE_ROCK_URLS = [
+  '/nature/glb/Rock_1.glb',
+  '/nature/glb/Rock_2.glb',
+  '/nature/glb/Rock_3.glb',
+  '/nature/glb/Rock_4.glb',
+  '/nature/glb/Rock_5.glb',
+] as const;
 // Decoracao sem colisao, colocada em MANCHAS (clusters) para dar a sensacao de
 // campo gramado do pacote — pontos isolados somem no mapa de 200x200.
-const NATURE_GRASS_URL = '/nature/glTF/Grass_Large_Extruded.gltf';
-const NATURE_BUSH_URLS = ['/nature/glTF/Bush.gltf', '/nature/glTF/Bush_Flowers.gltf'] as const;
+const NATURE_GRASS_URLS = [
+  '/nature/glTF/Grass_Large_Extruded.gltf',
+  '/nature/glTF/Grass_Large.gltf',
+  '/nature/glTF/Grass_Small.gltf',
+] as const;
+const NATURE_BUSH_URLS = [
+  '/nature/glTF/Bush.gltf',
+  '/nature/glTF/Bush_Flowers.gltf',
+  '/nature/glTF/Bush_Large.gltf',
+  '/nature/glTF/Bush_Large_Flowers.gltf',
+  '/nature/glTF/Bush_Small.gltf',
+  '/nature/glTF/Bush_Small_Flowers.gltf',
+] as const;
 const NATURE_FLOWER_URLS = [
   '/nature/glTF/Flower_1_Clump.gltf',
   '/nature/glTF/Flower_2_Clump.gltf',
+  '/nature/glTF/Flower_3_Clump.gltf',
   '/nature/glTF/Flower_4_Clump.gltf',
+  '/nature/glTF/Flower_5_Clump.gltf',
 ] as const;
 // Trilha de terra spawn -> portal (visual, sem gameplay): largura e afastamento
 // que a decoracao respeita para o caminho ficar sempre limpo.
 const NATURE_PATH_WIDTH = 2.4;
 const NATURE_PATH_CLEARANCE = 2.8;
+// A fundacao circular do santuario tem raio 11.6. A fita da estrada continua
+// existindo para navegacao/waystones, mas seus triangulos so aparecem fora dela.
+const CAMP_PATH_CUTOUT_RADIUS = 11.75;
 // Cinza levemente esverdeado e mais escuro para as pedras (o 0.64 chapado do
 // OBJ estourava branco com ACES+bloom; a referencia do pacote e mais escura).
 const NATURE_ROCK_TINT = { r: 0.52, g: 0.56, b: 0.52 };
@@ -126,17 +166,16 @@ export function colorFromCss(value: string, alpha = 1): pc.Color {
 
 export function createMaterial(
   color: pc.Color,
-  options: {
-    emissive?: pc.Color;
-    emissiveIntensity?: number;
-    opacity?: number;
-    unlit?: boolean;
-    additive?: boolean;
-  } = {},
+  options: MapMaterialOptions = {},
 ): pc.StandardMaterial {
   const material = new pc.StandardMaterial();
   material.diffuse = color;
   material.useLighting = !options.unlit;
+  material.gloss = options.gloss ?? 0.28;
+  material.metalness = options.metalness ?? 0;
+  material.diffuseVertexColor = options.diffuseVertexColor ?? false;
+  material.useFog = options.useFog ?? true;
+  if (options.twoSided) material.cull = pc.CULLFACE_NONE;
   if (options.emissive) {
     material.emissive = options.emissive;
     material.emissiveIntensity = options.emissiveIntensity ?? 1;
@@ -149,6 +188,7 @@ export function createMaterial(
     material.blendType = pc.BLEND_ADDITIVE;
     material.depthWrite = false;
   }
+  if (options.depthWrite !== undefined) material.depthWrite = options.depthWrite;
   material.update();
   return material;
 }
@@ -436,7 +476,9 @@ export class PcWorld {
   private naturePathPoints: Array<{ x: number; z: number }> = [];
   /** Grupo de batching estatico da decoracao (grama/flores/arbustos). */
   private decorBatchGroupId: number | null = null;
-  private rockTintApplied = false;
+  private readonly tintedRockMaterials = new Set<pc.Material>();
+  /** Composicao artistica modular: acampamento, estrada, portal e dungeon. */
+  private readonly mapArt: MapArt;
   private readonly sun: pc.Entity;
   private readonly fill: pc.Entity;
   private readonly sunDir = new pc.Vec3();
@@ -462,7 +504,7 @@ export class PcWorld {
     this.app.setCanvasResolution(pc.RESOLUTION_AUTO);
     this.app.scene.ambientLight = hexColor(AMBIENT_OVERWORLD);
     // Compensa o tonemapping ACES (escurece os meios-tons) mantendo o nivel geral.
-    this.app.scene.exposure = 1.18;
+    this.app.scene.exposure = 1.08;
     this.app.scene.fog.type = pc.FOG_EXP2;
     this.app.scene.fog.color = hexColor(SKY_OVERWORLD);
     this.app.scene.fog.density = FOG_DENSITY_OVERWORLD;
@@ -487,7 +529,9 @@ export class PcWorld {
       shadowResolution: 1024,
       // PCF5 = sombra com bordas suaves (a PCF3 padrao fica serrilhada/"crua").
       shadowType: pc.SHADOW_PCF5_32F,
-      shadowDistance: 62,
+      // A camera mostra cerca de 28u; 44 cobre toda a cena util e evita renderar
+      // sombras de florestas ja escondidas pela nevoa fora do enquadramento.
+      shadowDistance: 44,
       shadowIntensity: 0.9,
       normalOffsetBias: 0.05,
     });
@@ -538,6 +582,27 @@ export class PcWorld {
     };
     this.dungeonFloorY = world.terrain.heightAt(0, 0) + 0.04;
     this.dungeonExitPosition = { x: 0, y: this.dungeonFloorY + 1.8, z: -18 };
+    this.mapArt = new MapArt({
+      app: this.app,
+      world: this.world,
+      exterior: this.exterior,
+      dungeon: this.dungeon,
+      createPrimitive: (name, type, material, position, scale, parent) => (
+        this.createPrimitive(name, type, material, position, scale, parent)
+      ),
+      material: (key, color, options) => this.material(key, color, options),
+      instantiateSizedModel: async (url, size, castShadows) => {
+        const model = await this.models.instantiate(url, { castShadows, receiveShadows: true });
+        const bounds = size.height !== undefined
+          ? fitEntityToHeight(model, size.height)
+          : fitEntityToLargest(model, size.largest ?? 1);
+        if (!bounds) {
+          destroyEntity(model);
+          return null;
+        }
+        return model;
+      },
+    }, this.dungeonFloorY);
 
     this.buildOverworld();
     this.buildDungeon();
@@ -600,6 +665,7 @@ export class PcWorld {
   }
 
   updateSun(x: number, y: number, z: number): void {
+    this.mapArt.update(this.zone, performance.now() * 0.001);
     if (this.zone !== 'overworld') return;
     this.sun.setPosition(x + this.sunDir.x * 70, y + this.sunDir.y * 70 + 20, z + this.sunDir.z * 70);
     this.sun.lookAt(x, y, z);
@@ -630,6 +696,11 @@ export class PcWorld {
       : this.pickTerrain(ray);
   }
 
+  /** Altura visual/autoritativa do piso na zona ativa. */
+  groundHeightAt(x: number, z: number): number {
+    return this.zone === 'dungeon' ? this.dungeonFloorY : this.world.terrain.heightAt(x, z);
+  }
+
   project(point: Vec3Like): { x: number; y: number; visible: boolean } {
     const camera = this.rig.entity.camera;
     if (!camera) return { x: 0, y: 0, visible: false };
@@ -653,18 +724,40 @@ export class PcWorld {
   ): pc.Entity {
     const entity = new pc.Entity(name, this.app);
     setTransform(entity, position, scale);
+    // Agua, veus, motes e glows transparentes nao devem entrar no shadow pass:
+    // alem de visualmente incorreto, isso multiplicava o custo das particulas.
+    const castShadows = this.shadowsEnabled
+      && material.blendType === pc.BLEND_NONE
+      && material.depthWrite;
     entity.addComponent('render', {
       type,
       material,
-      castShadows: this.shadowsEnabled,
+      castShadows,
       receiveShadows: true,
     });
     parent.addChild(entity);
     return entity;
   }
 
-  material(key: string, color: number | string, options: Parameters<typeof createMaterial>[1] = {}): pc.StandardMaterial {
-    const cacheKey = `${key}:${typeof color === 'string' ? color : color.toString(16)}:${options.opacity ?? 1}:${options.additive ? 1 : 0}:${options.unlit ? 1 : 0}`;
+  material(key: string, color: number | string, options: MapMaterialOptions = {}): pc.StandardMaterial {
+    const emissive = options.emissive
+      ? `${options.emissive.r.toFixed(3)},${options.emissive.g.toFixed(3)},${options.emissive.b.toFixed(3)}`
+      : '-';
+    const cacheKey = [
+      key,
+      typeof color === 'string' ? color : color.toString(16),
+      options.opacity ?? 1,
+      options.additive ? 1 : 0,
+      options.unlit ? 1 : 0,
+      options.gloss ?? 0.28,
+      options.metalness ?? 0,
+      options.diffuseVertexColor ? 1 : 0,
+      options.twoSided ? 1 : 0,
+      options.useFog === false ? 0 : 1,
+      options.depthWrite === false ? 0 : 1,
+      emissive,
+      options.emissiveIntensity ?? 1,
+    ].join(':');
     let material = this.materials.get(cacheKey);
     if (!material) {
       material = createMaterial(typeof color === 'string' ? colorFromCss(color) : hexColor(color), options);
@@ -719,15 +812,23 @@ export class PcWorld {
     this.createPrimitive(
       'water',
       'box',
-      this.material('water', 0x2b5d78, { opacity: 0.72 }),
+      this.material('water', 0x23566f, { opacity: 0.76, gloss: 0.88, metalness: 0.08, twoSided: true }),
       { x: 0, y: this.world.waterLevel - 0.03, z: 0 },
       { x: this.world.size, y: 0.06, z: this.world.size },
+      this.exterior,
+    );
+    this.createPrimitive(
+      'water-shimmer',
+      'box',
+      this.material('water-shimmer', 0x74c8d5, { opacity: 0.075, additive: true, unlit: true, depthWrite: false }),
+      { x: 0, y: this.world.waterLevel + 0.015, z: 0 },
+      { x: this.world.size, y: 0.012, z: this.world.size },
       this.exterior,
     );
     // Props (arvores/pedras/ruinas) entram via preloadEnvironment(): modelos do
     // pacote nature carregados no loading; primitivos so como fallback.
     this.buildNaturePath();
-    this.buildDungeonEntrance();
+    this.mapArt.buildOverworld(this.naturePathPoints, this.portalPosition);
   }
 
   /**
@@ -784,6 +885,7 @@ export class PcWorld {
     const positions: number[] = [];
     const normals: number[] = [];
     const indices: number[] = [];
+    const outsideCamp: boolean[] = [];
     for (let i = 0; i < points.length; i++) {
       const previous = points[Math.max(0, i - 1)];
       const next = points[Math.min(points.length - 1, i + 1)];
@@ -797,16 +899,20 @@ export class PcWorld {
       const leftZ = points[i].z + tx * halfWidth;
       const rightX = points[i].x + tz * halfWidth;
       const rightZ = points[i].z - tx * halfWidth;
+      outsideCamp.push(
+        Math.hypot(leftX - spawn.x, leftZ - spawn.z) >= CAMP_PATH_CUTOUT_RADIUS
+        && Math.hypot(rightX - spawn.x, rightZ - spawn.z) >= CAMP_PATH_CUTOUT_RADIUS,
+      );
       positions.push(leftX, this.world.terrain.heightAt(leftX, leftZ) + 0.05, leftZ);
       positions.push(rightX, this.world.terrain.heightAt(rightX, rightZ) + 0.05, rightZ);
       normals.push(0, 1, 0, 0, 1, 0);
-      if (i > 0) {
+      if (i > 0 && outsideCamp[i - 1] && outsideCamp[i]) {
         const a = (i - 1) * 2;
         indices.push(a, a + 2, a + 1, a + 1, a + 2, a + 3);
       }
     }
     const mesh = pc.createMesh(this.app.graphicsDevice, positions, { indices, normals });
-    const material = this.material('nature-path', 0x8a6a44);
+    const material = this.material('nature-path', 0x88633f, { gloss: 0.05 });
     const meshInstance = new pc.MeshInstance(mesh, material);
     meshInstance.castShadow = false;
     const entity = new pc.Entity('nature-path', this.app);
@@ -834,15 +940,18 @@ export class PcWorld {
     try {
       const urls = [
         ...NATURE_TREE_URLS,
-        ...NATURE_RUIN_URLS,
+        ...NATURE_DEAD_TREE_URLS,
         ...NATURE_ROCK_URLS,
-        NATURE_GRASS_URL,
+        ...NATURE_GRASS_URLS,
         ...NATURE_BUSH_URLS,
         ...NATURE_FLOWER_URLS,
       ];
       await this.models.preload(urls);
       await this.buildNatureProps();
       await this.scatterNatureDecor(decorCount);
+      await this.mapArt.buildModelDetails().catch((error) => {
+        console.warn('[PcWorld] detalhes GLB do mapa indisponiveis; mantendo composicao procedural:', error);
+      });
     } catch (error) {
       console.warn('[PcWorld] pacote nature indisponivel; usando props primitivos:', error);
       this.buildProps();
@@ -879,26 +988,46 @@ export class PcWorld {
 
   private async buildNatureProps(): Promise<void> {
     // Sorteios visuais (variante/squash) deterministicos por seed — todo mundo
-    // que entra no mesmo mundo ve as mesmas arvores.
+    // que entra no mesmo mundo ve as mesmas arvores. A escolha por sub-regiao
+    // cria biomas legiveis sem tocar no worldgen/blockers do servidor.
     const rand = mulberry32(this.world.seed ^ 0x5eed);
-    for (const prop of this.world.props) {
+    for (const [index, prop] of this.world.props.entries()) {
+      // Dois rochedos distantes cedem apenas sua malha aos landmarks; o mesmo
+      // prop e seu blocker continuam existindo, mantendo navegacao autoritativa.
+      if (this.mapArt.usesPropAsScenicAnchor(prop)) continue;
       const group = new pc.Entity(`nature-${prop.kind}`, this.app);
       group.setLocalPosition(prop.x, prop.y, prop.z);
       group.setLocalEulerAngles(0, prop.rotationY * DEG, 0);
 
       let model: pc.Entity | null = null;
       if (prop.kind === 'tree') {
-        const url = NATURE_TREE_URLS[Math.floor(rand() * NATURE_TREE_URLS.length)];
-        model = await this.instantiateNature(url, { height: NATURE_TREE_HEIGHT * prop.scale }, true);
+        const portalDistance = Math.hypot(prop.x - this.world.dungeon.x, prop.z - this.world.dungeon.z);
+        // O bosque vai adoecendo na aproximacao do portal: o collider continua
+        // sendo o da mesma arvore, apenas a silhueta visual muda.
+        const urls = portalDistance < 29
+          ? NATURE_DEAD_TREE_URLS
+          : prop.x < -12 && prop.z > 8
+            ? NATURE_BIRCH_TREE_URLS
+            : NATURE_MAPLE_TREE_URLS;
+        const url = urls[Math.floor(rand() * urls.length)];
+        const height = portalDistance < 29 ? NATURE_TREE_HEIGHT * 0.92 : NATURE_TREE_HEIGHT;
+        model = await this.instantiateNature(url, { height: height * prop.scale }, true);
       } else if (prop.kind === 'ruin') {
-        const url = NATURE_RUIN_URLS[Math.floor(rand() * NATURE_RUIN_URLS.length)];
+        // Metade dos antigos placeholders de "ruin" volta a ser ruina de fato.
+        // Toda a composicao cabe dentro do blocker circular ja autoritativo.
+        if (rand() < 0.56) {
+          this.mapArt.buildRuinProp(group, prop.scale, index);
+          this.exterior.addChild(group);
+          continue;
+        }
+        const url = NATURE_DEAD_TREE_URLS[Math.floor(rand() * NATURE_DEAD_TREE_URLS.length)];
         model = await this.instantiateNature(url, { height: NATURE_RUIN_HEIGHT * prop.scale }, true);
       } else {
         const url = NATURE_ROCK_URLS[Math.floor(rand() * NATURE_ROCK_URLS.length)];
         model = await this.instantiateNature(url, { largest: NATURE_ROCK_LARGEST * prop.scale }, true);
-        // So temos 1 malha de pedra: squash nao-uniforme + rotacao dao a variedade
-        // (os primitivos antigos tambem eram uma unica esfera achatada).
-        group.setLocalScale(0.85 + rand() * 0.5, 0.55 + rand() * 0.6, 0.85 + rand() * 0.45);
+        // As cinco malhas ja variam a silhueta; um squash sutil tira qualquer
+        // regularidade residual sem ultrapassar muito o collider original.
+        group.setLocalScale(0.9 + rand() * 0.24, 0.72 + rand() * 0.3, 0.9 + rand() * 0.22);
         if (model) this.tintRockMaterials(model);
       }
       if (!model) {
@@ -912,10 +1041,8 @@ export class PcWorld {
     }
   }
 
-  /** Escurece o material da pedra (compartilhado por todas as instancias). */
+  /** Escurece cada material de pedra uma unica vez (ha cinco modelos agora). */
   private tintRockMaterials(model: pc.Entity): void {
-    if (this.rockTintApplied) return;
-    this.rockTintApplied = true;
     const renders = model.findComponents('render') as unknown as Array<{
       meshInstances?: Array<{ material: pc.Material }>;
     }>;
@@ -923,7 +1050,10 @@ export class PcWorld {
       for (const meshInstance of render.meshInstances ?? []) {
         const material = meshInstance.material;
         if (!(material instanceof pc.StandardMaterial)) continue;
+        if (this.tintedRockMaterials.has(material)) continue;
+        this.tintedRockMaterials.add(material);
         material.diffuse = new pc.Color(NATURE_ROCK_TINT.r, NATURE_ROCK_TINT.g, NATURE_ROCK_TINT.b);
+        material.gloss = 0.16;
         material.update();
       }
     }
@@ -955,6 +1085,9 @@ export class PcWorld {
 
     const canPlace = (x: number, z: number): boolean => {
       if (Math.abs(x) > half || Math.abs(z) > half) return false;
+      // O acampamento ganhou uma composicao propria; tufos aleatorios nao podem
+      // cobrir NPCs, aneis de servico nem a leitura da praca central.
+      if (Math.hypot(x - this.world.spawn.x, z - this.world.spawn.z) < 14.2) return false;
       if (Math.hypot(x - this.world.dungeon.x, z - this.world.dungeon.z) < 11) return false;
       if (this.distanceToPath(x, z) < NATURE_PATH_CLEARANCE) return false;
       if (this.world.terrain.heightAt(x, z) < this.world.waterLevel + 0.5) return false;
@@ -966,20 +1099,22 @@ export class PcWorld {
       const cz = (rand() * 2 - 1) * half;
       if (!canPlace(cx, cz)) continue;
 
-      // Tipo da mancha: grama domina; flores e arbustos pontuam o campo.
+      // Tipo da mancha: grama domina; flores e arbustos pontuam o campo. Perto
+      // do portal as flores desaparecem, reforcando o gradiente de corrupcao.
       const roll = rand();
+      const portalDistance = Math.hypot(cx - this.world.dungeon.x, cz - this.world.dungeon.z);
       let urls: readonly string[];
       let clusterSize: number;
       let spread: number;
       let sizeMin: number;
       let sizeMax: number;
-      if (roll < 0.62) {
-        urls = [NATURE_GRASS_URL];
+      if (roll < 0.62 || (portalDistance < 30 && roll < 0.82)) {
+        urls = NATURE_GRASS_URLS;
         clusterSize = 4 + Math.floor(rand() * 5);
         spread = 2.7;
-        sizeMin = 1.15;
-        sizeMax = 1.8;
-      } else if (roll < 0.84) {
+        sizeMin = 0.92;
+        sizeMax = 1.65;
+      } else if (roll < 0.84 && portalDistance >= 30) {
         urls = NATURE_FLOWER_URLS;
         clusterSize = 3 + Math.floor(rand() * 3);
         spread = 1.9;
@@ -1076,9 +1211,46 @@ export class PcWorld {
       normals[i + 2] /= length;
     }
 
-    const mesh = pc.createMesh(this.app.graphicsDevice, positions, { indices, normals });
-    // Verde mais escuro e rico (o antigo 0x4a6a39 ficava pastel com ACES+bloom).
-    const material = this.material('terrain', 0x3a5a2c);
+    // Paleta por vertice: margem umida/terra, campina, musgo de altitude,
+    // rocha nas encostas e uma dessaturacao narrativa perto do portal.
+    // createMesh usa COLOR como RGBA8, por isso os valores sao bytes 0..255.
+    const colors: number[] = [];
+    const mix = (a: readonly number[], b: readonly number[], t: number): [number, number, number] => [
+      a[0] + (b[0] - a[0]) * t,
+      a[1] + (b[1] - a[1]) * t,
+      a[2] + (b[2] - a[2]) * t,
+    ];
+    const wet = [40, 45, 32] as const;
+    const meadow = [28, 56, 25] as const;
+    const moss = [20, 42, 22] as const;
+    const rock = [58, 58, 54] as const;
+    const corrupted = [39, 32, 39] as const;
+    for (let i = 0; i < positions.length; i += 3) {
+      const x = positions[i];
+      const y = positions[i + 1];
+      const z = positions[i + 2];
+      const steepness = Math.max(0, 1 - normals[i + 1]);
+      let base: [number, number, number];
+      if (y < this.world.waterLevel + 1.2) base = [...wet];
+      else if (y < 3.2) base = [...meadow];
+      else base = [...moss];
+      if (steepness > 0.13) base = mix(base, rock, Math.min(0.88, (steepness - 0.13) * 3.4));
+
+      const portalDistance = Math.hypot(x - this.world.dungeon.x, z - this.world.dungeon.z);
+      if (portalDistance < 32) {
+        base = mix(base, corrupted, (1 - portalDistance / 32) * 0.68);
+      }
+      const variation = 0.91 + (Math.sin(x * 0.31 + z * 0.17 + terrain.seed) * 0.5 + 0.5) * 0.09;
+      colors.push(
+        Math.round(Math.max(0, Math.min(255, base[0] * variation))),
+        Math.round(Math.max(0, Math.min(255, base[1] * variation))),
+        Math.round(Math.max(0, Math.min(255, base[2] * variation))),
+        255,
+      );
+    }
+
+    const mesh = pc.createMesh(this.app.graphicsDevice, positions, { indices, normals, colors });
+    const material = this.material('terrain-vertex', 0xffffff, { diffuseVertexColor: true, gloss: 0.08 });
     const meshInstance = new pc.MeshInstance(mesh, material);
     meshInstance.castShadow = false;
     const entity = new pc.Entity('ground', this.app);
@@ -1126,53 +1298,22 @@ export class PcWorld {
     }
   }
 
-  private buildDungeonEntrance(): void {
-    const group = new pc.Entity('dungeon-entrance', this.app);
-    group.setLocalPosition(this.portalPosition.x, this.portalPosition.y - 2, this.portalPosition.z);
-    const stone = this.material('portal-stone', 0x6d6b66);
-    this.createPrimitive('left-pillar', 'box', stone, { x: -2, y: 2, z: 0 }, { x: 0.9, y: 4, z: 0.9 }, group);
-    this.createPrimitive('right-pillar', 'box', stone, { x: 2, y: 2, z: 0 }, { x: 0.9, y: 4, z: 0.9 }, group);
-    this.createPrimitive('lintel', 'box', stone, { x: 0, y: 4.4, z: 0 }, { x: 5.2, y: 0.9, z: 1.1 }, group);
-    this.createPrimitive('portal', 'box', this.material('portal-dark', 0x05060a, { unlit: true }), { x: 0, y: 2, z: 0.45 }, { x: 3.4, y: 3.9, z: 0.08 }, group);
-    for (const sx of [-2.2, 2.2]) {
-      const torch = new pc.Entity('portal-torch', this.app);
-      torch.setLocalPosition(sx, 3.2, 0.7);
-      torch.addComponent('light', { type: 'omni', color: hexColor(0xff7a33), intensity: 8, range: 14 });
-      group.addChild(torch);
-      this.createPrimitive('flame', 'sphere', this.material('flame', 0xffb060, { emissive: hexColor(0xff7a33), emissiveIntensity: 1.4, unlit: true }), { x: sx, y: 3.2, z: 0.7 }, { x: 0.22, y: 0.22, z: 0.22 }, group);
-    }
-    this.exterior.addChild(group);
-  }
-
   private buildDungeon(): void {
     this.dungeon.enabled = false;
-    this.createPrimitive('dungeon-ground', 'box', this.material('dungeon-floor', 0x252a32), { x: 0, y: this.dungeonFloorY - 0.05, z: 0 }, { x: 46, y: 0.1, z: 46 }, this.dungeon);
-    const wall = this.material('dungeon-wall', 0x45454a);
-    this.createPrimitive('wall-north', 'box', wall, { x: 0, y: this.dungeonFloorY + 2.7, z: -23 }, { x: 46, y: 5.4, z: 1.2 }, this.dungeon);
-    this.createPrimitive('wall-south', 'box', wall, { x: 0, y: this.dungeonFloorY + 2.7, z: 23 }, { x: 46, y: 5.4, z: 1.2 }, this.dungeon);
-    this.createPrimitive('wall-west', 'box', wall, { x: -23, y: this.dungeonFloorY + 2.7, z: 0 }, { x: 1.2, y: 5.4, z: 46 }, this.dungeon);
-    this.createPrimitive('wall-east', 'box', wall, { x: 23, y: this.dungeonFloorY + 2.7, z: 0 }, { x: 1.2, y: 5.4, z: 46 }, this.dungeon);
-
-    const exit = new pc.Entity('dungeon-exit', this.app);
-    exit.setLocalPosition(this.dungeonExitPosition.x, this.dungeonFloorY, this.dungeonExitPosition.z);
-    const arch = this.material('dungeon-exit-arch', 0x5c6070);
-    this.createPrimitive('exit-left', 'box', arch, { x: -1.7, y: 1.9, z: 0 }, { x: 0.7, y: 3.8, z: 0.7 }, exit);
-    this.createPrimitive('exit-right', 'box', arch, { x: 1.7, y: 1.9, z: 0 }, { x: 0.7, y: 3.8, z: 0.7 }, exit);
-    this.createPrimitive('exit-lintel', 'box', arch, { x: 0, y: 4, z: 0 }, { x: 4.2, y: 0.7, z: 0.8 }, exit);
-    this.createPrimitive('exit-portal', 'box', this.material('exit-blue', 0x3955a8, { opacity: 0.78, unlit: true }), { x: 0, y: 1.8, z: 0.38 }, { x: 2.7, y: 3.3, z: 0.08 }, exit);
-    this.dungeon.addChild(exit);
-
-    const crystal = this.material('dungeon-crystal', 0x7d9dff, { emissive: hexColor(0x223c99), emissiveIntensity: 1.1 });
-    for (const [x, z, scale] of [[-15, -15, 1.15], [7.5, -19, 0.92], [14, 18, 1], [20, 0, 0.68]] as const) {
-      this.createPrimitive('dungeon-crystal', 'cone', crystal, { x, y: this.dungeonFloorY + 0.72 * scale, z }, { x: 0.8 * scale, y: 1.45 * scale, z: 0.8 * scale }, this.dungeon);
-    }
-    for (const [x, z] of [[-17, -17], [17, -17], [-17, 17], [17, 17]] as const) {
-      const light = new pc.Entity('lantern-light', this.app);
-      light.setLocalPosition(x, this.dungeonFloorY + 3.3, z);
-      light.addComponent('light', { type: 'omni', color: hexColor(0xff7a33), intensity: 22, range: 20 });
-      this.dungeon.addChild(light);
-      this.createPrimitive('lantern-flame', 'sphere', this.material('lantern-flame', 0xff9c4a, { emissive: hexColor(0xff7a33), emissiveIntensity: 1.6, unlit: true }), { x, y: this.dungeonFloorY + 3.3, z }, { x: 0.26, y: 0.26, z: 0.26 }, this.dungeon);
-    }
+    this.createPrimitive(
+      'dungeon-ground',
+      'box',
+      this.material('dungeon-floor', 0x171c24, { gloss: 0.08 }),
+      { x: 0, y: this.dungeonFloorY - 0.055, z: 0 },
+      { x: 46, y: 0.11, z: 46 },
+      this.dungeon,
+    );
+    const wall = this.material('dungeon-wall', 0x343a45, { gloss: 0.06 });
+    this.createPrimitive('wall-north', 'box', wall, { x: 0, y: this.dungeonFloorY + 3.1, z: -23 }, { x: 46, y: 6.2, z: 1.2 }, this.dungeon);
+    this.createPrimitive('wall-south', 'box', wall, { x: 0, y: this.dungeonFloorY + 3.1, z: 23 }, { x: 46, y: 6.2, z: 1.2 }, this.dungeon);
+    this.createPrimitive('wall-west', 'box', wall, { x: -23, y: this.dungeonFloorY + 3.1, z: 0 }, { x: 1.2, y: 6.2, z: 46 }, this.dungeon);
+    this.createPrimitive('wall-east', 'box', wall, { x: 23, y: this.dungeonFloorY + 3.1, z: 0 }, { x: 1.2, y: 6.2, z: 46 }, this.dungeon);
+    this.mapArt.buildDungeon(this.dungeonExitPosition);
   }
 
   private pickDungeonFloor(ray: WorldRay): RayHit | null {

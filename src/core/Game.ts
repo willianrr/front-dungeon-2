@@ -17,31 +17,201 @@ import {
   itemIconFor,
   lootModelUrlFor,
 } from '../shared/itemMeta';
+import {
+  EQUIPMENT_SET_COLORS,
+  equipmentSetForgeOutputPresentation,
+  equipmentSetItemPresentation,
+} from '../shared/EquipmentSets';
+import { steelSweepPresentationForVariant } from '../shared/SteelSweepPresentation';
+import {
+  STEEL_SWEEP_FORM_PALETTE,
+  steelSweepFormEventPresentationGate,
+} from '../shared/SteelSweepForms';
+import {
+  catalogSkill,
+  normalizeMasteries,
+  skillCastPlan,
+} from '../shared/SkillCatalog';
+import {
+  combatDoctrinePresentationGate,
+  type CombatDoctrineId,
+} from '../shared/CombatDoctrines';
+import {
+  announcedSkillIdsFromWire,
+  loadHotbarLoadout,
+  persistHotbarLoadout,
+  reconcileHotbarLoadout,
+  replaceHotbarSkill,
+  swapHotbarActions,
+} from '../shared/HotbarLoadout';
+import {
+  ASH_CORRUPTOR_PALETTE,
+  RUIN_BRUTE_PALETTE,
+  SHARDCASTER_PALETTE,
+  enemyPresentationForVariant,
+  isAshCorruptorVariant,
+  isRuinBruteVariant,
+  isShardcasterVariant,
+  isUtraeanSentinelVariant,
+} from '../shared/RangedEnemyPresentation';
+import {
+  UTRAEAN_SENTINEL_PALETTE,
+  utraeanSentinelEventPresentationGate,
+} from '../shared/UtraeanSentinel';
+import {
+  ashSupportEventPresentationGate,
+  ashVeilStatusPresentationGate,
+} from '../shared/AshCorruptorPresentation';
+import {
+  ruinBruteEventPresentationGate,
+  ruinExposedStatusPresentationGate,
+} from '../shared/RuinBrutePresentation';
+import {
+  BOSS_SEAL_PALETTE,
+  bossPhasePresentationGate,
+  bossSealEventPresentationGate,
+} from '../shared/BossSealRupturePresentation';
+import {
+  sealChamberEventPresentationGate,
+  sealChamberStatePresentationGate,
+} from '../shared/SealChamberPresentation';
+import {
+  RUNIC_ELITE_PALETTE,
+  runicEliteEventPresentationGate,
+  runicElitePresentationGate,
+} from '../shared/RunicElites';
+import {
+  ADVANCED_MINING_PALETTE,
+  miningPerfectStrikeEventGate,
+  miningToolForTier,
+  miningToolRecipeGate,
+  normalizeMiningState,
+  oreNodePresentationGate,
+  type NormalizedMiningState,
+} from '../shared/AdvancedMining';
+import {
+  ARCANE_RESONANCE_PALETTE,
+  arcaneResonanceEventPresentationGate,
+  arcaneResonanceStatusPresentationGate,
+} from '../shared/ArcaneResonance';
+import {
+  GUARDIAN_RETALIATION_PALETTE,
+  guardianRetaliationBuffPresentationGate,
+  guardianRetaliationEventPresentationGate,
+} from '../shared/GuardianRetaliation';
+import {
+  ACTIVE_EVASION_MAX_DISTANCE,
+  ACTIVE_EVASION_PALETTE,
+  activeEvasionEventPresentationGate,
+  activeEvasionStatePresentationGate,
+} from '../shared/ActiveEvasion';
+import {
+  STORM_ORB_PALETTE,
+  stormOrbBuffPresentationGate,
+  stormOrbEventPresentationGate,
+} from '../shared/StormOrb';
+import {
+  FERAL_FORM_PALETTE,
+  feralFormBuffPresentationGate,
+  feralFormEventPresentationGate,
+} from '../shared/FeralForm';
+import {
+  ROOT_SNARE_PALETTE,
+  rootSnareEventPresentationGate,
+  rootSnareZonesPresentationGate,
+} from '../shared/RootSnare';
+import {
+  COOPERATIVE_REVIVE_RANGE,
+  COOPERATIVE_REVIVE_PALETTE,
+  reviveChannelPresentations,
+  reviveProtectionBuffPresentationGate,
+  type ReviveChannelPresentation,
+} from '../shared/CooperativeRevive';
+import {
+  displacerColor,
+  displacerStatesPresentationGate,
+} from '../shared/Displacers';
+import {
+  DIFFICULTY_PALETTE,
+  difficultyModifiersPresentationGate,
+  difficultyStatePresentationGate,
+  legacyNormalDifficultyState,
+} from '../shared/DifficultyTiers';
+import {
+  treasureLodeStatePresentationGate,
+} from '../shared/TreasureLode';
+import { utraeanRelayStatePresentationGate } from '../shared/UtraeanRelay';
+import { arhokFrostBiomePresentationGate } from '../shared/ArhokFrostCoast';
+import { corruptedJunglePresentationGate } from '../shared/CorruptedJungle';
+import {
+  CHAIN_LIGHTNING_PALETTE,
+  chainLightningEventPresentationGate,
+} from '../shared/ChainLightning';
+import {
+  RENEWAL_WAVE_PALETTE,
+  renewalWaveEventPresentationGate,
+} from '../shared/RenewalWave';
+import {
+  PHASE_STEP_PALETTE,
+  phaseStepEventPresentationGate,
+} from '../shared/PhaseStep';
+import {
+  NATURE_SPIRIT_PALETTE,
+  natureSpiritEventPresentationGate,
+  natureSpiritStatesPresentationGate,
+} from '../shared/NatureSpirit';
+import { EXPEDITION_CARGO_PALETTE, expeditionCargoPresentationGate } from '../shared/ExpeditionCargo';
+import {
+  correctedProjectilePosition,
+  extrapolatedProjectilePosition,
+  isSupportedProjectileKind,
+  projectilePresentation,
+  projectileLifecyclePlan,
+} from '../shared/ProjectileMotion';
 import type {
   ChestState,
+  BiomeState,
+  CorruptedJungleState,
   ChatMessageState,
   CombatEvent,
   CombatTextKind,
+  ControlZoneState,
   DamageKind,
+  DisplacerState,
+  DifficultyState,
   EntityAction,
   EntityState,
+  EnemyVariant,
+  EncounterState,
+  ExpeditionCargoState,
   EquipmentState,
   EquippedWeaponVisualState,
+  ForgeRecipeState,
   HotbarAction,
   InventoryItem,
   ItemKind,
   ItemRarity,
   LootState,
   NpcState,
+  NatureSpiritState,
+  OreNodeState,
   PartyEvent,
   PartyState,
   PlayerAttribute,
+  ProfessionContractState,
+  ProfessionProgressState,
+  ProfessionsState,
+  ProjectileState,
   QuestState,
+  SkillId,
+  TreasureLodeState,
+  UtraeanRelayState,
+  UtraeanRuneState,
   WeaponElement,
   WorldSnapshot,
   WorldZone,
 } from '../shared/types';
-import { HUD, HUD_SKILL_ICON_URLS, preloadHudIcons, type HudMinimapNpc, type HudNpcDestination, type HudNpcPrompt, type HudNpcTarget, type HudStashItem } from '../ui/HUD';
+import { HUD, HUD_SKILL_ICON_URLS, preloadHudIcons, type HudForgeRecipe, type HudMinimapNpc, type HudNpcDestination, type HudNpcPrompt, type HudNpcTarget, type HudStashItem } from '../ui/HUD';
 import { PerfOverlay } from '../ui/PerfOverlay';
 import {
   PcWorld,
@@ -62,7 +232,55 @@ import {
   type Vec3Like,
   type WorldRay,
 } from '../playcanvas/PcWorld';
-import { Input, type PointerNdc } from './Input';
+import {
+  createOreNodeVisual,
+  destroyOreNodeVisual,
+  updateOreNodeVisual,
+  type OreNodeVisual,
+} from '../playcanvas/OreNodeVisual';
+import {
+  createDisplacerVisual,
+  destroyDisplacerVisual,
+  updateDisplacerVisual,
+  type DisplacerVisual,
+} from '../playcanvas/DisplacerVisual';
+import {
+  createTreasureLodeVisual,
+  destroyTreasureLodeVisual,
+  updateTreasureLodeVisual,
+  type TreasureLodeVisual,
+} from '../playcanvas/TreasureLodeVisual';
+import {
+  createUtraeanRelayVisual,
+  destroyUtraeanRelayVisual,
+  updateUtraeanRelayVisual,
+  type UtraeanRelayVisual,
+} from '../playcanvas/UtraeanRelayVisual';
+import {
+  createRootSnareVisual,
+  destroyRootSnareVisual,
+  updateRootSnareVisual,
+  type RootSnareVisual,
+} from '../playcanvas/RootSnareVisual';
+import {
+  createCooperativeReviveVisual,
+  destroyCooperativeReviveVisual,
+  updateCooperativeReviveVisual,
+  type CooperativeReviveVisual,
+} from '../playcanvas/CooperativeReviveVisual';
+import {
+  createArhokFrostVisual,
+  destroyArhokFrostVisual,
+  updateArhokFrostVisual,
+  type ArhokFrostVisual,
+} from '../playcanvas/ArhokFrostVisual';
+import {
+  createCorruptedJungleVisual,
+  destroyCorruptedJungleVisual,
+  updateCorruptedJungleVisual,
+  type CorruptedJungleVisual,
+} from '../playcanvas/CorruptedJungleVisual';
+import { Input, type EvadeInput, type PointerNdc } from './Input';
 import { KeyboardMoveController } from './KeyboardMoveController';
 import { autorunMoveState } from './AutorunMove';
 import { chatBubbleTextColor, chatBubbleToneFor, type ChatBubbleTone } from './ChatPresentation';
@@ -106,9 +324,20 @@ import { npcHoverFocusTargetId, npcInteractionRingState, npcVisualFocusState, sh
 import { samplePathGuidancePoints, type PathGuidancePoint } from './PathGuidance';
 import { pendingInteractionDecision, pendingInteractionRetryDecision } from './PendingInteraction';
 import { playerIntentCancelPlan } from './PlayerIntentCancel';
+import { stationarySkillMovementPlan } from './StationarySkillCast';
 import { questDialogueActionDecision, questDialogueActionLabel as buildQuestDialogueActionLabel } from './QuestDialogueAction';
 import { questNavigationHoverNpcId, questNavigationTargetNpcId } from './QuestNavigation';
 import { questTrackerRouteLabel } from './QuestTrackerRoute';
+
+interface GripPoseBone {
+  entity: pc.Entity;
+  delta: pc.Quat;
+}
+
+interface WeaponGripPose {
+  right: GripPoseBone[];
+  left: GripPoseBone[];
+}
 
 interface View {
   entity: pc.Entity;
@@ -147,6 +376,73 @@ interface View {
   helmetAnchor?: pc.Entity;
   armorKey?: string | null;
   armorAnchor?: pc.Entity;
+  /** Pose aditiva que fecha os dedos em volta do cabo quando ha arma. */
+  weaponGripPose?: WeaponGripPose;
+  enemyVariant?: EnemyVariant;
+  shardcasterRoot?: pc.Entity;
+  shardcasterOrb?: pc.Entity;
+  shardcasterLight?: pc.Entity;
+  shardcasterCrystals?: pc.Entity[];
+  shardcasterMaterials?: pc.StandardMaterial[];
+  ashCorruptorRoot?: pc.Entity;
+  ashCorruptorOrb?: pc.Entity;
+  ashCorruptorCrown?: pc.Entity;
+  ashCorruptorLight?: pc.Entity;
+  ashCorruptorMaterials?: pc.StandardMaterial[];
+  ashVeilRoot?: pc.Entity;
+  ashVeilRing?: pc.Entity;
+  ashVeilSigil?: pc.Entity;
+  ashVeilMaterials?: pc.StandardMaterial[];
+  ruinBruteRoot?: pc.Entity;
+  ruinBruteShoulders?: pc.Entity[];
+  ruinBrutePlate?: pc.Entity;
+  ruinBruteMaul?: pc.Entity;
+  ruinBruteMaterials?: pc.StandardMaterial[];
+  utraeanSentinelRoot?: pc.Entity;
+  utraeanSentinelCore?: pc.Entity;
+  utraeanSentinelCrown?: pc.Entity;
+  utraeanSentinelSpear?: pc.Entity;
+  utraeanSentinelMaterials?: pc.StandardMaterial[];
+  ruinExposedRoot?: pc.Entity;
+  ruinExposedRing?: pc.Entity;
+  ruinExposedPlates?: pc.Entity[];
+  ruinExposedMaterials?: pc.StandardMaterial[];
+  bossSealPhaseRoot?: pc.Entity;
+  bossSealPhaseAura?: pc.Entity;
+  bossSealPhaseCrown?: pc.Entity;
+  bossSealPhaseCracks?: pc.Entity[];
+  bossSealPhaseMaterials?: pc.StandardMaterial[];
+  runicEliteRoot?: pc.Entity;
+  runicEliteCore?: pc.Entity;
+  runicEliteRings?: pc.Entity[];
+  runicEliteRunes?: pc.Entity[];
+  runicEliteMaterials?: pc.StandardMaterial[];
+  runicElitePhase?: 'aegis' | 'fury';
+  difficultyAffixRoot?: pc.Entity;
+  difficultyAffixRings?: pc.Entity[];
+  difficultyAffixMotes?: pc.Entity[];
+  difficultyAffixMaterials?: pc.StandardMaterial[];
+  difficultyAffixKey?: string;
+  arcaneResonanceRoot?: pc.Entity;
+  arcaneResonanceRings?: pc.Entity[];
+  arcaneResonanceMotes?: pc.Entity[];
+  arcaneResonanceMaterials?: pc.StandardMaterial[];
+  guardianRetaliationRoot?: pc.Entity;
+  guardianRetaliationRings?: pc.Entity[];
+  guardianRetaliationChevrons?: pc.Entity[];
+  guardianRetaliationMaterials?: pc.StandardMaterial[];
+  stormOrbRoot?: pc.Entity;
+  stormOrbRing?: pc.Entity;
+  stormOrbCores?: pc.Entity[];
+  stormOrbMaterials?: pc.StandardMaterial[];
+  stormOrbCharges?: number;
+  feralFormRoot?: pc.Entity;
+  feralFormRing?: pc.Entity;
+  feralFormParts?: pc.Entity[];
+  feralFormMaterials?: pc.StandardMaterial[];
+  reviveProtectionRoot?: pc.Entity;
+  reviveProtectionRings?: pc.Entity[];
+  reviveProtectionMaterials?: pc.StandardMaterial[];
   anim?: PcClipController;
   initialized?: boolean;
   jumpArc?: number;
@@ -171,6 +467,61 @@ interface LootView {
 interface ChestView {
   entity: pc.Entity;
   opened: boolean;
+}
+
+interface OreNodeView {
+  visual: OreNodeVisual;
+  state: OreNodeState;
+  label: WorldLabel;
+}
+
+interface DisplacerView {
+  visual: DisplacerVisual;
+  state: DisplacerState;
+  label: WorldLabel;
+}
+
+interface ProjectileView {
+  root: pc.Entity;
+  core: pc.Entity;
+  trail: pc.Entity;
+  light: pc.Entity;
+  materials: pc.StandardMaterial[];
+  state: ProjectileState;
+  snapshotAt: number;
+  phase: number;
+}
+
+interface NatureSpiritView {
+  root: pc.Entity;
+  core: pc.Entity;
+  halo: pc.Entity;
+  motes: pc.Entity[];
+  light: pc.Entity;
+  materials: pc.StandardMaterial[];
+  state: NatureSpiritState;
+  phase: number;
+}
+
+interface ExpeditionCargoView {
+  root: pc.Entity;
+  body: pc.Entity;
+  legs: pc.Entity[];
+  rune: pc.Entity;
+  light: pc.Entity;
+  materials: pc.StandardMaterial[];
+  state: ExpeditionCargoState;
+  phase: number;
+}
+
+interface ControlZoneView {
+  visual: RootSnareVisual;
+  state: ControlZoneState;
+}
+
+interface CooperativeReviveView {
+  visual: CooperativeReviveVisual;
+  presentation: ReviveChannelPresentation;
 }
 
 interface NpcView {
@@ -243,6 +594,22 @@ interface StashTransferPending {
   beforeStashPresent: boolean;
 }
 
+interface ForgeRecipePending {
+  npcId: string;
+  recipeId: string;
+  recipeType: ForgeRecipeState['recipeType'];
+  outputKind: ForgeRecipeState['outputKind'];
+  outputSetId?: ForgeRecipeState['outputSetId'];
+  outputSetPieceId?: string;
+  beforeOutput: number;
+  expectedOutput: number;
+}
+
+interface ProfessionContractPending {
+  npcId: string;
+  contractId: string;
+}
+
 type RenderQualityLevel = 'high' | 'medium' | 'low';
 type RenderQualityMode = RenderQualityLevel | 'auto';
 type TargetMarkerKind = 'move' | 'interact';
@@ -282,14 +649,42 @@ const CLICK_MOVE_STOP_DISTANCE = 0.35;
 // o RTT do comando; sem isso o snapshot antigo (ainda idle) cancelaria o clique.
 const CLICK_MOVE_SERVER_IDLE_GRACE = 0.6;
 const LOCAL_PLAYER_COLLISION_RADIUS = 0.5;
+// Parede visual centrada em +/-23, com 1.2 de espessura: a face interna fica
+// em 22.4. O centro do heroi (raio 0.5) para em 21.9, sem atravessar a malha.
+const DUNGEON_MOVE_BOUND = 21.9;
+// O A* usa a mesma margem autoritativa de 0.75 do backend para nunca pedir um
+// destino colado na parede que o servidor precisaria corrigir depois.
+const DUNGEON_NAVIGATION_BOUND = 21.65;
 // Raio para interagir com loot/bau ao chegar (MENOR que o do servidor — 3.1 do
 // collectLoot e 4.0 do openChest — para a predicao nunca disparar cedo demais).
 const LOOT_INTERACT_RANGE = 2.6;
 const CHEST_INTERACT_RANGE = 3.4;
+const ORE_INTERACT_SAFETY_MARGIN = 0.8;
+const ORE_NODE_NAMES: Record<OreNodeState['kind'], string> = {
+  copper: 'Veio de Cobre',
+  iron: 'Veio de Ferro',
+  mithril: 'Veio de Mithril',
+};
+const ORE_NODE_COLORS: Record<OreNodeState['kind'], string> = {
+  copper: '#f0a067',
+  iron: '#d9e5ea',
+  mithril: '#8cecff',
+};
+const ORE_REQUIRED_LEVEL: Record<OreNodeState['kind'], number> = {
+  copper: 1,
+  iron: 2,
+  mithril: 3,
+};
+const BAR_LOOT_COLORS: Partial<Record<ItemKind, number>> = {
+  copper_bar: 0xc87945,
+  iron_bar: 0xb9c4cb,
+  mithril_bar: 0x65dce9,
+};
 const NPC_APPROACH_ARRIVAL_RANGE = CLICK_MOVE_STOP_DISTANCE + 0.22;
 const HEALER_SERVICE_COST = 18;
 const BLACKSMITH_BLESS_MAX_LEVEL = 6;
 const BLACKSMITH_MAX_LEVEL = 15;
+const BLACKSMITH_SERVICE_SAFE_RANGE = 3.05;
 const NPC_TURN_RATE = 8.5;
 const NPC_INTERACTION_TURN_RATE = 12;
 // Espacamento minimo entre comandos 'move' (coalescing): spam de clique vira no
@@ -313,31 +708,100 @@ const CLOSE_CLICK_RADIUS = 2.8;
 // inimigo sobre loot no handleClick, evita que drops "roubem" o ataque.
 const LOOT_CLICK_RADIUS = 1.0;
 const CHEST_CLICK_RADIUS = 1.45;
+const ORE_CLICK_RADIUS = 1.42;
 // Hold do botao esquerdo sobre inimigo: reenvia o attack no maximo a cada
 // intervalo abaixo (o retarget para OUTRO inimigo e imediato).
 const HELD_ATTACK_REFRESH_INTERVAL = 0.35;
-// Layout da hotbar (slots 1-6) e persistido localmente; drag & drop troca as
-// posicoes e a tecla passa a disparar o que estiver no slot.
-const HOTBAR_LAYOUT_STORAGE_KEY = 'aranna.hotbar-layout.v1';
-const DEFAULT_HOTBAR_LAYOUT: readonly HotbarAction[] = ['potion', 'arcane-nova', 'mana-potion', 'war-cry', 'heavy-strike', 'charge'];
-
-function loadHotbarLayout(): HotbarAction[] {
-  try {
-    const raw = window.localStorage.getItem(HOTBAR_LAYOUT_STORAGE_KEY);
-    if (!raw) return [...DEFAULT_HOTBAR_LAYOUT];
-    const parsed = JSON.parse(raw) as unknown;
-    if (
-      Array.isArray(parsed) &&
-      parsed.length === DEFAULT_HOTBAR_LAYOUT.length &&
-      DEFAULT_HOTBAR_LAYOUT.every((action) => parsed.includes(action))
-    ) {
-      return parsed as HotbarAction[];
-    }
-  } catch {
-    // Preferencia opcional; layout padrao cobre falhas de storage/parse.
-  }
-  return [...DEFAULT_HOTBAR_LAYOUT];
+function normalizedProfession(
+  value: Partial<ProfessionProgressState> | null | undefined,
+  id: ProfessionProgressState['id'],
+  label: string,
+): ProfessionProgressState {
+  const maxLevel = Math.max(1, Math.floor(value?.maxLevel ?? 10));
+  const level = Math.max(1, Math.min(maxLevel, Math.floor(value?.level ?? 1)));
+  const xpToNext = level >= maxLevel ? 0 : Math.max(1, Math.floor(value?.xpToNext ?? 30));
+  return {
+    id,
+    label: value?.label?.trim() || label,
+    level,
+    xp: Math.max(0, Math.floor(value?.xp ?? 0)),
+    xpIntoLevel: level >= maxLevel ? 0 : Math.max(0, Math.min(xpToNext, Math.floor(value?.xpIntoLevel ?? 0))),
+    xpToNext,
+    maxLevel,
+    ...(id === 'mining'
+      ? { bonusYieldChance: Math.max(0, Math.min(1, value?.bonusYieldChance ?? 0)) }
+      : {}),
+  };
 }
+
+function normalizedProfessionContracts(value: unknown): ProfessionContractState[] {
+  if (!Array.isArray(value)) return [];
+  const contracts: ProfessionContractState[] = [];
+  const seenContracts = new Set<string>();
+  for (const raw of value) {
+    if (!raw || typeof raw !== 'object') continue;
+    const candidate = raw as Partial<ProfessionContractState>;
+    const id = typeof candidate.id === 'string' ? candidate.id.trim() : '';
+    if (!id || seenContracts.has(id)) continue;
+    seenContracts.add(id);
+
+    const objectives: ProfessionContractState['objectives'] = [];
+    const seenObjectives = new Set<string>();
+    if (Array.isArray(candidate.objectives)) {
+      for (const rawObjective of candidate.objectives) {
+        if (!rawObjective || typeof rawObjective !== 'object') continue;
+        const objectiveId = typeof rawObjective.id === 'string' ? rawObjective.id.trim() : '';
+        if (!objectiveId || seenObjectives.has(objectiveId)) continue;
+        seenObjectives.add(objectiveId);
+        const current = Number.isFinite(rawObjective.current)
+          ? Math.max(0, Math.floor(rawObjective.current))
+          : 0;
+        const goal = Number.isFinite(rawObjective.goal)
+          ? Math.max(0, Math.floor(rawObjective.goal))
+          : 0;
+        objectives.push({
+          id: objectiveId,
+          label: typeof rawObjective.label === 'string' && rawObjective.label.trim()
+            ? rawObjective.label.trim()
+            : objectiveId,
+          current,
+          goal,
+          completed: rawObjective.completed === true,
+        });
+      }
+    }
+    const claimed = candidate.claimed === true;
+    contracts.push({
+      id,
+      title: typeof candidate.title === 'string' && candidate.title.trim() ? candidate.title.trim() : id,
+      description: typeof candidate.description === 'string' ? candidate.description.trim() : '',
+      objectives,
+      completed: claimed || candidate.completed === true,
+      claimable: !claimed && candidate.claimable === true,
+      claimed,
+      rewardText: typeof candidate.rewardText === 'string' ? candidate.rewardText.trim() : '',
+    });
+  }
+  return contracts;
+}
+
+function normalizedProfessions(value: Partial<ProfessionsState> | null | undefined): ProfessionsState {
+  return {
+    mining: normalizedProfession(value?.mining, 'mining', 'Mineração'),
+    smithing: normalizedProfession(value?.smithing, 'smithing', 'Ferraria'),
+    contracts: normalizedProfessionContracts(value?.contracts),
+  };
+}
+
+function professionsRenderKey(professions: ProfessionsState): string {
+  const { mining, smithing } = professions;
+  return [
+    mining.level, mining.xp, mining.xpIntoLevel, mining.xpToNext, mining.maxLevel, mining.bonusYieldChance ?? 0,
+    smithing.level, smithing.xp, smithing.xpIntoLevel, smithing.xpToNext, smithing.maxLevel,
+    JSON.stringify(professions.contracts),
+  ].join(':');
+}
+
 const ENEMY_HEALTH_BAR_HEIGHT = 2.6;
 // Culling de inimigos: dentro de NEAR sempre desenha; alem de FAR nunca; no meio,
 // so desenha se estiver na tela. Inimigo desabilitado nao renderiza/anima/sombra.
@@ -372,22 +836,28 @@ const RENDER_QUALITY_PRESETS: Record<RenderQualityLevel, RenderQualityPreset> = 
 
 /**
  * Preview do glow via URL, so para o heroi local (teste visual rapido):
- *   `?weaponGlow`         -> espada +15
- *   `?weaponGlow=8`       -> espada +8 (qualquer nivel 0..15)
- *   `?weaponGlow=11,fire` -> espada +11 com elemento fogo
+ *   `?weaponGlow`                  -> espada +15
+ *   `?weaponGlow=8`                -> espada +8 (qualquer nivel 0..15)
+ *   `?weaponGlow=11,fire`          -> espada +11 com elemento fogo
+ *   `?weaponGlow=15,great_axe,fire` -> arma especifica para validar socket
  */
-function weaponGlowPreviewFromUrl(): EquippedWeaponVisualState | null {
-  const raw = new URLSearchParams(window.location.search).get('weaponGlow');
+function weaponPreviewFromUrlParam(paramName: string): EquippedWeaponVisualState | null {
+  const raw = new URLSearchParams(window.location.search).get(paramName);
   if (raw === null) return null;
   const parts = raw.split(',').map((part) => part.trim().toLowerCase());
   const level = Number.parseInt(parts[0] ?? '', 10);
+  const kind = parts.find((part): part is ItemKind => isWeaponKind(part as ItemKind)) ?? 'sword';
   return {
-    kind: 'sword',
+    kind,
     rarity: 'lendario',
     upgradeLevel: Number.isFinite(level) ? Math.max(0, Math.min(15, level)) : 15,
     glowGem: 'soul',
     element: parts.includes('fire') ? 'fire' : undefined,
   };
+}
+
+function weaponGlowPreviewFromUrl(): EquippedWeaponVisualState | null {
+  return weaponPreviewFromUrlParam('weaponGlow');
 }
 
 function clamp01(value: number): number {
@@ -537,9 +1007,20 @@ class FloatingText {
           ? '#d7e3ef'
           : kind === 'critical'
             ? '#ffd874'
-            : '#fff3b5';
+            : kind === 'bleed'
+              ? '#ff6b68'
+              : kind === 'stagger'
+                ? '#c8f1ff'
+                : '#fff3b5';
     this.start = { ...position };
-    this.label = new WorldLabel(layer, kind === 'critical' ? 'combat-text critical-text' : 'combat-text', String(amount), color);
+    const emphasisClass = kind === 'critical'
+      ? ' critical-text'
+      : kind === 'bleed'
+        ? ' bleed-text'
+        : kind === 'stagger'
+          ? ' stagger-text'
+          : '';
+    this.label = new WorldLabel(layer, `combat-text${emphasisClass}`, String(amount), color);
     this.label.el.style.font = '800 18px/1 ui-sans-serif,system-ui,sans-serif';
     this.label.el.style.zIndex = '9';
   }
@@ -549,7 +1030,13 @@ class FloatingText {
     const t = this.age / 0.82;
     this.label.setWorldPosition(this.start.x, this.start.y + t * 1.15, this.start.z);
     this.label.el.style.opacity = String(clamp01(1 - Math.max(0, t - 0.45) / 0.55));
-    this.label.el.style.fontSize = this.kind === 'miss' ? '15px' : this.kind === 'critical' ? '24px' : '18px';
+    this.label.el.style.fontSize = this.kind === 'critical'
+      ? '24px'
+      : this.kind === 'bleed' || this.kind === 'miss'
+        ? '15px'
+        : this.kind === 'stagger'
+          ? '16px'
+          : '18px';
     this.label.update(world);
     if (t < 1) return false;
     this.dispose();
@@ -595,6 +1082,18 @@ interface TimedEffect {
   dispose(): void;
 }
 
+interface SealChamberVisual {
+  root: pc.Entity;
+  marker: pc.Entity;
+  sigil: pc.Entity;
+  barrierRoot: pc.Entity;
+  markerMaterial: pc.StandardMaterial;
+  coreMaterial: pc.StandardMaterial;
+  barrierMaterial: pc.StandardMaterial;
+  state: EncounterState;
+  age: number;
+}
+
 class PulseEffect implements TimedEffect {
   private age = 0;
 
@@ -613,6 +1112,34 @@ class PulseEffect implements TimedEffect {
     const scale = this.fromScale + (this.toScale - this.fromScale) * t;
     this.entity.setLocalScale(scale, this.baseY, scale);
     this.material.opacity = (1 - t) * 0.72;
+    this.material.update();
+    if (t < 1) return false;
+    this.dispose();
+    return true;
+  }
+
+  dispose(): void {
+    destroyEntity(this.entity);
+    this.material.destroy();
+  }
+}
+
+class FadingEntityEffect implements TimedEffect {
+  private age = 0;
+
+  constructor(
+    private readonly entity: pc.Entity,
+    private readonly material: pc.StandardMaterial,
+    private readonly duration: number,
+    private readonly baseOpacity: number,
+  ) {}
+
+  update(dt: number): boolean {
+    this.age += dt;
+    const t = clamp01(this.age / Math.max(0.001, this.duration));
+    const tailFade = 1 - clamp01((t - 0.72) / 0.28);
+    const pulse = 0.78 + (Math.sin(this.age * 18) + 1) * 0.11;
+    this.material.opacity = this.baseOpacity * pulse * tailFade;
     this.material.update();
     if (t < 1) return false;
     this.dispose();
@@ -681,16 +1208,48 @@ interface ClipConfig {
 const ONE_SHOT_STATES = new Set<VisualAnimState>(['attack', 'dead', 'jump']);
 const WEAPON_WORLD_LENGTH = 1.55;
 const WEAPON_GRIP_FROM_BOTTOM = 0.16;
-// Distancia (mundo) do punho ate o centro da lamina — referencia p/ luz/fogo.
-const WEAPON_BLADE_CENTER = WEAPON_WORLD_LENGTH * (0.5 - WEAPON_GRIP_FROM_BOTTOM);
-const WEAPON_SOCKET_BONE_NAMES = ['mixamorigWeapon', 'mixamorig:Weapon', 'RightHand', 'mixamorigRightHand', 'mixamorig:RightHand', 'Hand_R'] as const;
+const RIGHT_HAND_BONE_NAMES = ['RightHand', 'mixamorigRightHand', 'mixamorig:RightHand', 'Hand_R'] as const;
 // Sockets para o gear extra no corpo (dual wield, elmo, peitoral).
 const OFFHAND_SOCKET_BONE_NAMES = ['LeftHand', 'mixamorigLeftHand', 'mixamorig:LeftHand', 'Hand_L'] as const;
 const HEAD_SOCKET_BONE_NAMES = ['mixamorigHead', 'mixamorig:Head', 'Head', 'head'] as const;
 const CHEST_SOCKET_BONE_NAMES = ['mixamorigSpine2', 'mixamorig:Spine2', 'Spine2', 'mixamorigSpine1', 'mixamorig:Spine1', 'Spine1', 'Chest', 'mixamorigSpine', 'Spine'] as const;
+// Socket virtual para rigs Mixamo sem Weapon. Posicoes estao em unidades de
+// mundo nos eixos locais do osso e sao compensadas pela escala herdada (0,01
+// no guerreiro atual). A mao esquerda espelha o socket direito do GLB.
+const RIGHT_HAND_SOCKET_POSITION = [-0.01544723, 0.11410033, 0.05113452] as const;
+const LEFT_HAND_SOCKET_POSITION = [0.01544723, 0.11410033, 0.05113452] as const;
+// Pose tipo WoW da referencia: laminas quase paralelas ao chao, projetadas para
+// a frente do personagem. As maos espelhadas exigem sinais opostos em Z.
+const PRIMARY_WEAPON_SOCKET_EULER = [0, 0, -105] as const;
+const OFFHAND_WEAPON_SOCKET_EULER = [0, 0, 105] as const;
 // Tamanhos-alvo (em unidades de mundo) das pecas anexadas ao corpo.
 const HELMET_WORLD_SIZE = 0.34;
 const CHEST_ARMOR_WORLD_SIZE = 0.72;
+// Head nasce na base do cranio; Spine2 nasce no centro do peito. Estes offsets
+// assentam os props rigidos sobre a geometria em vez de deixa-los no pivot.
+const HELMET_SOCKET_POSITION = [0, 0.14, 0.03] as const;
+const CHEST_SOCKET_POSITION = [0, 0.025, 0.065] as const;
+// Pontos de pegada nos GLBs (coordenadas locais do asset). Uma AABB generica
+// desloca o cabo de armas assimetricas, especialmente Axe_small.
+const WEAPON_GRIP_POINT_BY_KIND: Partial<Record<ItemKind, readonly [number, number, number]>> = {
+  // Espadas sao seguradas logo abaixo da guarda, nao no meio do cabo longo do
+  // asset. Isso traz a guarda para junto dos dedos em vez de deixa-la "voando".
+  sword: [0, 0.21, 0],
+  axe: [0.044, -0.404, 0],
+  great_sword: [0, 0.5, 0],
+  great_axe: [0.05, -0.32, 0],
+  war_hammer: [0.009, -0.422, 0],
+};
+// Os peitorais Metal/Golden/Black sao mais achatados em Z que o torso do
+// guerreiro. Expandir apenas a profundidade evita que a peca suma dentro do
+// corpo sem deixar ombros/largura gigantes. Leather ja tem profundidade boa.
+const ARMOR_DEPTH_SCALE_BY_RARITY: Record<ItemRarity, number> = {
+  comum: 1,
+  incomum: 1.24,
+  raro: 1.32,
+  epico: 1.32,
+  lendario: 1.32,
+};
 // Armas 2H sao desenhadas maiores que as 1H.
 const TWO_HANDED_LENGTH_MULTIPLIER = 1.32;
 const HERO_RIG_ROOT_NAME = 'ANDANDO';
@@ -1033,12 +1592,16 @@ function setVisualAssetTransform(entity: pc.Entity, scale: number): void {
 }
 
 function findDescendantEntity(root: pc.Entity, names: readonly string[]): pc.Entity | undefined {
-  const stack = [root];
-  while (stack.length > 0) {
-    const current = stack.pop()!;
-    if (names.includes(current.name)) return current;
-    for (const child of current.children) {
-      if (child instanceof pc.Entity) stack.push(child);
+  // A ordem de `names` e semantica: sockets dedicados devem ganhar de ossos de
+  // fallback que sao seus ancestrais (Weapon > RightHand, Spine2 > Spine1).
+  for (const name of names) {
+    const stack = [root];
+    while (stack.length > 0) {
+      const current = stack.pop()!;
+      if (current.name === name) return current;
+      for (const child of current.children) {
+        if (child instanceof pc.Entity) stack.push(child);
+      }
     }
   }
   return undefined;
@@ -1047,6 +1610,81 @@ function findDescendantEntity(root: pc.Entity, names: readonly string[]): pc.Ent
 function maxWorldScale(entity: pc.Entity): number {
   const scale = entity.getScale();
   return Math.max(Math.abs(scale.x), Math.abs(scale.y), Math.abs(scale.z), 0.0001);
+}
+
+function setScaledSocketPosition(
+  entity: pc.Entity,
+  position: readonly [number, number, number],
+  inheritedScale: number,
+): void {
+  const safeScale = Math.max(inheritedScale, 0.0001);
+  entity.setLocalPosition(position[0] / safeScale, position[1] / safeScale, position[2] / safeScale);
+}
+
+function setHandWeaponSocket(
+  entity: pc.Entity,
+  position: readonly [number, number, number],
+  euler: readonly [number, number, number],
+  inheritedScale: number,
+): void {
+  setScaledSocketPosition(entity, position, inheritedScale);
+  entity.setLocalEulerAngles(...euler);
+}
+
+function fitEquippedWeaponToGrip(
+  entity: pc.Entity,
+  kind: ItemKind,
+  worldLength: number,
+  inheritedScale: number,
+): void {
+  const bounds = fitWeaponToGrip(entity, worldLength, WEAPON_GRIP_FROM_BOTTOM, inheritedScale);
+  const grip = WEAPON_GRIP_POINT_BY_KIND[kind];
+  if (!bounds || !grip) return;
+  const scale = worldLength / bounds.largest / Math.max(inheritedScale, 0.0001);
+  entity.setLocalPosition(-grip[0] * scale, -grip[1] * scale, -grip[2] * scale);
+}
+
+function gripBoneNames(side: 'Left' | 'Right', finger: string, segment: number): readonly string[] {
+  const suffix = `${side}Hand${finger}${segment}`;
+  return [`mixamorig:${suffix}`, `mixamorig${suffix}`, suffix];
+}
+
+function createWeaponGripPose(root: pc.Entity): WeaponGripPose {
+  const createHand = (side: 'Left' | 'Right'): GripPoseBone[] => {
+    const bones: GripPoseBone[] = [];
+    const add = (finger: string, segment: number, x: number, y: number, z: number) => {
+      const entity = findDescendantEntity(root, gripBoneNames(side, finger, segment));
+      if (!entity) return;
+      bones.push({ entity, delta: new pc.Quat().setFromEulerAngles(x, y, z) });
+    };
+
+    // Peso visual ~0,8 da pose de punho fechado: preserva parte da silhueta da
+    // animacao, mas faz os dedos realmente envolverem o cabo.
+    for (const finger of ['Index', 'Middle', 'Ring', 'Pinky']) {
+      add(finger, 1, 28, 0, 0);
+      add(finger, 2, 52, 0, 0);
+      add(finger, 3, 40, 0, 0);
+    }
+    add('Thumb', 1, 0, 0, side === 'Right' ? 36 : -36);
+    add('Thumb', 2, 24, 0, 0);
+    add('Thumb', 3, 32, 0, 0);
+    return bones;
+  };
+
+  return { right: createHand('Right'), left: createHand('Left') };
+}
+
+function applyGripBones(bones: readonly GripPoseBone[]): void {
+  for (const bone of bones) {
+    const rotation = bone.entity.getLocalRotation().clone().mul(bone.delta);
+    bone.entity.setLocalRotation(rotation);
+  }
+}
+
+function applyWeaponGripPose(view: View): void {
+  if (!view.weaponGripPose) return;
+  if (view.equippedWeaponKey) applyGripBones(view.weaponGripPose.right);
+  if (view.offhandKey) applyGripBones(view.weaponGripPose.left);
 }
 
 class PcClipController {
@@ -1110,18 +1748,50 @@ export class Game {
   private readonly lootViews = new Map<string, LootView>();
   private readonly notableLootSoundIds = new Set<string>();
   private readonly chestViews = new Map<string, ChestView>();
+  private readonly oreNodeViews = new Map<string, OreNodeView>();
+  private readonly displacerViews = new Map<string, DisplacerView>();
+  private displacerStates: readonly DisplacerState[] = [];
+  private difficultyState: DifficultyState = legacyNormalDifficultyState();
+  private treasureLodeState: TreasureLodeState | null = null;
+  private treasureLodeVisual: TreasureLodeVisual | null = null;
+  private utraeanRelayState: UtraeanRelayState | null = null;
+  private utraeanRelayVisual: UtraeanRelayVisual | null = null;
+  private biomeState: BiomeState | null = null;
+  private arhokFrostVisual: ArhokFrostVisual | null = null;
+  private corruptedJungleState: CorruptedJungleState | null = null;
+  private corruptedJungleVisual: CorruptedJungleVisual | null = null;
+  private readonly projectileViews = new Map<string, ProjectileView>();
+  private readonly natureSpiritViews = new Map<string, NatureSpiritView>();
+  private expeditionCargoView: ExpeditionCargoView | null = null;
+  private readonly controlZoneViews = new Map<string, ControlZoneView>();
+  private readonly cooperativeReviveViews = new Map<string, CooperativeReviveView>();
   private readonly enemyHp = new Map<string, number>();
   private readonly damageTexts: FloatingText[] = [];
   private readonly speechBubbles: SpeechBubble[] = [];
   private readonly partyMemberIds = new Set<string>();
   private readonly partyBadges = new Map<string, WorldLabel>();
   private readonly effects: TimedEffect[] = [];
+  private sealChamberVisual: SealChamberVisual | null = null;
   private readonly seenCombatEvents = new Set<string>();
+  private readonly activeBulwarkTaunts = new Map<string, number>();
+  private doctrinePresentationEnabled = false;
+  private activeDoctrinePresentationId: CombatDoctrineId | null = null;
   private readonly seenPartyEvents = new Set<string>();
   private readonly seenChatMessages = new Set<string>();
   private readonly keyboardMove = new KeyboardMoveController();
   private readonly clientMovement = new ClientMovementPredictor();
+  private readonly worldUpdateHandler = (dt: number) => this.frame(dt);
+  private readonly resizeHandler = () => this.resize();
+  private readonly pageHideHandler = (event: PageTransitionEvent) => {
+    // Uma pagina guardada no back-forward cache volta com a mesma instancia de
+    // Game. Desmonta-la aqui deixaria `disposed=true` e o loop permanentemente
+    // parado ao navegar de volta. No descarte real, a limpeza continua imediata.
+    if (!event.persisted) this.dispose();
+  };
+  private disposed = false;
   private autorunActive = false;
+  /** Bloqueia qualquer movimento que tenha sido coletado no mesmo frame da Guarda de Ferro. */
+  private movementSuppressedForFrame = false;
   private readonly targetMarker: pc.Entity;
   private readonly npcApproachPreviewMarker: pc.Entity;
   private readonly pathGuidanceMarkers: pc.Entity[] = [];
@@ -1149,6 +1819,8 @@ export class Game {
   private questRewardClaimPending = false;
   private healerServicePending = false;
   private blacksmithUpgradePending = false;
+  private forgeRecipePending: ForgeRecipePending | null = null;
+  private professionContractPending: ProfessionContractPending | null = null;
   private travelServicePending = false;
   private jewelerServicePending = false;
   private hudDirty = true;
@@ -1176,12 +1848,15 @@ export class Game {
   private heldGroundMoveActive = false;
   private lastHeldGroundMoveAt = -Infinity;
   private lastHeldAttackCommandAt = -Infinity;
-  private readonly hotbarLayout: HotbarAction[] = loadHotbarLayout();
+  /** Bootstrap preserva v2 sem assumir o catalogo do emptySnapshot. */
+  private hotbarLayout: HotbarAction[] = loadHotbarLoadout(window.localStorage).slots;
+  private announcedSkillIds: SkillId[] | null = null;
   /** Ate quando (elapsed) a mira local e dona do yaw — cobre o vao entre golpes. */
   private localAimHoldUntil = 0;
   /** Interacao adiada (clique distante em loot/bau/npc): anda ate la e executa. */
   private pendingInteraction: {
-    kind: 'loot' | 'chest' | 'npc';
+    kind: 'loot' | 'chest' | 'npc' | 'ore' | 'displacer' | 'treasure' | 'revive'
+      | 'utraean-console' | 'utraean-rune' | 'utraean-chest';
     id: string;
     x: number;
     y: number;
@@ -1212,15 +1887,18 @@ export class Game {
     head: null, chest: null, hands: null, legs: null, feet: null, weapon: null, offhand: null, trinket: null, ring: null, ring2: null,
   };
   private cachedEquippedWeapon: EquippedWeaponVisualState | null = null;
+  private miningState: NormalizedMiningState = normalizeMiningState(undefined);
+  private professions: ProfessionsState = normalizedProfessions(undefined);
+  private professionsKey = professionsRenderKey(this.professions);
 
-  constructor(canvas: HTMLCanvasElement, private readonly uiLayer: HTMLElement, net: NetworkClient, profile: PlayerProfile) {
+  constructor(private readonly canvas: HTMLCanvasElement, private readonly uiLayer: HTMLElement, net: NetworkClient, profile: PlayerProfile) {
     this.net = net;
     const worldData = this.net.getWorld();
     this.terrain = worldData.terrain;
     this.moveBound = worldData.size / 2 - 2;
     this.worldBlockers = worldData.blockers;
-    this.world = new PcWorld(canvas, worldData);
-    this.input = new Input(canvas);
+    this.world = new PcWorld(this.canvas, worldData);
+    this.input = new Input(this.canvas);
     const initialNpcStates = (this.net.getSnapshot().npcs as NpcState[] | null | undefined) ?? [];
     this.cachedNpcStates = initialNpcStates;
     const snapshotNpcs = npcDefinitionsFromSnapshot(initialNpcStates);
@@ -1240,6 +1918,7 @@ export class Game {
     this.hud.onUseItem = (item) => this.net.send({ type: 'use-item', entityId: this.net.playerId, item });
     this.hud.onHotbarSwap = (from, to) => this.swapHotbarSlots(from, to);
     this.hud.onHotbarUse = (action) => this.triggerHotbarAction(action);
+    this.hud.onHotbarEquip = (skill, replace) => this.equipHotbarSkill(skill, replace);
     this.hud.onDropItem = (item) => {
       // Arrastar item para fora da bag: empilhavel dropa 1 unidade por vez;
       // arma dropa a instancia exata (raridade/upgrade preservados).
@@ -1267,6 +1946,18 @@ export class Game {
       this.activeStashNpcId = null;
       this.stashTransferLocks.clear();
       this.hudDirty = true;
+    };
+    this.hud.onDisplacerTravel = (nodeId) => {
+      this.hud.hideDisplacerNetwork();
+      this.sfx.play('arcane-nova');
+      this.net.send({ type: 'travel-displacer', entityId: this.net.playerId, nodeId });
+    };
+    this.hud.onDisplacerClose = () => {
+      this.hudDirty = true;
+    };
+    this.hud.onDifficultySelect = (difficultyId) => {
+      this.sfx.play('ui');
+      this.net.send({ type: 'set-world-difficulty', entityId: this.net.playerId, difficultyId });
     };
     this.hud.onNpcDestination = (npcId) => this.interactWithNpc(
       npcId,
@@ -1298,11 +1989,12 @@ export class Game {
       this.activeQuestNpcId = null;
       this.trainingNpcId = null;
       this.healerServicePending = false;
-      this.blacksmithUpgradePending = false;
       this.travelServicePending = false;
       this.jewelerServicePending = false;
       this.hudDirty = true;
     };
+    this.hud.onForgeRecipe = (npcId, recipeId, count) => this.handleForgeRecipe(npcId, recipeId, count);
+    this.hud.onProfessionContractClaim = (npcId, contractId) => this.handleProfessionContractClaim(npcId, contractId);
     this.hud.onNpcDialogueAction = (npcId) => {
       this.sfx.play('ui');
       const activeNpc = this.activeQuestNpcId ? this.npcViews.get(this.activeQuestNpcId) : null;
@@ -1400,6 +2092,18 @@ export class Game {
       this.sfx.play('ui');
       this.net.send({ type: 'party_leader_transfer', entityId: this.net.playerId, targetPlayerId });
     };
+    this.hud.onPartyRevive = (targetPlayerId) => {
+      this.sfx.play('ui');
+      this.requestCooperativeRevive(targetPlayerId);
+    };
+    this.hud.onCargoDeposit = (kind) => {
+      this.sfx.play('ui');
+      this.net.send({ type: 'expedition-cargo-deposit', entityId: this.net.playerId, item: kind, count: 1 });
+    };
+    this.hud.onCargoWithdraw = (kind) => {
+      this.sfx.play('ui');
+      this.net.send({ type: 'expedition-cargo-withdraw', entityId: this.net.playerId, item: kind, count: 1 });
+    };
     this.hud.onFriendAdd = (targetPlayerId) => {
       this.sfx.play('ui');
       this.net.send({ type: 'friend_add', entityId: this.net.playerId, targetPlayerId });
@@ -1425,7 +2129,8 @@ export class Game {
     this.createNpcViews();
 
     this.resize();
-    window.addEventListener('resize', () => this.resize());
+    window.addEventListener('resize', this.resizeHandler);
+    window.addEventListener('pagehide', this.pageHideHandler);
   }
 
   async run(): Promise<void> {
@@ -1446,7 +2151,42 @@ export class Game {
     if (loading) loading.classList.add('hidden');
 
     this.lastFrameNow = performance.now();
-    this.world.start((dt) => this.frame(dt));
+    this.world.start(this.worldUpdateHandler);
+  }
+
+  dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
+    this.world.app.off('update', this.worldUpdateHandler);
+    window.removeEventListener('resize', this.resizeHandler);
+    window.removeEventListener('pagehide', this.pageHideHandler);
+    this.clearProjectileViews();
+    this.clearNatureSpiritViews();
+    this.clearExpeditionCargoView();
+    this.clearControlZoneViews();
+    this.clearCooperativeReviveViews();
+    this.clearSealChamberPresentation();
+    this.clearTreasureLodePresentation();
+    this.clearUtraeanRelayPresentation();
+    this.clearArhokFrostPresentation();
+    this.clearCorruptedJunglePresentation();
+    for (const view of this.displacerViews.values()) {
+      view.label.dispose();
+      destroyDisplacerVisual(view.visual);
+    }
+    this.displacerViews.clear();
+    for (const effect of this.effects) effect.dispose();
+    this.effects.length = 0;
+    for (const view of this.views.values()) {
+      this.clearEnemySpecialVisuals(view);
+      this.clearAshVeilVisual(view);
+      this.clearRuinExposedVisual(view);
+      this.clearBossSealPhaseVisual(view);
+      this.clearArcaneResonanceVisual(view);
+      this.clearStormOrbVisual(view);
+      this.clearReviveProtectionVisual(view);
+      this.clearGuardianRetaliationVisual(view);
+    }
   }
 
   private async preloadGameplayAssets(onProgress: (value: number) => void): Promise<void> {
@@ -1490,14 +2230,44 @@ export class Game {
     const playerState = snapshot.entities.find((e) => e.id === this.net.playerId);
     this.lastSnapshotTick = snapshot.tick;
     this.syncZone(snapshot.zone);
+    this.syncSealChamberPresentation(snapshot.encounter, snapshot.zone);
+    this.syncTreasureLodePresentation(snapshot.treasureLode, snapshot.zone);
+    this.syncUtraeanRelayPresentation(snapshot.utraeanRelay, snapshot.zone);
+    this.syncArhokFrostPresentation(snapshot.biome, snapshot.zone);
+    this.syncCorruptedJunglePresentation(snapshot.jungle, snapshot.zone);
+    this.reconcileProjectiles(snapshot.projectiles);
+    this.reconcileNatureSpirits(snapshot.natureSpirits);
+    this.reconcileControlZones(snapshot.controlZones);
     this.reconcile(snapshot.entities, 0, true);
-    this.syncCombatEvents(snapshot.combatEvents);
+    this.reconcileCooperativeRevives(snapshot.entities);
+    this.syncCombatEvents(
+      snapshot.combatEvents,
+      snapshot.entities,
+      snapshot.oreNodes,
+      this.doctrinePresentationEnabled,
+      this.activeDoctrinePresentationId,
+    );
+    this.syncBulwarkTauntStatuses(snapshot.entities);
     this.syncPartyEvents(snapshot.partyEvents);
     this.syncPartyPresentation(snapshot.party);
+    this.reconcileExpeditionCargo(snapshot.party);
     this.syncChatMessages(snapshot.chatMessages);
     this.reconcileLoot(snapshot.loot);
     this.reconcileChests(snapshot.chests);
+    this.reconcileOreNodes(snapshot.oreNodes);
+    this.reconcileDisplacers(snapshot.displacers);
     this.updateLootViews();
+    this.updateOreNodeViews();
+    this.updateDisplacerViews();
+    this.updateTreasureLodePresentation();
+    this.updateUtraeanRelayPresentation();
+    this.updateArhokFrostPresentation();
+    this.updateCorruptedJunglePresentation();
+    this.updateProjectileViews(0);
+    this.updateNatureSpiritViews(0);
+    this.updateExpeditionCargoView(0);
+    this.updateControlZoneViews();
+    this.updateCooperativeReviveViews();
     this.updateCameraAndMarker(0);
     this.updateNpcViews(0);
     this.updateViewVisuals(snapshot.entities, 0);
@@ -1508,6 +2278,7 @@ export class Game {
     this.npcTargetHudKey = this.npcTargetFrameKey(selectedTarget, npcTarget);
     this.updateQuestTrackerTarget();
     this.hud.update(snapshot, playerState, selectedTarget, npcTarget);
+    this.updateLootTooltip(snapshot);
     this.hudDirty = false;
   }
 
@@ -1532,6 +2303,22 @@ export class Game {
         item.price,
         item.rarity ?? '',
         item.stock ?? '',
+      ].join('/')),
+      ...(npc.forgeRecipes ?? []).map((recipe) => [
+        recipe.id,
+        recipe.label,
+        recipe.recipeType,
+        ...recipe.ingredients.map((ingredient) => `${ingredient.kind}/${ingredient.count}`),
+        recipe.inputKind,
+        recipe.inputCount,
+        recipe.outputKind,
+        recipe.outputCount,
+        recipe.outputRarity ?? '',
+        recipe.outputSetId ?? '',
+        recipe.outputSetPieceId ?? '',
+        recipe.itemLevelBonus ?? 0,
+        recipe.requiredLevel,
+        recipe.xpReward,
       ].join('/')),
       npc.dialogue?.greeting ?? '',
       npc.dialogue?.actionLabel ?? '',
@@ -1587,26 +2374,84 @@ export class Game {
     snapshot.partyEvents = snapshot.partyEvents ?? [];
     snapshot.chatMessages = snapshot.chatMessages ?? [];
     snapshot.talents = snapshot.talents ?? { talentPoints: 0, spentPoints: 0, availablePoints: 0, talents: {} };
+    const localPlayerWire = snapshot.entities?.find((entity) => entity.id === this.net.playerId);
+    const doctrineGate = combatDoctrinePresentationGate(
+      snapshot.talents,
+      localPlayerWire?.skills,
+    );
+    this.doctrinePresentationEnabled = doctrineGate !== null;
+    this.activeDoctrinePresentationId = doctrineGate?.activeId ?? null;
+    snapshot.masteries = normalizeMasteries(snapshot.masteries, localPlayerWire?.skills);
+    this.reconcileHotbarFromSkillCatalog(localPlayerWire?.skills);
+    snapshot.oreNodes = (snapshot.oreNodes ?? []).flatMap((node) => {
+      const presentation = oreNodePresentationGate(node);
+      if (!presentation) return [];
+      return [{
+        ...node,
+        rich: presentation.rich,
+        baseYield: presentation.baseYield,
+        requiredToolTier: presentation.requiredToolTier,
+      }];
+    });
+    const displacers = displacerStatesPresentationGate(snapshot.displacers, snapshot.zone) ?? [];
+    snapshot.displacers = [...displacers];
+    this.displacerStates = displacers;
+    const difficulty = difficultyStatePresentationGate(snapshot.difficulty) ?? legacyNormalDifficultyState();
+    snapshot.difficulty = difficulty;
+    this.difficultyState = difficulty;
+    this.hud.updateDisplacerNetwork(displacers, difficulty);
+    const treasureLode = treasureLodeStatePresentationGate(snapshot.treasureLode);
+    snapshot.treasureLode = treasureLode ?? undefined;
+    this.treasureLodeState = treasureLode;
+    const utraeanRelay = utraeanRelayStatePresentationGate(snapshot.utraeanRelay);
+    snapshot.utraeanRelay = utraeanRelay ?? undefined;
+    this.utraeanRelayState = utraeanRelay;
+    this.biomeState = arhokFrostBiomePresentationGate(snapshot.biome);
+    this.corruptedJungleState = corruptedJunglePresentationGate(snapshot.jungle);
+    // Projeteis nao usam delta: cada snapshot substitui integralmente a lista.
+    snapshot.projectiles = Array.isArray(snapshot.projectiles) ? snapshot.projectiles : [];
+    snapshot.natureSpirits = natureSpiritStatesPresentationGate(snapshot.natureSpirits, snapshot.entities);
+    snapshot.controlZones = rootSnareZonesPresentationGate(snapshot.controlZones);
+    const normalizedMining = normalizeMiningState(snapshot.mining);
+    snapshot.mining = normalizedMining;
+    this.miningState = normalizedMining;
+    const nextProfessions = normalizedProfessions(snapshot.professions);
+    const nextProfessionsKey = professionsRenderKey(nextProfessions);
+    const professionsChanged = nextProfessionsKey !== this.professionsKey;
+    this.professions = nextProfessions;
+    this.professionsKey = nextProfessionsKey;
+    snapshot.professions = this.professions;
+    const professionContractStatus = this.resolveProfessionContractPendingFromSnapshot(nextProfessions);
 
     // Inventario com DELTA: o servidor manda `null` quando NAO mudou — nesse caso
     // reaproveitamos o cache. Quando vem o array (mudou ou reenvio periodico),
     // hidratamos (nome/icone) e cacheamos. (`!= null` cobre null e campo ausente.)
     let vendorDataChanged = false;
     let stashDataChanged = false;
+    let forgeStatus: string | undefined;
     const incoming = snapshot.inventory as InventoryItem[] | null | undefined;
     if (incoming != null) {
       for (const item of incoming) {
         if (!item.icon) item.icon = itemIconFor(item.kind, item.rarity);
         if (!item.name) item.name = itemDisplayName(item);
       }
+      forgeStatus = this.resolveForgeRecipePending(incoming);
       this.cachedInventory = incoming;
       if (this.activeVendorId) vendorDataChanged = true;
       if (this.activeStashNpcId) stashDataChanged = true;
       if (this.activeQuestNpcId) {
         const activeNpc = this.npcViews.get(this.activeQuestNpcId);
         if (activeNpc?.definition.kind === 'healer') this.refreshHealerDialogue();
-        if (activeNpc?.definition.kind === 'blacksmith') this.refreshBlacksmithDialogue('Forja atualizada.');
+        if (activeNpc?.definition.kind === 'blacksmith') {
+          this.refreshBlacksmithDialogue(forgeStatus ?? professionContractStatus ?? 'Forja atualizada.');
+        }
         if (activeNpc?.definition.kind === 'jeweler') this.refreshJewelerDialogue('Joias atualizadas.');
+      }
+    }
+    if (professionsChanged && incoming == null && this.activeQuestNpcId) {
+      const activeNpc = this.npcViews.get(this.activeQuestNpcId);
+      if (activeNpc?.definition.kind === 'blacksmith') {
+        this.refreshBlacksmithDialogue(professionContractStatus ?? 'Progresso dos ofícios atualizado.');
       }
     }
     snapshot.inventory = this.cachedInventory;
@@ -1646,9 +2491,13 @@ export class Game {
     if (incomingEquipment != null) {
       this.cachedEquipment = incomingEquipment;
       this.cachedEquippedWeapon = snapshot.equippedWeapon ?? null;
-      if (this.activeQuestNpcId) {
+      const upgradeConfirmed = this.blacksmithUpgradePending;
+      this.blacksmithUpgradePending = false;
+      if (upgradeConfirmed && this.activeQuestNpcId) {
         const activeNpc = this.npcViews.get(this.activeQuestNpcId);
-        if (activeNpc?.definition.kind === 'blacksmith') this.refreshBlacksmithDialogue('Forja atualizada.');
+        if (activeNpc?.definition.kind === 'blacksmith') {
+          this.refreshBlacksmithDialogue('Aprimoramento atualizado.');
+        }
       }
     }
     snapshot.equipment = this.cachedEquipment;
@@ -1662,6 +2511,7 @@ export class Game {
   }
 
   private frame(dtRaw: number): void {
+    if (this.disposed) return;
     const now = performance.now();
     const frameMs = now - this.lastFrameNow;
     this.lastFrameNow = now;
@@ -1678,15 +2528,34 @@ export class Game {
       this.lastSnapshotTick = snapshot.tick;
       this.hydrateSnapshotPresentation(snapshot);
       this.syncZone(snapshot.zone);
-      this.syncCombatEvents(snapshot.combatEvents);
+      this.syncSealChamberPresentation(snapshot.encounter, snapshot.zone);
+      this.syncTreasureLodePresentation(snapshot.treasureLode, snapshot.zone);
+      this.syncUtraeanRelayPresentation(snapshot.utraeanRelay, snapshot.zone);
+      this.syncArhokFrostPresentation(snapshot.biome, snapshot.zone);
+      this.syncCorruptedJunglePresentation(snapshot.jungle, snapshot.zone);
+      this.syncCombatEvents(
+        snapshot.combatEvents,
+        snapshot.entities,
+        snapshot.oreNodes,
+        this.doctrinePresentationEnabled,
+        this.activeDoctrinePresentationId,
+      );
+      this.syncBulwarkTauntStatuses(snapshot.entities);
+      this.reconcileProjectiles(snapshot.projectiles);
+      this.reconcileNatureSpirits(snapshot.natureSpirits);
+      this.reconcileControlZones(snapshot.controlZones);
       this.syncPartyEvents(snapshot.partyEvents);
       this.syncPartyPresentation(snapshot.party);
+      this.reconcileExpeditionCargo(snapshot.party);
       this.syncChatMessages(snapshot.chatMessages);
       this.reconcileLoot(snapshot.loot);
       this.reconcileChests(snapshot.chests);
+      this.reconcileOreNodes(snapshot.oreNodes);
+      this.reconcileDisplacers(snapshot.displacers);
     }
 
     this.reconcile(snapshot.entities, dt, snapshotChanged);
+    this.reconcileCooperativeRevives(snapshot.entities);
     this.applyLocalPlayerMovement(dt);
     this.flushQueuedMoveCommand();
     this.updatePendingInteraction();
@@ -1694,6 +2563,17 @@ export class Game {
     this.aimLocalPlayerDuringAttack(dt);
     this.aimLocalPlayerAtFocusedNpc(dt);
     this.updateLootViews();
+    this.updateOreNodeViews(dt);
+    this.updateDisplacerViews();
+    this.updateTreasureLodePresentation();
+    this.updateUtraeanRelayPresentation();
+    this.updateArhokFrostPresentation();
+    this.updateCorruptedJunglePresentation();
+    this.updateProjectileViews(dt);
+    this.updateNatureSpiritViews(dt);
+    this.updateExpeditionCargoView(dt);
+    this.updateControlZoneViews();
+    this.updateCooperativeReviveViews();
     this.updateCameraAndMarker(dt);
     this.updateNpcViews(dt);
     this.updateNpcApproachPreview();
@@ -1704,6 +2584,7 @@ export class Game {
     this.updateDamageTexts(dt);
     this.updateSpeechBubbles(dt);
     this.updateEffects(dt);
+    this.updateSealChamberPresentation(dt);
     this.updateOverlays();
     if (snapshotChanged) this.refreshActiveServiceDialogue(playerState);
 
@@ -1720,7 +2601,11 @@ export class Game {
       this.hud.update(snapshot, playerState, selectedTarget, npcTarget);
       this.hudDirty = false;
     }
+    this.updateLootTooltip(snapshot);
     this.perf.update(frameMs, this.world.getRenderStats(), this.renderQualityMode === 'auto' ? `auto:${this.autoQualityLevel}` : this.renderQualityMode);
+    // Um cast feito via HUD entre frames tambem fica protegido durante o frame
+    // seguinte; depois disso, uma nova intencao de movimento pode cancelar a guarda.
+    this.movementSuppressedForFrame = false;
   }
 
   private processInput(dt: number): void {
@@ -1743,6 +2628,15 @@ export class Game {
       this.cycleRenderQualityMode();
     }
     if (this.input.takeCancel()) {
+      if (this.hud.closeTalentPanel()) {
+        this.hudDirty = true;
+        return;
+      }
+      if (this.hud.isDisplacerNetworkOpen()) {
+        this.hud.hideDisplacerNetwork();
+        this.hudDirty = true;
+        return;
+      }
       this.cancelPlayerIntent();
       return;
     }
@@ -1750,12 +2644,38 @@ export class Game {
     const zoom = this.input.takeZoom();
     if (zoom !== 0) this.world.rig.zoom(zoom);
 
+    let evadeSent = false;
+    for (const request of this.input.takeEvades()) {
+      if (this.processActiveEvasionInput(request)) {
+        evadeSent = true;
+        break;
+      }
+    }
+    const localEvasion = activeEvasionStatePresentationGate(this.latestEntities.get(this.net.playerId));
+    if (evadeSent || localEvasion?.evading) {
+      // O servidor trava estas intenções; drená-las também impede predição ou
+      // execução atrasada assim que a janela de 0,32 s terminar.
+      this.input.takeJump();
+      this.input.takeHotbarPresses();
+      this.input.takeClicks();
+      this.input.takeNpcInteract();
+      this.input.takeNpcCycle();
+      this.input.takeAutorunToggle();
+      this.input.takeMovementChanged();
+      return;
+    }
+
     if (this.input.takeJump()) {
       this.sfx.unlock();
       this.net.send({ type: 'jump', entityId: this.net.playerId });
     }
     for (const slot of this.input.takeHotbarPresses()) {
       this.triggerHotbarSlot(slot);
+    }
+    if (this.movementSuppressedForFrame) {
+      // Nao reaproveita no frame seguinte um clique de chao capturado junto do cast.
+      this.input.takeClicks();
+      return;
     }
 
     this.processKeyboardMove(dt);
@@ -1770,13 +2690,57 @@ export class Game {
         questNpcId: this.questNavigationTargetNpcId(),
         keyboardMovementActive: this.isKeyboardMovementActive(),
       });
-      if (target.npcId) this.interactWithNpc(target.npcId, this.isMovementRunning(), target.allowAutomove);
+      if (target.npcId && target.source !== 'quest') {
+        this.interactWithNpc(target.npcId, this.isMovementRunning(), target.allowAutomove);
+      } else {
+        const nearbyOre = this.nearestMineableOre();
+        if (nearbyOre) this.interactWithOreNode(nearbyOre, false);
+        else if (target.npcId) this.interactWithNpc(target.npcId, this.isMovementRunning(), target.allowAutomove);
+      }
     }
     for (const ndc of this.input.takeClicks()) this.handleClick(ndc);
     this.updateHeldGroundMove();
   }
 
+  private processActiveEvasionInput(request: EvadeInput): boolean {
+    const state = this.latestEntities.get(this.net.playerId);
+    const presentation = activeEvasionStatePresentationGate(state);
+    if (!state || !presentation?.ready) return false;
+
+    let target: Vec3Like | null = null;
+    if (request.kind === 'pointer') {
+      target = this.world.pickGround(this.world.screenRay(request.ndc))?.point ?? null;
+    } else {
+      const axes = this.input.getMoveAxes();
+      let direction = this.world.rig.getMoveDirection(axes.strafe, axes.forward);
+      if (Math.hypot(direction.x, direction.z) <= 0.0001) {
+        direction = { x: Math.sin(state.rotationY), z: Math.cos(state.rotationY) };
+      }
+      target = {
+        x: state.position.x + direction.x * ACTIVE_EVASION_MAX_DISTANCE,
+        y: this.heightForMove(
+          state.position.x + direction.x * ACTIVE_EVASION_MAX_DISTANCE,
+          state.position.z + direction.z * ACTIVE_EVASION_MAX_DISTANCE,
+        ),
+        z: state.position.z + direction.z * ACTIVE_EVASION_MAX_DISTANCE,
+      };
+    }
+    if (!target || !Number.isFinite(target.x) || !Number.isFinite(target.y) || !Number.isFinite(target.z)) return false;
+
+    this.sfx.unlock();
+    this.cancelAutomoveIntent();
+    this.autorunActive = false;
+    this.closeNpcPanels();
+    this.localAimHoldUntil = 0;
+    this.lastAttackAimPoint = null;
+    this.movementSuppressedForFrame = true;
+    this.net.send({ type: 'evade', entityId: this.net.playerId, target });
+    this.hudDirty = true;
+    return true;
+  }
+
   private processKeyboardMove(dt: number): void {
+    if (this.movementSuppressedForFrame) return;
     const autorun = autorunMoveState({
       active: this.autorunActive,
       toggleQueued: this.input.takeAutorunToggle(),
@@ -1809,8 +2773,13 @@ export class Game {
   private applyLocalPlayerMovement(dt: number): void {
     this.localPlayerMoving = false;
     this.localPlayerRunning = false;
+    if (this.movementSuppressedForFrame) return;
     const view = this.views.get(this.net.playerId);
     const state = this.latestEntities.get(this.net.playerId);
+    if (activeEvasionStatePresentationGate(state)?.evading) {
+      this.cancelAutomoveIntent();
+      return;
+    }
     if (!view || (state && !state.alive)) {
       this.cancelAutomoveIntent();
       return;
@@ -1881,8 +2850,9 @@ export class Game {
     const speed = target.run ? CLICK_MOVE_RUN_SPEED : CLICK_MOVE_WALK_SPEED;
     const arrival = clickMoveArrivalStep(distance, speed, dt, CLICK_MOVE_STOP_DISTANCE, target.path.length <= 1, target.run);
     const step = arrival.step;
-    const nx = Math.max(-this.terrain.half, Math.min(this.terrain.half, p.x + (dx / distance) * step));
-    const nz = Math.max(-this.terrain.half, Math.min(this.terrain.half, p.z + (dz / distance) * step));
+    const bound = this.activeMoveBound();
+    const nx = Math.max(-bound, Math.min(bound, p.x + (dx / distance) * step));
+    const nz = Math.max(-bound, Math.min(bound, p.z + (dz / distance) * step));
     const ny = this.zone === 'dungeon' ? this.terrain.heightAt(0, 0) : this.terrain.heightAt(nx, nz);
     const position = this.resolveLocalCollision({ x: nx, y: ny, z: nz }, { x: dx, z: dz }, p);
     setEntityPosition(view.entity, position);
@@ -1908,6 +2878,14 @@ export class Game {
     return [...npcBlockers, ...servicePropBlockers];
   }
 
+  private activeMoveBound(): number {
+    return this.zone === 'dungeon' ? DUNGEON_MOVE_BOUND : this.moveBound;
+  }
+
+  private activeNavigationBound(): number {
+    return this.zone === 'dungeon' ? DUNGEON_NAVIGATION_BOUND : this.moveBound;
+  }
+
   private heightForMove(x: number, z: number): number {
     return this.zone === 'dungeon' ? this.terrain.heightAt(0, 0) : this.terrain.heightAt(x, z);
   }
@@ -1920,7 +2898,7 @@ export class Game {
     return resolveCircularCollisions(
       { x: position.x, y: position.y, z: position.z },
       this.localNavigationBlockers(),
-      this.moveBound,
+      this.activeMoveBound(),
       LOCAL_PLAYER_COLLISION_RADIUS,
       (x, z) => this.heightForMove(x, z),
       fallbackDirection,
@@ -1938,7 +2916,7 @@ export class Game {
       { x: origin.x, y: 0, z: origin.z },
       { x: target.x, y: target.y, z: target.z },
       this.localNavigationBlockers(),
-      this.moveBound,
+      this.activeNavigationBound(),
     );
     return { x: adjusted.x, y: this.heightForMove(adjusted.x, adjusted.z), z: adjusted.z };
   }
@@ -1957,7 +2935,7 @@ export class Game {
       { x: origin.x, y: 0, z: origin.z },
       { x: target.x, y: target.y, z: target.z },
       blockers,
-      this.moveBound,
+      this.activeNavigationBound(),
     ).map((point) => ({
       x: point.x,
       y: this.heightForMove(point.x, point.z),
@@ -2041,6 +3019,7 @@ export class Game {
    * a predicao local ja faz o heroi reagir no mesmo frame.
    */
   private sendMoveCommand(target: Vec3Like, run: boolean): void {
+    if (this.movementSuppressedForFrame) return;
     if (this.elapsed - this.lastMoveCommandAt >= MOVE_COMMAND_MIN_INTERVAL) {
       this.lastMoveCommandAt = this.elapsed;
       this.queuedMoveCommand = null;
@@ -2051,6 +3030,7 @@ export class Game {
   }
 
   private flushQueuedMoveCommand(): void {
+    if (this.movementSuppressedForFrame) return;
     if (!this.queuedMoveCommand) return;
     if (this.elapsed - this.lastMoveCommandAt < MOVE_COMMAND_MIN_INTERVAL) return;
     // Durante o pulo o servidor descarta 'move'; espera aterrissar para nao perder o alvo.
@@ -2127,6 +3107,35 @@ export class Game {
       const chest = this.chestViews.get(pending.id);
       if (!chest || chest.opened) targetAvailable = false;
     }
+    if (pending.kind === 'ore') {
+      const ore = this.oreNodeViews.get(pending.id);
+      if (!ore || ore.state.depleted) targetAvailable = false;
+    }
+    if (pending.kind === 'displacer') {
+      const displacer = this.displacerViews.get(pending.id);
+      if (!displacer || displacer.state.zone !== this.zone) targetAvailable = false;
+    }
+    if (pending.kind === 'treasure') {
+      const treasure = this.treasureLodeState;
+      if (!treasure || !treasure.rewardReady || !treasure.canClaim) targetAvailable = false;
+    }
+    if (pending.kind === 'utraean-console') {
+      if (this.utraeanRelayState?.phase !== 'dormant') targetAvailable = false;
+    }
+    if (pending.kind === 'utraean-rune') {
+      const relay = this.utraeanRelayState;
+      if (!relay || relay.phase !== 'active' || relay.guardianActive || !relay.participant || !relay.runes.some((rune) => rune.id === pending.id)) {
+        targetAvailable = false;
+      }
+    }
+    if (pending.kind === 'utraean-chest') {
+      const relay = this.utraeanRelayState;
+      if (!relay || relay.phase !== 'reward' || !relay.canClaim) targetAvailable = false;
+    }
+    if (pending.kind === 'revive') {
+      const target = this.latestEntities.get(pending.id);
+      if (!target || target.kind !== 'player' || target.alive) targetAvailable = false;
+    }
     if (pending.kind === 'npc') {
       const npc = this.npcViews.get(pending.id);
       if (!npc || npc.definition.zone !== this.zone) targetAvailable = false;
@@ -2178,6 +3187,21 @@ export class Game {
       return;
     }
 
+    if (pending.kind === 'ore' && this.miningState.cooldownRemaining > 0.06) {
+      const wasMoving = !!this.clickMoveTarget || !!this.queuedMoveCommand;
+      this.clickMoveTarget = null;
+      this.queuedMoveCommand = null;
+      if (wasMoving && p) this.sendMoveCommand({ x: p.x, y: 0, z: p.z }, false);
+      return;
+    }
+
+    if (pending.kind === 'displacer') {
+      const displacer = this.displacerViews.get(pending.id);
+      // A permissao e autoritativa. Ao chegar por predicao local, aguarda o
+      // primeiro snapshot que marque esta ancora como a atual.
+      if (displacer && !displacer.state.current) return;
+    }
+
     this.pendingInteraction = null;
     this.clickMoveTarget = null;
     this.queuedMoveCommand = null;
@@ -2190,6 +3214,22 @@ export class Game {
     if (pending.kind === 'loot') {
       this.sfx.play('pickup');
       this.net.send({ type: 'collect', entityId: this.net.playerId, lootId: pending.id });
+    } else if (pending.kind === 'ore') {
+      this.mineOreNode(pending.id);
+    } else if (pending.kind === 'displacer') {
+      this.activateOrOpenDisplacer(pending.id);
+    } else if (pending.kind === 'treasure') {
+      this.claimTreasureLode();
+    } else if (pending.kind === 'utraean-console') {
+      this.activateUtraeanConsole();
+    } else if (pending.kind === 'utraean-rune') {
+      const rune = this.utraeanRelayState?.runes.find((candidate) => candidate.id === pending.id);
+      if (rune) this.activateUtraeanRune(rune);
+    } else if (pending.kind === 'utraean-chest') {
+      this.claimUtraeanRelay();
+    } else if (pending.kind === 'revive') {
+      this.prepareStationarySkillCast();
+      this.net.send({ type: 'revive-player', entityId: this.net.playerId, targetPlayerId: pending.id });
     } else {
       this.sfx.play('chest');
       this.net.send({ type: 'open-chest', entityId: this.net.playerId, chestId: pending.id });
@@ -2204,6 +3244,292 @@ export class Game {
     return Math.hypot(x - p.x, z - p.z);
   }
 
+  private requestCooperativeRevive(targetPlayerId: string): void {
+    const target = this.latestEntities.get(targetPlayerId);
+    const local = this.latestEntities.get(this.net.playerId);
+    if (!target || target.kind !== 'player' || target.alive || local?.alive !== true) {
+      this.hud.pushSystemMessage('Este aliado não está disponível para reanimação.');
+      return;
+    }
+    const range = COOPERATIVE_REVIVE_RANGE - 0.35;
+    if (this.localPlayerDistanceTo(target.position.x, target.position.z) > range) {
+      this.beginPendingInteraction({
+        kind: 'revive', id: target.id,
+        x: target.position.x, y: target.position.y, z: target.position.z,
+        range,
+      });
+      return;
+    }
+    this.prepareStationarySkillCast();
+    this.net.send({ type: 'revive-player', entityId: this.net.playerId, targetPlayerId });
+  }
+
+  private interactWithOreNode(nodeId: string, allowClickAutomove: boolean): void {
+    const view = this.oreNodeViews.get(nodeId);
+    if (!view || view.state.depleted || this.zone !== 'overworld') return;
+    if (!this.canMineOreNode(view.state, true)) return;
+    const target = view.state.position;
+    const interactionRange = Math.max(0.75, view.state.interactRange - ORE_INTERACT_SAFETY_MARGIN);
+    if (this.localPlayerDistanceTo(target.x, target.z) > interactionRange) {
+      if (!allowClickAutomove) {
+        this.setSelectedNpc(null);
+        return;
+      }
+      this.setSelectedNpc(null);
+      this.setSelectedEnemy(null);
+      this.closeNpcPanels();
+      this.beginPendingInteraction({
+        kind: 'ore',
+        id: nodeId,
+        x: target.x,
+        y: target.y,
+        z: target.z,
+        range: interactionRange,
+      });
+      return;
+    }
+    this.setSelectedNpc(null);
+    this.setSelectedEnemy(null);
+    this.cancelAutomoveIntent();
+    this.closeNpcPanels();
+    this.mineOreNode(nodeId);
+  }
+
+  private interactWithDisplacer(nodeId: string, allowClickAutomove: boolean): void {
+    const view = this.displacerViews.get(nodeId);
+    if (!view || view.state.zone !== this.zone) return;
+    const state = view.state;
+    const range = Math.max(0.75, state.interactRange - 0.15);
+    if (this.localPlayerDistanceTo(state.position.x, state.position.z) > range || !state.current) {
+      if (!allowClickAutomove) {
+        this.setSelectedNpc(null);
+        return;
+      }
+      this.closeNpcPanels();
+      this.setSelectedNpc(null);
+      this.setSelectedEnemy(null);
+      this.beginPendingInteraction({
+        kind: 'displacer',
+        id: state.id,
+        x: state.position.x,
+        y: state.position.y,
+        z: state.position.z,
+        range,
+      });
+      return;
+    }
+    this.cancelAutomoveIntent();
+    this.closeNpcPanels();
+    this.activateOrOpenDisplacer(nodeId);
+  }
+
+  private activateOrOpenDisplacer(nodeId: string): void {
+    const state = this.displacerViews.get(nodeId)?.state;
+    if (!state || state.zone !== this.zone || !state.current) return;
+    if (state.canActivate) {
+      this.sfx.play('arcane-nova');
+      this.net.send({ type: 'activate-displacer', entityId: this.net.playerId, nodeId });
+      return;
+    }
+    if (state.activated) {
+      this.sfx.play('ui');
+      this.hud.showDisplacerNetwork(this.displacerStates, state.id, this.difficultyState);
+      this.hudDirty = true;
+      return;
+    }
+    this.hud.pushSystemMessage(state.lockedReason || `Nível ${state.requiredLevel} necessário para estabilizar esta âncora.`);
+  }
+
+  private interactWithTreasureLode(allowClickAutomove: boolean): void {
+    const state = this.treasureLodeState;
+    if (!state || !state.rewardReady) return;
+    if (!state.canClaim) {
+      this.hud.pushSystemMessage(state.lockedReason || 'O cofre está reservado aos defensores da jazida.');
+      return;
+    }
+    const range = Math.max(0.75, state.chestInteractRange - 0.15);
+    if (this.localPlayerDistanceTo(state.chestPosition.x, state.chestPosition.z) > range) {
+      if (!allowClickAutomove) return;
+      this.closeNpcPanels();
+      this.setSelectedNpc(null);
+      this.setSelectedEnemy(null);
+      this.beginPendingInteraction({
+        kind: 'treasure', id: state.id,
+        x: state.chestPosition.x, y: state.chestPosition.y, z: state.chestPosition.z, range,
+      });
+      return;
+    }
+    this.cancelAutomoveIntent();
+    this.closeNpcPanels();
+    this.claimTreasureLode();
+  }
+
+  private claimTreasureLode(): void {
+    const state = this.treasureLodeState;
+    if (!state?.canClaim || !state.rewardReady) return;
+    this.sfx.play('chest');
+    this.net.send({ type: 'claim-treasure-lode', entityId: this.net.playerId });
+  }
+
+  private interactWithUtraeanConsole(allowClickAutomove: boolean): void {
+    const state = this.utraeanRelayState;
+    if (!state) return;
+    if (state.phase !== 'dormant') {
+      this.hud.pushSystemMessage(state.lockedReason || 'O circuito não pode ser ativado agora.');
+      return;
+    }
+    const range = Math.max(0.75, state.consoleInteractRange - 0.15);
+    if (this.localPlayerDistanceTo(state.center.x, state.center.z) > range) {
+      if (!allowClickAutomove) return;
+      this.closeNpcPanels();
+      this.beginPendingInteraction({
+        kind: 'utraean-console', id: state.id,
+        x: state.center.x, y: state.center.y, z: state.center.z, range,
+      });
+      return;
+    }
+    this.cancelAutomoveIntent();
+    this.closeNpcPanels();
+    this.activateUtraeanConsole();
+  }
+
+  private activateUtraeanConsole(): void {
+    if (this.utraeanRelayState?.phase !== 'dormant') return;
+    this.sfx.play('arcane-nova');
+    this.net.send({ type: 'start-utraean-relay', entityId: this.net.playerId });
+  }
+
+  private interactWithUtraeanRune(rune: UtraeanRuneState, allowClickAutomove: boolean): void {
+    const state = this.utraeanRelayState;
+    if (!state || state.phase !== 'active') return;
+    if (state.guardianActive) {
+      this.hud.pushSystemMessage(state.lockedReason || 'Derrote o Sentinela para liberar as runas.');
+      return;
+    }
+    if (!state.participant) {
+      this.hud.pushSystemMessage(state.lockedReason || 'A tentativa atual pertence ao grupo que ativou o console.');
+      return;
+    }
+    const range = 3.05;
+    if (this.localPlayerDistanceTo(rune.position.x, rune.position.z) > range) {
+      if (!allowClickAutomove) return;
+      this.closeNpcPanels();
+      this.beginPendingInteraction({
+        kind: 'utraean-rune', id: rune.id,
+        x: rune.position.x, y: rune.position.y, z: rune.position.z, range,
+      });
+      return;
+    }
+    this.cancelAutomoveIntent();
+    this.closeNpcPanels();
+    this.activateUtraeanRune(rune);
+  }
+
+  private activateUtraeanRune(rune: UtraeanRuneState): void {
+    if (this.utraeanRelayState?.phase !== 'active' || !this.utraeanRelayState.participant) return;
+    this.sfx.play(rune.current ? 'arcane-nova' : 'ui');
+    this.net.send({ type: 'activate-utraean-rune', entityId: this.net.playerId, nodeId: rune.id });
+  }
+
+  private interactWithUtraeanChest(allowClickAutomove: boolean): void {
+    const state = this.utraeanRelayState;
+    if (!state || state.phase !== 'reward') return;
+    if (!state.canClaim) {
+      this.hud.pushSystemMessage(state.lockedReason || 'O cofre não reconhece este personagem.');
+      return;
+    }
+    const range = Math.max(0.75, state.chestInteractRange - 0.15);
+    if (this.localPlayerDistanceTo(state.chestPosition.x, state.chestPosition.z) > range) {
+      if (!allowClickAutomove) return;
+      this.closeNpcPanels();
+      this.beginPendingInteraction({
+        kind: 'utraean-chest', id: state.id,
+        x: state.chestPosition.x, y: state.chestPosition.y, z: state.chestPosition.z, range,
+      });
+      return;
+    }
+    this.cancelAutomoveIntent();
+    this.closeNpcPanels();
+    this.claimUtraeanRelay();
+  }
+
+  private claimUtraeanRelay(): void {
+    if (this.utraeanRelayState?.phase !== 'reward' || !this.utraeanRelayState.canClaim) return;
+    this.sfx.play('chest');
+    this.net.send({ type: 'claim-utraean-relay', entityId: this.net.playerId });
+  }
+
+  private mineOreNode(nodeId: string): void {
+    const view = this.oreNodeViews.get(nodeId);
+    if (!view || view.state.depleted) return;
+    if (!this.canMineOreNode(view.state, true)) {
+      if (this.pendingInteraction?.kind === 'ore' && this.pendingInteraction.id === nodeId) {
+        this.pendingInteraction = null;
+      }
+      return;
+    }
+    if (this.miningState.cooldownRemaining > 0.06) {
+      const node = view.state;
+      this.pendingInteraction = {
+        kind: 'ore',
+        id: nodeId,
+        x: node.position.x,
+        y: node.position.y,
+        z: node.position.z,
+        range: Math.max(0.75, node.interactRange - ORE_INTERACT_SAFETY_MARGIN),
+      };
+      this.hudDirty = true;
+      return;
+    }
+    this.lastAttackAimPoint = { ...view.state.position };
+    this.localAimHoldUntil = Math.max(this.localAimHoldUntil, this.elapsed + this.miningState.cooldown);
+    this.sfx.play('hit-physical');
+    const triggersTreasureLode = this.treasureLodeState?.nodeId === nodeId
+      && this.treasureLodeState.phase === 'dormant';
+    if (!triggersTreasureLode) {
+      this.miningState = {
+        ...this.miningState,
+        cooldownRemaining: this.miningState.cooldown,
+        lastNodeId: nodeId,
+      };
+    }
+    this.net.send({ type: 'mine-ore', entityId: this.net.playerId, nodeId });
+  }
+
+  private canMineOreNode(node: OreNodeState, showFeedback = false): boolean {
+    const requiredLevel = Math.max(1, node.requiredLevel || ORE_REQUIRED_LEVEL[node.kind]);
+    const currentLevel = this.professions.mining.level;
+    if (currentLevel < requiredLevel) {
+      if (showFeedback) {
+        this.sfx.play('ui');
+        this.hud.pushSystemMessage(
+          `${ORE_NODE_NAMES[node.kind]} requer Mineração Nv ${requiredLevel}. Seu nível atual é ${currentLevel}.`,
+        );
+      }
+      return false;
+    }
+    const requiredToolTier = Math.max(0, node.requiredToolTier ?? 0);
+    if (this.miningState.tool.tier < requiredToolTier) {
+      if (showFeedback) {
+        this.sfx.play('ui');
+        this.hud.pushSystemMessage(
+          `${node.rich ? 'Veio Rico' : ORE_NODE_NAMES[node.kind]} requer ${miningToolForTier(requiredToolTier).label}. `
+          + `Equipe-a permanentemente forjando com Borin.`,
+        );
+      }
+      return false;
+    }
+    const treasure = this.treasureLodeState;
+    if (treasure?.nodeId === node.id && (treasure.phase === 'wave' || treasure.phase === 'intermission')) {
+      if (showFeedback) {
+        this.sfx.play('ui');
+        this.hud.pushSystemMessage(treasure.lockedReason || 'Derrote a emboscada antes de minerar a jazida.');
+      }
+      return false;
+    }
+    return true;
+  }
+
   private npcApproachPoint(view: NpcView): Vec3Like {
     const npc = entityPosition(view.entity);
     const player = this.views.get(this.net.playerId)?.entity;
@@ -2214,7 +3540,7 @@ export class Game {
       rotationY: view.definition.rotationY,
       interactRange: view.definition.interactRange,
       blockers: this.localNavigationBlockers(),
-      bound: this.moveBound,
+      bound: this.activeNavigationBound(),
       preferFacing: true,
     });
     return { x: approach.x, y: this.heightForMove(approach.x, approach.z), z: approach.z };
@@ -2267,14 +3593,14 @@ export class Game {
     );
   }
 
-  /** Dispara a acao que ocupa o slot (1-6) no layout atual da hotbar. */
+  /** Dispara a acao que ocupa o slot (1-8) no layout atual da hotbar. */
   private triggerHotbarSlot(slot: number): void {
     const action = this.hotbarLayout[slot - 1];
     if (!action) return;
     this.triggerHotbarAction(action);
   }
 
-  /** Executa uma acao da hotbar (via tecla 1-6 ou clique no slot). */
+  /** Executa uma acao da hotbar (via tecla 1-8 ou clique no slot). */
   private triggerHotbarAction(action: HotbarAction): void {
     switch (action) {
       case 'potion':
@@ -2287,47 +3613,197 @@ export class Game {
         return;
       case 'arcane-nova':
         this.sfx.unlock();
-        this.net.send({ type: 'cast-skill', entityId: this.net.playerId, skill: 'arcane-nova' });
+        this.castCatalogSkill('arcane-nova');
+        return;
+      case 'arcane-bolt':
+        this.sfx.unlock();
+        this.castCatalogSkill('arcane-bolt', 'Selecione um inimigo para Dardo Arcano.');
+        return;
+      case 'bulwark-call':
+        this.sfx.unlock();
+        this.castCatalogSkill('bulwark-call');
+        return;
+      case 'storm-orb':
+        this.sfx.unlock();
+        this.castCatalogSkill('storm-orb');
+        return;
+      case 'feral-form':
+        this.sfx.unlock();
+        this.castCatalogSkill('feral-form');
+        return;
+      case 'root-snare':
+        this.sfx.unlock();
+        this.castCatalogSkill('root-snare');
+        return;
+      case 'chain-lightning':
+        this.sfx.unlock();
+        this.castCatalogSkill('chain-lightning', 'Selecione um inimigo para Relâmpago Encadeado.');
+        return;
+      case 'renewal-wave':
+        this.sfx.unlock();
+        this.castCatalogSkill('renewal-wave');
+        return;
+      case 'phase-step':
+        this.sfx.unlock();
+        this.castCatalogSkill('phase-step');
+        return;
+      case 'nature-spirit':
+        this.sfx.unlock();
+        this.castCatalogSkill('nature-spirit');
         return;
       case 'war-cry':
         this.sfx.unlock();
-        this.net.send({ type: 'cast-skill', entityId: this.net.playerId, skill: 'war-cry' });
+        this.castCatalogSkill('war-cry');
         return;
       case 'heavy-strike':
-        this.castTargetedSkill('heavy-strike', 'Selecione um inimigo para Golpe Pesado.');
+        this.sfx.unlock();
+        this.castCatalogSkill('heavy-strike', 'Selecione um inimigo para Golpe Pesado.');
         return;
       case 'charge':
-        this.castTargetedSkill('charge', 'Selecione um inimigo para Investida.');
+        this.sfx.unlock();
+        this.castCatalogSkill('charge', 'Selecione um inimigo para Investida.');
+        return;
+      case 'steel-sweep':
+        this.sfx.unlock();
+        this.castCatalogSkill('steel-sweep');
+        return;
+      case 'iron-guard':
+        this.sfx.unlock();
+        this.castCatalogSkill('iron-guard');
         return;
     }
   }
 
-  private castTargetedSkill(skill: 'heavy-strike' | 'charge', missingTargetMessage: string): void {
-    this.sfx.unlock();
+  /** Espelha o requisito do servidor para dar feedback imediato ao jogador. */
+  private hasEquippedPhysicalWeapon(): boolean {
+    return (['weapon', 'offhand'] as const).some((slot) => {
+      const itemId = this.cachedEquipment[slot];
+      const item = itemId ? this.cachedInventory.find((candidate) => candidate.id === itemId) : undefined;
+      return item ? isWeaponKind(item.kind) : false;
+    });
+  }
+
+  /**
+   * Guarda de Ferro precisa nascer parada. Limpa rotas e coalescing antes do
+   * envio do cast e fecha somente o frame atual para predicao/comandos move.
+   */
+  private prepareStationarySkillCast(): void {
+    const plan = stationarySkillMovementPlan({
+      clickMoveActive: this.clickMoveTarget !== null,
+      pendingInteractionActive: this.pendingInteraction !== null,
+      heldGroundMoveActive: this.heldGroundMoveActive,
+      queuedMoveActive: this.queuedMoveCommand !== null,
+      autorunActive: this.autorunActive,
+    });
+    if (plan.clearClickMove) this.clickMoveTarget = null;
+    if (plan.clearPendingInteraction) this.pendingInteraction = null;
+    if (plan.clearHeldGroundMove) this.heldGroundMoveActive = false;
+    if (plan.clearQueuedMove) this.queuedMoveCommand = null;
+    if (plan.clearAutorun) this.autorunActive = false;
+    this.keyboardMove.reset();
+    this.movementSuppressedForFrame = plan.suppressMovementForFrame;
+    this.hudDirty = true;
+  }
+
+  /**
+   * Usa os metadados normalizados do wire apenas para UX de alvo/movimento.
+   * Mana, cooldown, alcance, acerto e ganho de maestria permanecem autoritativos.
+   */
+  private castCatalogSkill(skillId: SkillId, missingTargetMessage?: string): void {
+    const player = this.latestEntities.get(this.net.playerId);
+    const skill = catalogSkill(player?.skills, skillId);
+    if (!skill) {
+      this.hud.pushSystemMessage('Essa habilidade não foi anunciada pelo servidor.');
+      return;
+    }
     const targetId = this.selectedEnemyId;
     const target = targetId ? this.latestEntities.get(targetId) : undefined;
-    if (targetId && target?.alive && target.kind === 'enemy') {
+    const groundTarget = skill.targetMode === 'ground'
+      ? this.world.pickGround(this.world.screenRay(this.input.pointer))?.point ?? null
+      : null;
+    const plan = skillCastPlan(skill, {
+      selectedTargetId: targetId,
+      selectedTargetIsAliveEnemy: target?.alive === true && target.kind === 'enemy',
+      groundTargetAvailable: groundTarget !== null,
+      hasPhysicalWeapon: this.hasEquippedPhysicalWeapon(),
+      movementInterruptionPlausible: player?.alive === true
+        && player?.jumping !== true
+        && skill.cooldownRemaining <= 0.05
+        && (player?.mana ?? 0) >= skill.manaCost,
+    });
+    if (!plan.allowed) {
+      const message = plan.failure === 'temporarily-blocked'
+        ? plan.failureReason ?? `${skill.label} está bloqueada temporariamente.`
+        : plan.failure === 'physical-weapon-required'
+        ? `Equipe uma arma física para usar ${skill.label}.`
+        : plan.failure === 'ground-target-required'
+          ? `Aponte para o chão para usar ${skill.label}.`
+        : missingTargetMessage ?? `Selecione um inimigo para usar ${skill.label}.`;
+      this.hud.pushSystemMessage(message);
+      return;
+    }
+    if (plan.clearMovement) this.prepareStationarySkillCast();
+    if (plan.targetId && target) {
       this.lastAttackAimPoint = target.position;
       // Um move coalescido pendente cancelaria a skill armada 1 frame depois.
       this.queuedMoveCommand = null;
-      this.net.send({ type: 'cast-skill', entityId: this.net.playerId, skill, targetId });
-    } else {
-      this.hud.pushSystemMessage(missingTargetMessage);
     }
+    if (groundTarget) {
+      this.lastAttackAimPoint = groundTarget;
+      this.queuedMoveCommand = null;
+      this.showMarker(groundTarget.x, groundTarget.y, groundTarget.z, 'interact');
+    }
+    const sweepAim = plan.skill === 'steel-sweep'
+      ? target?.alive === true && target.kind === 'enemy'
+        ? target.position
+        : this.lastAttackAimPoint
+      : null;
+    this.net.send({
+      type: 'cast-skill',
+      entityId: this.net.playerId,
+      skill: plan.skill,
+      ...(plan.targetId ? { targetId: plan.targetId } : {}),
+      ...(sweepAim && Number.isFinite(sweepAim.x) && Number.isFinite(sweepAim.y) && Number.isFinite(sweepAim.z)
+        ? { target: { x: sweepAim.x, y: sweepAim.y, z: sweepAim.z } }
+        : {}),
+      ...(groundTarget && Number.isFinite(groundTarget.x) && Number.isFinite(groundTarget.y) && Number.isFinite(groundTarget.z)
+        ? { target: { x: groundTarget.x, y: groundTarget.y, z: groundTarget.z } }
+        : {}),
+    });
   }
 
   /** Troca as posicoes de duas acoes da hotbar (drag & drop) e persiste. */
   private swapHotbarSlots(from: HotbarAction, to: HotbarAction): void {
-    const a = this.hotbarLayout.indexOf(from);
-    const b = this.hotbarLayout.indexOf(to);
-    if (a < 0 || b < 0 || a === b) return;
-    [this.hotbarLayout[a], this.hotbarLayout[b]] = [this.hotbarLayout[b], this.hotbarLayout[a]];
-    try {
-      window.localStorage.setItem(HOTBAR_LAYOUT_STORAGE_KEY, JSON.stringify(this.hotbarLayout));
-    } catch {
-      // Persistencia opcional.
-    }
+    const next = swapHotbarActions(this.hotbarLayout, from, to);
+    if (!next) return;
+    this.hotbarLayout = next;
+    persistHotbarLoadout(window.localStorage, this.hotbarLayout);
     this.hud.setHotbarLayout(this.hotbarLayout);
+    this.sfx.play('ui');
+  }
+
+  /** Somente um catalogo wire completo pode retirar uma skill persistida. */
+  private reconcileHotbarFromSkillCatalog(skills: unknown): void {
+    const announced = announcedSkillIdsFromWire(skills);
+    if (!announced) return;
+    const next = reconcileHotbarLoadout(this.hotbarLayout, announced);
+    const changed = next.some((action, index) => action !== this.hotbarLayout[index]);
+    this.announcedSkillIds = announced;
+    if (!changed) return;
+    this.hotbarLayout = next;
+    persistHotbarLoadout(window.localStorage, next);
+    this.hud.setHotbarLayout(next);
+    this.hudDirty = true;
+  }
+
+  private equipHotbarSkill(skill: SkillId, replace: SkillId): void {
+    if (!this.announcedSkillIds) return;
+    const next = replaceHotbarSkill(this.hotbarLayout, skill, replace, this.announcedSkillIds);
+    if (!next) return;
+    this.hotbarLayout = next;
+    persistHotbarLoadout(window.localStorage, next);
+    this.hud.setHotbarLayout(next);
+    this.hudDirty = true;
     this.sfx.play('ui');
   }
 
@@ -2382,23 +3858,46 @@ export class Game {
     this.issueGroundMove(ground.point, playerPos);
   }
 
+  private updateLootTooltip(snapshot: WorldSnapshot): void {
+    const rect = this.canvas.getBoundingClientRect();
+    const clientX = rect.left+(this.input.pointer.x+1)*0.5*rect.width;
+    const clientY = rect.top+(1-this.input.pointer.y)*0.5*rect.height;
+    const topElement = document.elementFromPoint(clientX, clientY);
+    if (!this.canvas.matches(':hover') || topElement !== this.canvas) {
+      this.hud.hideWorldItemTooltip();
+      return;
+    }
+
+    const ray = this.world.screenRay(this.input.pointer);
+    // Mantem a mesma prioridade do clique: um inimigo vivo em cima do drop
+    // continua sendo o foco de combate, nao abre um tooltip concorrente.
+    if (this.pickEnemyForRay(ray, true)) {
+      this.hud.hideWorldItemTooltip();
+      return;
+    }
+    const lootPick = rayPickBest(
+      ray,
+      this.lootViews.entries(),
+      ([, view]) => {
+        const p = entityPosition(view.entity);
+        return { x: p.x, y: p.y+0.44, z: p.z };
+      },
+      () => LOOT_CLICK_RADIUS,
+    );
+    const item = lootPick ? snapshot.loot.find((candidate) => candidate.id === lootPick[0]) : undefined;
+    if (!item) {
+      this.hud.hideWorldItemTooltip();
+      return;
+    }
+    this.hud.showWorldItemTooltip(item, clientX, clientY);
+  }
+
   private handleClick(ndc: PointerNdc): void {
     this.heldGroundMoveActive = false;
     this.hud.hidePlayerContextMenu();
     this.sfx.unlock();
     const ray = this.world.screenRay(ndc);
     const allowClickAutomove = canStartClickAutomove({ keyboardMovementActive: this.isKeyboardMovementActive() });
-    const portal = this.world.pickPortal(ray);
-    if (portal) {
-      this.setSelectedNpc(null);
-      this.setSelectedEnemy(null);
-      this.cancelAutomoveIntent();
-      this.closeNpcPanels();
-      this.sfx.play('arcane-nova');
-      this.net.send({ type: portal, entityId: this.net.playerId });
-      return;
-    }
-
     const npcPick = rayPickBest(
       ray,
       [...this.npcViews.entries()].filter(([, view]) => view.definition.zone === this.zone),
@@ -2412,6 +3911,48 @@ export class Game {
       const [id] = npcPick;
       this.interactWithNpc(id, this.isMovementRunning(), allowClickAutomove);
       return;
+    }
+
+    const relay = this.utraeanRelayState;
+    if (relay?.phase === 'reward') {
+      const hit = distanceRayToPoint(ray, {
+        x: relay.chestPosition.x,
+        y: relay.chestPosition.y + 0.62,
+        z: relay.chestPosition.z,
+      });
+      if (hit.distanceSq <= 1.2 * 1.2) {
+        this.interactWithUtraeanChest(allowClickAutomove);
+        return;
+      }
+    } else if (relay?.phase === 'dormant') {
+      const hit = distanceRayToPoint(ray, { x: relay.center.x, y: relay.center.y + 0.72, z: relay.center.z });
+      if (hit.distanceSq <= 1.35 * 1.35) {
+        this.interactWithUtraeanConsole(allowClickAutomove);
+        return;
+      }
+    } else if (relay?.phase === 'active') {
+      let runePick: { rune: UtraeanRuneState; t: number } | null = null;
+      for (const rune of relay.runes) {
+        const hit = distanceRayToPoint(ray, { x: rune.position.x, y: rune.position.y + 1.25, z: rune.position.z });
+        if (hit.distanceSq <= 1.25 * 1.25 && (!runePick || hit.t < runePick.t)) runePick = { rune, t: hit.t };
+      }
+      if (runePick) {
+        this.interactWithUtraeanRune(runePick.rune, allowClickAutomove);
+        return;
+      }
+    }
+
+    const treasure = this.treasureLodeState;
+    if (treasure?.rewardReady) {
+      const hit = distanceRayToPoint(ray, {
+        x: treasure.chestPosition.x,
+        y: treasure.chestPosition.y + 0.58,
+        z: treasure.chestPosition.z,
+      });
+      if (hit.distanceSq <= 1.15 * 1.15) {
+        this.interactWithTreasureLode(allowClickAutomove);
+        return;
+      }
     }
 
     const chestPick = rayPickBest(
@@ -2444,6 +3985,33 @@ export class Game {
       this.pendingInteraction = null;
       this.sfx.play('chest');
       this.net.send({ type: 'open-chest', entityId: this.net.playerId, chestId: id });
+      return;
+    }
+
+    const displacerPick = rayPickBest(
+      ray,
+      [...this.displacerViews.entries()].filter(([, view]) => view.state.zone === this.zone),
+      ([, view]) => {
+        const p = view.state.position;
+        return { x: p.x, y: p.y + 1.15, z: p.z };
+      },
+      () => 1.25,
+    );
+    if (displacerPick) {
+      this.interactWithDisplacer(displacerPick[0], allowClickAutomove);
+      return;
+    }
+
+    // NPCs e baus ganham do portal: Riven e o bau profundo ficam perto da
+    // saida e nao podem ter seu clique capturado pelo grande volume do veu.
+    const portal = this.world.pickPortal(ray);
+    if (portal) {
+      this.setSelectedNpc(null);
+      this.setSelectedEnemy(null);
+      this.cancelAutomoveIntent();
+      this.closeNpcPanels();
+      this.sfx.play('arcane-nova');
+      this.net.send({ type: portal, entityId: this.net.playerId });
       return;
     }
 
@@ -2497,6 +4065,20 @@ export class Game {
       this.pendingInteraction = null;
       this.sfx.play('pickup');
       this.net.send({ type: 'collect', entityId: this.net.playerId, lootId: id });
+      return;
+    }
+
+    const orePick = rayPickBest(
+      ray,
+      [...this.oreNodeViews.entries()].filter(([, view]) => !view.state.depleted),
+      ([, view]) => {
+        const p = entityPosition(view.visual.root);
+        return { x: p.x, y: p.y + 0.56, z: p.z };
+      },
+      () => ORE_CLICK_RADIUS,
+    );
+    if (orePick) {
+      this.interactWithOreNode(orePick[0], allowClickAutomove);
       return;
     }
 
@@ -2575,6 +4157,54 @@ export class Game {
       this.heldGroundMoveActive = this.input.isPrimaryActionDown();
       this.lastHeldAttackCommandAt = this.elapsed;
       return;
+    }
+
+    const closeOre = this.findOreNear(ground.point);
+    if (closeOre) {
+      this.interactWithOreNode(closeOre, allowClickAutomove);
+      return;
+    }
+
+    const closeDisplacer = this.findDisplacerNear(ground.point);
+    if (closeDisplacer) {
+      this.interactWithDisplacer(closeDisplacer, allowClickAutomove);
+      return;
+    }
+
+    if (this.treasureLodeState?.rewardReady && Math.hypot(
+      ground.point.x - this.treasureLodeState.chestPosition.x,
+      ground.point.z - this.treasureLodeState.chestPosition.z,
+    ) < 1.7) {
+      this.interactWithTreasureLode(allowClickAutomove);
+      return;
+    }
+
+    if (this.utraeanRelayState) {
+      const state = this.utraeanRelayState;
+      if (state.phase === 'reward' && Math.hypot(
+        ground.point.x - state.chestPosition.x,
+        ground.point.z - state.chestPosition.z,
+      ) < 1.7) {
+        this.interactWithUtraeanChest(allowClickAutomove);
+        return;
+      }
+      if (state.phase === 'dormant' && Math.hypot(
+        ground.point.x - state.center.x,
+        ground.point.z - state.center.z,
+      ) < 1.7) {
+        this.interactWithUtraeanConsole(allowClickAutomove);
+        return;
+      }
+      if (state.phase === 'active') {
+        const rune = state.runes.find((candidate) => Math.hypot(
+          ground.point.x - candidate.position.x,
+          ground.point.z - candidate.position.z,
+        ) < 1.7);
+        if (rune) {
+          this.interactWithUtraeanRune(rune, allowClickAutomove);
+          return;
+        }
+      }
     }
 
     if (!allowClickAutomove) {
@@ -2674,13 +4304,34 @@ export class Game {
 
       if (view.healthBar) {
         const p = entityPosition(view.entity);
-        view.healthBar.setHealth(e.hp, e.maxHp, e.level, e.kind === 'player' ? e.name : '');
+        const runicElite = e.kind === 'enemy' ? runicElitePresentationGate(e) : null;
+        const difficultyModifiers = e.kind === 'enemy'
+          ? difficultyModifiersPresentationGate(e, this.difficultyState) ?? []
+          : [];
+        const enemyName = difficultyModifiers.length > 0
+          ? `${runicElite?.targetName ?? enemyPresentationForVariant(e.enemyVariant).targetName} · ${this.difficultyState.label}`
+          : runicElite?.targetName ?? '';
+        view.healthBar.setHealth(e.hp, e.maxHp, e.level, e.kind === 'player' ? e.name : enemyName);
         view.healthBar.setWorldPosition(p.x, p.y + ENEMY_HEALTH_BAR_HEIGHT * visualScale, p.z);
         view.healthBar.update(this.world, e.alive);
       }
 
-      if (e.kind === 'player') this.ensureHero(view, e);
-      else this.ensureZombie(view);
+      if (e.kind === 'player') {
+        this.ensureHero(view, e);
+      } else {
+        view.enemyVariant = enemyPresentationForVariant(e.enemyVariant).variant;
+        this.ensureZombie(view);
+        this.syncEnemyPresentation(view, view.enemyVariant);
+      }
+      this.syncRunicEliteVisual(view, e);
+      this.syncDifficultyAffixVisual(view, e);
+      this.syncAshVeilStatus(view, e, entities);
+      this.syncRuinExposedStatus(view, e, entities);
+      this.syncBossSealPhaseVisual(view, e);
+      this.syncArcaneResonanceStatus(view, e, entities);
+      this.syncStormOrbVisual(view, e);
+      this.syncFeralFormVisual(view, e);
+      this.syncReviveProtectionVisual(view, e);
       this.syncViewEquipment(view, this.visibleWeaponFor(e));
       if (e.kind === 'player') this.syncViewGearExtras(view, e);
     }
@@ -2688,11 +4339,23 @@ export class Game {
     for (const [id, view] of this.views) {
       if (seen.has(id)) continue;
       view.healthBar?.dispose();
+      this.clearEnemySpecialVisuals(view);
+      this.clearAshVeilVisual(view);
+      this.clearRuinExposedVisual(view);
+      this.clearBossSealPhaseVisual(view);
+      this.clearRunicEliteVisual(view);
+      this.clearDifficultyAffixVisual(view);
+      this.clearArcaneResonanceVisual(view);
+      this.clearStormOrbVisual(view);
+      this.clearFeralFormVisual(view);
+      this.clearReviveProtectionVisual(view);
+      this.clearGuardianRetaliationVisual(view);
       destroyEntity(view.entity);
       this.views.delete(id);
       this.enemyHp.delete(id);
     }
     this.hud.syncPlayerContextTargets(availablePlayerContextIds);
+    this.syncGuardianRetaliationTargetVisuals(entities);
   }
 
   private createView(e: EntityState): View {
@@ -2702,11 +4365,25 @@ export class Game {
     const local = e.id === this.net.playerId;
     const fallback = e.kind === 'player'
       ? this.world.createFallbackCharacter('player-fallback', local ? 0x3b82f6 : 0x2f9f68, 0xf2c79b)
-      : this.world.createFallbackCharacter('enemy-fallback', 0xb33a3a, 0x7a2222);
+      : isAshCorruptorVariant(e.enemyVariant)
+        ? this.world.createFallbackCharacter('enemy-ash-corruptor-fallback', 0x59624d, 0xd29c46)
+      : isRuinBruteVariant(e.enemyVariant)
+          ? this.world.createFallbackCharacter('enemy-ruin-brute-fallback', 0x713529, 0x767d80)
+        : isUtraeanSentinelVariant(e.enemyVariant)
+          ? this.world.createFallbackCharacter('enemy-utraean-sentinel-fallback', 0x385c6c, 0x8baab5)
+        : isShardcasterVariant(e.enemyVariant)
+        ? this.world.createFallbackCharacter('enemy-shardcaster-fallback', 0x57306f, 0xc28ae8)
+        : this.world.createFallbackCharacter('enemy-fallback', 0xb33a3a, 0x7a2222);
     visual.addChild(fallback);
     this.world.root.addChild(entity);
     const healthBar = e.kind === 'player' && local ? undefined : new HealthBarOverlay(this.uiLayer);
-    const view: View = { entity, visual, healthBar, kind: e.kind };
+    const view: View = {
+      entity,
+      visual,
+      healthBar,
+      kind: e.kind,
+      enemyVariant: e.kind === 'enemy' ? enemyPresentationForVariant(e.enemyVariant).variant : undefined,
+    };
     this.views.set(e.id, view);
     return view;
   }
@@ -3013,8 +4690,15 @@ export class Game {
       nearby: focus.nearby,
       time,
     });
-    view.serviceProps.setLocalPosition(0, state.lift, 0);
-    view.serviceProps.setLocalScale(state.scale, state.scale, state.scale);
+    // A oficina do Borin possui blockers autoritativos; sua estrutura nao pode
+    // "respirar" para fora deles. Somente fogo/faíscas/barras animam por peça.
+    if (view.definition.kind === 'blacksmith') {
+      view.serviceProps.setLocalPosition(0, 0, 0);
+      view.serviceProps.setLocalScale(1, 1, 1);
+    } else {
+      view.serviceProps.setLocalPosition(0, state.lift, 0);
+      view.serviceProps.setLocalScale(state.scale, state.scale, state.scale);
+    }
     for (const prop of view.servicePropParts) {
       const partState = npcServicePropPartVisualState({
         part: prop.part,
@@ -3120,7 +4804,13 @@ export class Game {
     }
 
     if (npc.kind === 'blacksmith') {
-      return npcServicePriorityScore({ kind: npc.kind, blacksmith: this.blacksmithActionState() });
+      return npcServicePriorityScore({
+        kind: npc.kind,
+        blacksmith: {
+          ...this.blacksmithActionState(),
+          forgeableBatches: this.blacksmithForgeableBatches(npc),
+        },
+      });
     }
 
     if (npc.kind === 'trainer') {
@@ -3274,7 +4964,13 @@ export class Game {
 
     if (npc.kind === 'blacksmith') {
       const action = this.blacksmithActionState();
-      return buildNpcServiceStatusLabel({ kind: npc.kind, blacksmith: action });
+      return buildNpcServiceStatusLabel({
+        kind: npc.kind,
+        blacksmith: {
+          ...action,
+          forgeableBatches: this.blacksmithForgeableBatches(npc),
+        },
+      });
     }
 
     if (npc.kind === 'trainer') {
@@ -3654,26 +5350,19 @@ export class Game {
     ));
   }
 
-  private isStashableItem(item: Pick<InventoryItem, 'kind' | 'stackable' | 'equipped'>): boolean {
+  private isStashableItem(item: Pick<InventoryItem, 'kind' | 'stackable' | 'equipped' | 'equipSlot'>): boolean {
     if (item.kind === 'coin') return false;
-    if (item.stackable) return item.kind !== 'sword';
-    return item.kind === 'sword' && !item.equipped;
+    if (item.stackable) return true;
+    return !!item.equipSlot && !item.equipped;
   }
 
   private stashItemsFrom(items: readonly InventoryItem[]): HudStashItem[] {
     return items
       .filter((item) => item.count > 0 && this.isStashableItem(item))
       .map((item) => ({
-        id: item.id,
-        kind: item.kind,
+        ...item,
         name: item.name || itemDisplayName(item),
         icon: item.icon || itemIconFor(item.kind, item.rarity),
-        count: item.count,
-        stackable: item.stackable,
-        rarity: item.rarity,
-        upgradeLevel: item.upgradeLevel,
-        damageMin: item.damageMin,
-        damageMax: item.damageMax,
       }));
   }
 
@@ -3776,6 +5465,8 @@ export class Game {
       greeting: view.definition.dialogue?.greeting ?? '',
       actionLabel: action.label,
       actionDisabled: action.disabled,
+      forgeRecipes: this.forgeRecipesFor(view.definition.forgeRecipes ?? []),
+      professions: this.professions,
     });
     if (action.status) this.hud.setNpcDialogueStatus(action.status);
   }
@@ -3858,6 +5549,7 @@ export class Game {
     this.closeVendor();
     this.closeStash();
     this.closeNpcDialogue();
+    this.hud.hideDisplacerNetwork();
   }
 
   private closeVendor(): void {
@@ -3881,7 +5573,6 @@ export class Game {
     if (!this.activeQuestNpcId) return;
     this.activeQuestNpcId = null;
     this.healerServicePending = false;
-    this.blacksmithUpgradePending = false;
     this.travelServicePending = false;
     this.jewelerServicePending = false;
     this.hudDirty = true;
@@ -3943,7 +5634,7 @@ export class Game {
 
   private blacksmithGemKindForEquippedWeapon(): ItemKind | null {
     const weapon = this.cachedEquippedWeapon;
-    if (!weapon || weapon.kind !== 'sword') return null;
+    if (!weapon || !isWeaponKind(weapon.kind)) return null;
     if (weapon.upgradeLevel < BLACKSMITH_BLESS_MAX_LEVEL) return 'jewel_bless';
     if (weapon.upgradeLevel < BLACKSMITH_MAX_LEVEL) return 'jewel_soul';
     return null;
@@ -3959,8 +5650,8 @@ export class Game {
 
   private blacksmithActionState(): NpcServiceActionState {
     const weapon = this.cachedEquippedWeapon;
-    if (!weapon || weapon.kind !== 'sword') {
-      return { label: 'Equipe espada', disabled: true, status: 'Equipe uma espada para forjar.' };
+    if (!weapon || !isWeaponKind(weapon.kind)) {
+      return { label: 'Aprimorar arma', disabled: true, status: 'Equipe uma arma para aprimorá-la.' };
     }
     const gem = this.blacksmithGemKindForEquippedWeapon();
     if (!gem) return { label: 'Arma no maximo', disabled: true, status: 'Esta arma ja esta no limite.' };
@@ -3969,18 +5660,36 @@ export class Game {
       return { label: `Precisa ${shortName}`, disabled: true, status: `Preciso de uma ${this.gemFullName(gem)}.` };
     }
     return {
-      label: `Forjar com ${shortName}`,
+      label: `Aprimorar com ${shortName}`,
       disabled: false,
       status: `Consome 1 ${this.gemFullName(gem)}.`,
       item: gem,
     };
   }
 
+  private blacksmithForgeableBatches(npc: NpcDefinition): number {
+    return (npc.forgeRecipes ?? []).reduce((total, recipe) => {
+      if (this.professions.smithing.level < recipe.requiredLevel) return total;
+      const ingredients = this.forgeIngredientsFor(recipe);
+      const available = ingredients.length > 0 && ingredients.every((ingredient) => (
+        ingredient.count > 0 && this.stackCount(ingredient.kind) >= ingredient.count
+      ));
+      return total + (available ? 1 : 0);
+    }, 0);
+  }
+
   private refreshBlacksmithDialogue(status?: string): void {
     const action = this.blacksmithActionState();
-    this.blacksmithUpgradePending = false;
-    this.hud.setNpcDialogueActionPending(false);
-    this.hud.updateNpcDialogueActionLabel(action.label, action.disabled);
+    this.hud.updateNpcDialogueActionLabel(
+      action.label,
+      action.disabled || this.forgeRecipePending !== null || this.blacksmithUpgradePending,
+    );
+    this.hud.setNpcDialogueActionPending(this.blacksmithUpgradePending);
+    const active = this.activeQuestNpcId ? this.npcViews.get(this.activeQuestNpcId) : null;
+    if (active?.definition.kind === 'blacksmith') {
+      this.hud.updateNpcDialogueProfessions(this.professions);
+      this.hud.updateForgeRecipes(this.forgeRecipesFor(active.definition.forgeRecipes ?? []));
+    }
     this.hud.setNpcDialogueStatus(status ?? action.status ?? '');
   }
 
@@ -4068,11 +5777,308 @@ export class Game {
   }
 
   private stackCount(kind: ItemKind): number {
-    return this.cachedInventory.find((item) => item.kind === kind && item.stackable)?.count ?? 0;
+    return this.stackCountIn(this.cachedInventory, kind);
+  }
+
+  private stackCountIn(inventory: readonly InventoryItem[], kind: ItemKind): number {
+    return inventory.reduce((total, item) => (
+      item.kind === kind && item.stackable ? total + item.count : total
+    ), 0);
+  }
+
+  /** Conta tanto pilhas quanto instancias unicas, necessario para saidas de gear. */
+  private inventoryKindCount(kind: ItemKind): number {
+    return this.inventoryKindCountIn(this.cachedInventory, kind);
+  }
+
+  private inventoryKindCountIn(inventory: readonly InventoryItem[], kind: ItemKind): number {
+    return inventory.reduce((total, item) => {
+      if (item.kind !== kind) return total;
+      return total + (item.stackable ? item.count : 1);
+    }, 0);
+  }
+
+  private inventoryRecipeOutputCountIn(
+    inventory: readonly InventoryItem[],
+    kind: ItemKind,
+    setId?: ForgeRecipeState['outputSetId'],
+    setPieceId?: string,
+  ): number {
+    if (!setId || !setPieceId) return this.inventoryKindCountIn(inventory, kind);
+    return inventory.reduce((total, item) => (
+      item.kind === kind && item.setId === setId && item.setPieceId === setPieceId ? total + 1 : total
+    ), 0);
+  }
+
+  private forgeIngredientsFor(recipe: ForgeRecipeState): ForgeRecipeState['ingredients'] {
+    const ingredients = recipe.ingredients?.filter((ingredient) => ingredient.count > 0) ?? [];
+    if (ingredients.length > 0) return ingredients;
+    return recipe.inputKind && recipe.inputCount > 0
+      ? [{ kind: recipe.inputKind, count: recipe.inputCount }]
+      : [];
+  }
+
+  private forgeRecipesFor(recipes: readonly ForgeRecipeState[]): HudForgeRecipe[] {
+    const lockAll = this.forgeRecipePending !== null || this.blacksmithUpgradePending;
+    return recipes.map((recipe) => {
+      const pending = this.forgeRecipePending?.recipeId === recipe.id;
+      const requiredLevel = Math.max(1, recipe.requiredLevel || 1);
+      const professionLocked = this.professions.smithing.level < requiredLevel;
+      const toolRecipe = recipe.recipeType === 'tool' ? miningToolRecipeGate(recipe) : null;
+      const invalidToolRecipe = recipe.recipeType === 'tool' && toolRecipe === null;
+      const hasSetOutputFields = recipe.outputSetId !== undefined || recipe.outputSetPieceId !== undefined;
+      const setOutput = equipmentSetForgeOutputPresentation(recipe);
+      const invalidSetRecipe = hasSetOutputFields && setOutput === null;
+      const toolTier = toolRecipe?.toolTier ?? 0;
+      const requiredToolTier = toolRecipe?.requiredToolTier ?? 0;
+      const currentToolTier = this.miningState.tool.tier;
+      const toolOwned = recipe.recipeType === 'tool' && toolTier > 0 && currentToolTier >= toolTier;
+      const toolLocked = recipe.recipeType === 'tool' && !toolOwned && currentToolTier !== requiredToolTier;
+      const masteryItemLevelBonus = recipe.recipeType === 'equipment'
+        ? Math.floor(Math.max(0, this.professions.smithing.level - requiredLevel) / 2)
+        : 0;
+      const ingredients = this.forgeIngredientsFor(recipe).map((ingredient) => ({
+        ...ingredient,
+        owned: this.stackCount(ingredient.kind),
+      }));
+      return {
+        ...recipe,
+        ingredients,
+        outputOwned: recipe.recipeType === 'tool'
+          ? (toolOwned ? 1 : 0)
+          : this.inventoryRecipeOutputCountIn(
+            this.cachedInventory,
+            recipe.outputKind,
+            setOutput?.definition.id,
+            setOutput?.piece.id,
+          ),
+        professionLocked,
+        toolLocked,
+        toolOwned,
+        currentToolTier,
+        requiredToolLabel: miningToolForTier(requiredToolTier).label,
+        masteryItemLevelBonus,
+        currentItemLevelBonus: (recipe.itemLevelBonus ?? 0) + masteryItemLevelBonus,
+        disabled: lockAll || professionLocked || invalidToolRecipe || invalidSetRecipe || toolLocked || toolOwned || ingredients.length === 0
+          || ingredients.some((ingredient) => ingredient.owned < ingredient.count),
+        pending,
+      };
+    });
+  }
+
+  private resolveForgeRecipePending(inventory: readonly InventoryItem[]): string | undefined {
+    const pending = this.forgeRecipePending;
+    if (!pending) return undefined;
+    // Ferramentas vivem no ofício, não no inventário; sua confirmação é o
+    // evento autoritativo tool_forged, nunca uma contagem da mochila.
+    if (pending.recipeType === 'tool') return undefined;
+    const outputAfter = this.inventoryRecipeOutputCountIn(
+      inventory,
+      pending.outputKind,
+      pending.outputSetId,
+      pending.outputSetPieceId,
+    );
+    if (outputAfter < pending.beforeOutput + pending.expectedOutput) return undefined;
+
+    this.forgeRecipePending = null;
+    this.hud.setForgeRecipePending(pending.recipeId, false);
+    this.sfx.play('pickup');
+    const label = this.npcViews.get(pending.npcId)?.definition.forgeRecipes
+      ?.find((recipe) => recipe.id === pending.recipeId)?.label
+      ?? (pending.recipeType === 'equipment' ? 'Equipamento' : 'Barra');
+    return `${label} concluido com sucesso.`;
+  }
+
+  private clearForgeRecipePending(status: string): void {
+    const pending = this.forgeRecipePending;
+    if (pending) this.hud.setForgeRecipePending(pending.recipeId, false);
+    this.forgeRecipePending = null;
+    const active = this.activeQuestNpcId ? this.npcViews.get(this.activeQuestNpcId) : null;
+    if (active?.definition.kind === 'blacksmith') this.refreshBlacksmithDialogue(status);
+  }
+
+  /** Confirma o unico pedido pendente pelo evento autoritativo do servidor. */
+  private confirmForgeRecipePendingFromEvent(eventType: string, status: string): void {
+    const pending = this.forgeRecipePending;
+    if (!pending) return;
+    const matches = (eventType === 'item_forged' && pending.recipeType === 'equipment')
+      || (eventType === 'ore_smelted' && pending.recipeType === 'smelting')
+      || (eventType === 'tool_forged' && pending.recipeType === 'tool');
+    if (!matches) return;
+
+    this.clearForgeRecipePending(status);
+    this.sfx.play('pickup');
+  }
+
+  private resolveProfessionContractPendingFromSnapshot(professions: ProfessionsState): string | undefined {
+    const pending = this.professionContractPending;
+    if (!pending) return undefined;
+    const contract = professions.contracts.find((candidate) => candidate.id === pending.contractId);
+    if (!contract?.claimed) return undefined;
+
+    this.professionContractPending = null;
+    this.hud.setProfessionContractPending(pending.contractId, false);
+    this.sfx.play('pickup');
+    return `${contract.title} concluído. Recompensa recebida.`;
+  }
+
+  private clearProfessionContractPending(status: string, success = false): void {
+    const pending = this.professionContractPending;
+    if (!pending) return;
+    this.professionContractPending = null;
+    this.hud.setProfessionContractPending(pending.contractId, false);
+    if (success) this.sfx.play('pickup');
+    const active = this.activeQuestNpcId ? this.npcViews.get(this.activeQuestNpcId) : null;
+    if (active?.definition.kind === 'blacksmith') this.refreshBlacksmithDialogue(status);
+  }
+
+  private handleProfessionContractClaim(npcId: string, contractId: string): void {
+    if (this.professionContractPending || this.activeQuestNpcId !== npcId) return;
+    const view = this.npcViews.get(npcId);
+    if (!view || view.definition.kind !== 'blacksmith' || view.definition.zone !== this.zone) return;
+    if (this.localPlayerDistanceTo(view.definition.position.x, view.definition.position.z) > BLACKSMITH_SERVICE_SAFE_RANGE) {
+      this.hud.setNpcDialogueStatus('Aproxime-se do Borin para resgatar o contrato.');
+      return;
+    }
+
+    const contract = this.professions.contracts.find((candidate) => candidate.id === contractId);
+    if (!contract) {
+      this.hud.setNpcDialogueStatus('Este contrato não está mais disponível.');
+      return;
+    }
+    if (contract.claimed) {
+      this.hud.setNpcDialogueStatus('Este contrato já foi concluído.');
+      return;
+    }
+    if (!contract.claimable) {
+      this.hud.setNpcDialogueStatus('Conclua todos os objetivos antes de resgatar.');
+      return;
+    }
+
+    const pending: ProfessionContractPending = { npcId, contractId };
+    this.professionContractPending = pending;
+    this.hud.setProfessionContractPending(contractId, true);
+    this.hud.setNpcDialogueStatus('Solicitando a recompensa do contrato...');
+    this.sfx.play('ui');
+    this.net.send({
+      type: 'claim-profession-contract',
+      entityId: this.net.playerId,
+      npcId,
+      contractId,
+    });
+    window.setTimeout(() => {
+      if (this.professionContractPending !== pending) return;
+      this.clearProfessionContractPending(
+        'Resgate sem confirmação. Confira sua posição e o contrato antes de repetir.',
+      );
+    }, 11000);
+  }
+
+  private handleForgeRecipe(npcId: string, recipeId: string, count: number): void {
+    if (this.forgeRecipePending || this.blacksmithUpgradePending || this.activeQuestNpcId !== npcId) return;
+    const view = this.npcViews.get(npcId);
+    const recipe = view?.definition.kind === 'blacksmith'
+      ? view.definition.forgeRecipes?.find((candidate) => candidate.id === recipeId)
+      : undefined;
+    if (!view || !recipe || view.definition.zone !== this.zone) return;
+    if (this.localPlayerDistanceTo(view.definition.position.x, view.definition.position.z) > BLACKSMITH_SERVICE_SAFE_RANGE) {
+      this.hud.setNpcDialogueStatus('Aproxime-se do Borin para usar a forja.');
+      return;
+    }
+
+    const requiredLevel = Math.max(1, recipe.requiredLevel || 1);
+    if (this.professions.smithing.level < requiredLevel) {
+      this.refreshBlacksmithDialogue(
+        `${recipe.label} requer Ferraria Nv ${requiredLevel}. Seu nível atual é ${this.professions.smithing.level}.`,
+      );
+      return;
+    }
+
+    const recipeType = recipe.recipeType ?? 'smelting';
+    const hasSetOutputFields = recipe.outputSetId !== undefined || recipe.outputSetPieceId !== undefined;
+    const setOutput = equipmentSetForgeOutputPresentation(recipe);
+    if (hasSetOutputFields && !setOutput) {
+      this.refreshBlacksmithDialogue('Esta receita de conjunto não passou pela inspeção da forja.');
+      return;
+    }
+    if (recipeType === 'tool') {
+      const gated = miningToolRecipeGate(recipe);
+      if (!gated) {
+        this.refreshBlacksmithDialogue('Esta receita de ferramenta não passou pela inspeção da forja.');
+        return;
+      }
+      const currentTier = this.miningState.tool.tier;
+      if (currentTier >= (gated.toolTier ?? 0)) {
+        this.refreshBlacksmithDialogue(`${gated.label} já faz parte do seu ofício.`);
+        return;
+      }
+      if (currentTier !== (gated.requiredToolTier ?? 0)) {
+        this.refreshBlacksmithDialogue(
+          `${gated.label} requer primeiro ${miningToolForTier(gated.requiredToolTier ?? 0).label}.`,
+        );
+        return;
+      }
+    }
+    const batch = recipeType === 'smelting' ? Math.max(1, Math.min(50, Math.floor(count))) : 1;
+    const ingredients = this.forgeIngredientsFor(recipe);
+    const missing = ingredients.find((ingredient) => (
+      this.stackCount(ingredient.kind) < ingredient.count * batch
+    ));
+    if (ingredients.length === 0 || missing) {
+      const detail = missing
+        ? `${this.stackCount(missing.kind)}/${missing.count * batch}`
+        : 'receita sem ingredientes';
+      this.refreshBlacksmithDialogue(`Materiais insuficientes: ${detail}.`);
+      return;
+    }
+
+    const pending: ForgeRecipePending = {
+      npcId,
+      recipeId,
+      recipeType,
+      outputKind: recipe.outputKind,
+      outputSetId: setOutput?.definition.id,
+      outputSetPieceId: setOutput?.piece.id,
+      beforeOutput: this.inventoryRecipeOutputCountIn(
+        this.cachedInventory,
+        recipe.outputKind,
+        setOutput?.definition.id,
+        setOutput?.piece.id,
+      ),
+      expectedOutput: recipeType === 'tool' ? 0 : recipe.outputCount * batch,
+    };
+    this.forgeRecipePending = pending;
+    this.sfx.play('ui');
+    this.refreshBlacksmithDialogue(
+      `${recipeType === 'smelting' ? 'Fundindo' : 'Forjando'} ${recipe.label.toLowerCase()}...`,
+    );
+    if (recipeType !== 'smelting') {
+      this.net.send({
+        type: 'forge-item-at-npc',
+        entityId: this.net.playerId,
+        npcId,
+        recipeId,
+      });
+    } else {
+      this.net.send({
+        type: 'smelt-ore-at-npc',
+        entityId: this.net.playerId,
+        npcId,
+        recipeId,
+        count: batch,
+      });
+    }
+    window.setTimeout(() => {
+      if (this.forgeRecipePending !== pending) return;
+      this.forgeRecipePending = null;
+      if (this.activeQuestNpcId === npcId) {
+        this.refreshBlacksmithDialogue('Pedido sem confirmacao. Confira sua posicao e o inventario antes de repetir.');
+      }
+    }, 11000);
   }
 
   private handleBlacksmithUpgrade(npcId: string): void {
-    if (this.blacksmithUpgradePending) return;
+    if (this.blacksmithUpgradePending || this.forgeRecipePending) return;
     const action = this.blacksmithActionState();
     this.hud.updateNpcDialogueActionLabel(action.label, action.disabled);
     if (action.disabled || !action.item) {
@@ -4081,14 +6087,15 @@ export class Game {
     }
 
     this.blacksmithUpgradePending = true;
-    this.hud.setNpcDialogueActionPending(true);
-    this.hud.setNpcDialogueStatus('Forja enviada ao servidor.');
+    this.refreshBlacksmithDialogue('Aprimoramento enviado ao servidor.');
     window.setTimeout(() => {
       if (!this.blacksmithUpgradePending) return;
       this.blacksmithUpgradePending = false;
       this.hud.setNpcDialogueActionPending(false);
-      this.refreshBlacksmithDialogue();
-    }, 1200);
+      if (this.activeQuestNpcId === npcId) {
+        this.refreshBlacksmithDialogue('Aprimoramento sem confirmação. Confira a arma e a gema antes de repetir.');
+      }
+    }, 11000);
     this.net.send({ type: 'upgrade-at-npc', entityId: this.net.playerId, npcId, item: action.item });
   }
 
@@ -4246,6 +6253,13 @@ export class Game {
   }
 
   private clearViewVisual(view: View): void {
+    this.clearEnemySpecialVisuals(view);
+    this.clearAshVeilVisual(view);
+    this.clearRuinExposedVisual(view);
+    this.clearBossSealPhaseVisual(view);
+    this.clearArcaneResonanceVisual(view);
+    this.clearStormOrbVisual(view);
+    this.clearGuardianRetaliationVisual(view);
     view.weaponGlowMaterial?.destroy();
     view.weaponGlowMaterial = undefined;
     view.weaponAuraMaterial?.destroy();
@@ -4271,6 +6285,1412 @@ export class Game {
     view.helmetAnchor = undefined;
     view.armorKey = undefined;
     view.armorAnchor = undefined;
+    view.weaponGripPose = undefined;
+  }
+
+  private syncEnemyPresentation(view: View, variant: EnemyVariant | undefined): void {
+    if (this.disposed || view.kind !== 'enemy') {
+      this.clearEnemySpecialVisuals(view);
+      return;
+    }
+    if (isAshCorruptorVariant(variant)) {
+      this.clearShardcasterVisual(view);
+      this.clearRuinBruteVisual(view);
+      this.clearUtraeanSentinelVisual(view);
+      this.ensureAshCorruptorVisual(view);
+      return;
+    }
+    if (isRuinBruteVariant(variant)) {
+      this.clearShardcasterVisual(view);
+      this.clearAshCorruptorVisual(view);
+      this.clearUtraeanSentinelVisual(view);
+      this.ensureRuinBruteVisual(view);
+      return;
+    }
+    if (isUtraeanSentinelVariant(variant)) {
+      this.clearShardcasterVisual(view);
+      this.clearAshCorruptorVisual(view);
+      this.clearRuinBruteVisual(view);
+      this.ensureUtraeanSentinelVisual(view);
+      return;
+    }
+    this.clearAshCorruptorVisual(view);
+    this.clearRuinBruteVisual(view);
+    this.clearUtraeanSentinelVisual(view);
+    if (!isShardcasterVariant(variant)) {
+      this.clearShardcasterVisual(view);
+      return;
+    }
+    if (view.shardcasterRoot?.parent) return;
+    this.clearShardcasterVisual(view);
+
+    const crystalColor = colorFromCss(SHARDCASTER_PALETTE.crystal);
+    const coreColor = colorFromCss(SHARDCASTER_PALETTE.crystalCore);
+    const orbColor = colorFromCss(SHARDCASTER_PALETTE.orb);
+    const crystalMaterial = createMaterial(crystalColor, {
+      emissive: crystalColor,
+      emissiveIntensity: 1.8,
+      opacity: 0.9,
+      additive: true,
+      unlit: true,
+      depthWrite: false,
+    });
+    const coreMaterial = createMaterial(coreColor, {
+      emissive: coreColor,
+      emissiveIntensity: 2.4,
+      opacity: 0.94,
+      additive: true,
+      unlit: true,
+      depthWrite: false,
+    });
+    const hazeMaterial = createMaterial(orbColor, {
+      emissive: orbColor,
+      emissiveIntensity: 1.55,
+      opacity: 0.42,
+      additive: true,
+      unlit: true,
+      depthWrite: false,
+    });
+
+    const root = makeEntity('shardcaster-adornment', this.world.app);
+    view.visual.addChild(root);
+    const crystalSpecs = [
+      { x: -0.48, y: 1.63, z: -0.03, yaw: -20, roll: 18 },
+      { x: 0.48, y: 1.63, z: -0.03, yaw: 20, roll: -18 },
+      { x: 0, y: 1.95, z: -0.31, yaw: 0, roll: 0 },
+    ] as const;
+    const crystals = crystalSpecs.map((spec, index) => {
+      const tall = index === 2;
+      const crystal = this.world.createPrimitive(
+        `shardcaster-crystal-${index}`,
+        'cone',
+        crystalMaterial,
+        { x: spec.x, y: spec.y, z: spec.z },
+        { x: tall ? 0.2 : 0.16, y: tall ? 0.62 : 0.48, z: tall ? 0.2 : 0.16 },
+        root,
+      );
+      crystal.setLocalEulerAngles(spec.roll, spec.yaw, 0);
+      return crystal;
+    });
+
+    const orb = this.world.createPrimitive(
+      'shardcaster-orb',
+      'sphere',
+      coreMaterial,
+      { x: 0, y: 2.25, z: 0.48 },
+      { x: 0.28, y: 0.28, z: 0.28 },
+      root,
+    );
+    this.world.createPrimitive(
+      'shardcaster-orb-ring',
+      'torus',
+      hazeMaterial,
+      { x: 0, y: 2.25, z: 0.48 },
+      { x: 0.48, y: 0.025, z: 0.48 },
+      root,
+    ).setLocalEulerAngles(72, 0, 18);
+
+    const light = makeEntity('shardcaster-orb-light', this.world.app);
+    light.addComponent('light', {
+      type: 'omni',
+      color: orbColor,
+      intensity: 1.05,
+      range: 3.4,
+      castShadows: false,
+      falloffMode: pc.LIGHTFALLOFF_INVERSESQUARED,
+    });
+    light.setLocalPosition(0, 2.25, 0.48);
+    root.addChild(light);
+
+    view.shardcasterRoot = root;
+    view.shardcasterOrb = orb;
+    view.shardcasterLight = light;
+    view.shardcasterCrystals = crystals;
+    view.shardcasterMaterials = [crystalMaterial, coreMaterial, hazeMaterial];
+  }
+
+  private updateShardcasterVisual(view: View): void {
+    if (!view.shardcasterRoot || !view.shardcasterOrb) return;
+    const phase = (view.animTime ?? 0) * 2.7;
+    const pulse = 1 + Math.sin(phase * 2.1) * 0.08;
+    const orbPosition = {
+      x: Math.sin(phase) * 0.07,
+      y: 2.25 + Math.sin(phase * 1.7) * 0.08,
+      z: 0.48 + Math.cos(phase) * 0.045,
+    };
+    view.shardcasterOrb.setLocalPosition(orbPosition.x, orbPosition.y, orbPosition.z);
+    view.shardcasterOrb.setLocalScale(0.28 * pulse, 0.28 * pulse, 0.28 * pulse);
+    view.shardcasterOrb.setLocalEulerAngles(phase * 34, phase * 52, phase * 27);
+    view.shardcasterLight?.setLocalPosition(orbPosition.x, orbPosition.y, orbPosition.z);
+    if (view.shardcasterLight?.light) view.shardcasterLight.light.intensity = 1 + pulse * 0.18;
+    for (let index = 0; index < (view.shardcasterCrystals?.length ?? 0); index++) {
+      const crystal = view.shardcasterCrystals![index];
+      const tall = index === 2;
+      const localPulse = 1 + Math.sin(phase * 1.8 + index * 1.4) * 0.045;
+      crystal.setLocalScale(
+        (tall ? 0.2 : 0.16) * localPulse,
+        (tall ? 0.62 : 0.48) * localPulse,
+        (tall ? 0.2 : 0.16) * localPulse,
+      );
+    }
+  }
+
+  private clearShardcasterVisual(view: View): void {
+    destroyEntity(view.shardcasterLight);
+    destroyEntity(view.shardcasterOrb);
+    destroyEntity(view.shardcasterRoot);
+    for (const material of view.shardcasterMaterials ?? []) material.destroy();
+    view.shardcasterRoot = undefined;
+    view.shardcasterOrb = undefined;
+    view.shardcasterLight = undefined;
+    view.shardcasterCrystals = undefined;
+    view.shardcasterMaterials = undefined;
+  }
+
+  private ensureAshCorruptorVisual(view: View): void {
+    if (view.ashCorruptorRoot?.parent) return;
+    this.clearAshCorruptorVisual(view);
+
+    const ashColor = colorFromCss(ASH_CORRUPTOR_PALETTE.ash);
+    const veilColor = colorFromCss(ASH_CORRUPTOR_PALETTE.veil);
+    const amberColor = colorFromCss(ASH_CORRUPTOR_PALETTE.amber);
+    const ashMaterial = createMaterial(ashColor, {
+      emissive: ashColor,
+      emissiveIntensity: 1.15,
+      opacity: 0.84,
+      additive: true,
+      unlit: true,
+      depthWrite: false,
+    });
+    const veilMaterial = createMaterial(veilColor, {
+      emissive: veilColor,
+      emissiveIntensity: 1.85,
+      opacity: 0.68,
+      additive: true,
+      unlit: true,
+      depthWrite: false,
+    });
+    const amberMaterial = createMaterial(amberColor, {
+      emissive: amberColor,
+      emissiveIntensity: 2.3,
+      opacity: 0.94,
+      additive: true,
+      unlit: true,
+      depthWrite: false,
+    });
+
+    const root = makeEntity('ash-corruptor-adornment', this.world.app);
+    view.visual.addChild(root);
+    const crown = makeEntity('ash-corruptor-crown', this.world.app);
+    root.addChild(crown);
+    this.world.createPrimitive(
+      'ash-corruptor-crown-ring',
+      'torus',
+      ashMaterial,
+      { x: 0, y: 2.04, z: 0 },
+      { x: 0.55, y: 0.04, z: 0.55 },
+      crown,
+    );
+    for (let index = 0; index < 6; index++) {
+      const angle = index * Math.PI / 3;
+      const spike = this.world.createPrimitive(
+        `ash-corruptor-crown-spike-${index}`,
+        'cone',
+        index % 2 === 0 ? amberMaterial : veilMaterial,
+        {
+          x: Math.sin(angle) * 0.42,
+          y: 2.19,
+          z: Math.cos(angle) * 0.42,
+        },
+        { x: 0.09, y: index % 2 === 0 ? 0.38 : 0.27, z: 0.09 },
+        crown,
+      );
+      spike.setLocalEulerAngles(0, angle * 180 / Math.PI, index % 2 === 0 ? 9 : -9);
+    }
+
+    const orb = this.world.createPrimitive(
+      'ash-corruptor-orb',
+      'sphere',
+      amberMaterial,
+      { x: 0, y: 2.3, z: 0.38 },
+      { x: 0.22, y: 0.22, z: 0.22 },
+      root,
+    );
+    const orbRing = this.world.createPrimitive(
+      'ash-corruptor-orb-sigil',
+      'torus',
+      veilMaterial,
+      { x: 0, y: 2.3, z: 0.38 },
+      { x: 0.39, y: 0.024, z: 0.39 },
+      root,
+    );
+    orbRing.setLocalEulerAngles(68, 0, 28);
+
+    const light = makeEntity('ash-corruptor-light', this.world.app);
+    light.addComponent('light', {
+      type: 'omni',
+      color: amberColor,
+      intensity: 1.1,
+      range: 3.6,
+      castShadows: false,
+      falloffMode: pc.LIGHTFALLOFF_INVERSESQUARED,
+    });
+    light.setLocalPosition(0, 2.3, 0.38);
+    root.addChild(light);
+
+    view.ashCorruptorRoot = root;
+    view.ashCorruptorOrb = orb;
+    view.ashCorruptorCrown = crown;
+    view.ashCorruptorLight = light;
+    view.ashCorruptorMaterials = [ashMaterial, veilMaterial, amberMaterial];
+  }
+
+  private updateAshCorruptorVisual(view: View): void {
+    if (!view.ashCorruptorRoot || !view.ashCorruptorOrb) return;
+    const phase = (view.animTime ?? 0) * 2.15;
+    const pulse = 1 + Math.sin(phase * 2.3) * 0.09;
+    view.ashCorruptorCrown?.setLocalEulerAngles(0, phase * 18, 0);
+    view.ashCorruptorOrb.setLocalPosition(
+      Math.sin(phase) * 0.055,
+      2.3 + Math.sin(phase * 1.6) * 0.065,
+      0.38 + Math.cos(phase) * 0.04,
+    );
+    view.ashCorruptorOrb.setLocalScale(0.22 * pulse, 0.22 * pulse, 0.22 * pulse);
+    if (view.ashCorruptorLight?.light) view.ashCorruptorLight.light.intensity = 0.92 + pulse * 0.24;
+  }
+
+  private clearAshCorruptorVisual(view: View): void {
+    destroyEntity(view.ashCorruptorLight);
+    destroyEntity(view.ashCorruptorOrb);
+    destroyEntity(view.ashCorruptorCrown);
+    destroyEntity(view.ashCorruptorRoot);
+    for (const material of view.ashCorruptorMaterials ?? []) material.destroy();
+    view.ashCorruptorRoot = undefined;
+    view.ashCorruptorOrb = undefined;
+    view.ashCorruptorCrown = undefined;
+    view.ashCorruptorLight = undefined;
+    view.ashCorruptorMaterials = undefined;
+  }
+
+  private ensureRuinBruteVisual(view: View): void {
+    if (view.ruinBruteRoot?.parent) return;
+    this.clearRuinBruteVisual(view);
+
+    const rustColor = colorFromCss(RUIN_BRUTE_PALETTE.rust);
+    const ironColor = colorFromCss(RUIN_BRUTE_PALETTE.iron);
+    const ironCoreColor = colorFromCss(RUIN_BRUTE_PALETTE.ironCore);
+    const rustMaterial = createMaterial(rustColor, {
+      emissive: rustColor,
+      emissiveIntensity: 0.38,
+      opacity: 0.96,
+    });
+    const ironMaterial = createMaterial(ironColor, {
+      emissive: ironColor,
+      emissiveIntensity: 0.24,
+      opacity: 0.98,
+    });
+    const edgeMaterial = createMaterial(ironCoreColor, {
+      emissive: ironCoreColor,
+      emissiveIntensity: 0.82,
+      opacity: 0.82,
+      additive: true,
+      unlit: true,
+      depthWrite: false,
+    });
+
+    const root = makeEntity('ruin-brute-adornment', this.world.app);
+    view.visual.addChild(root);
+    const shoulders = [-1, 1].map((side) => {
+      const shoulder = this.world.createPrimitive(
+        `ruin-brute-shoulder-${side < 0 ? 'left' : 'right'}`,
+        'box',
+        ironMaterial,
+        { x: side * 0.55, y: 1.62, z: -0.02 },
+        { x: 0.62, y: 0.34, z: 0.72 },
+        root,
+      );
+      shoulder.setLocalEulerAngles(0, 0, side * -12);
+      this.world.createPrimitive(
+        `ruin-brute-shoulder-rust-${side < 0 ? 'left' : 'right'}`,
+        'box',
+        rustMaterial,
+        { x: side * 0.61, y: 1.7, z: 0.04 },
+        { x: 0.48, y: 0.11, z: 0.78 },
+        root,
+      ).setLocalEulerAngles(0, 0, side * -12);
+      return shoulder;
+    });
+
+    const plate = this.world.createPrimitive(
+      'ruin-brute-armor-plate',
+      'box',
+      rustMaterial,
+      { x: 0, y: 1.22, z: 0.3 },
+      { x: 0.88, y: 0.88, z: 0.16 },
+      root,
+    );
+    this.world.createPrimitive(
+      'ruin-brute-armor-plate-rib',
+      'box',
+      edgeMaterial,
+      { x: 0, y: 1.24, z: 0.4 },
+      { x: 0.72, y: 0.08, z: 0.035 },
+      root,
+    );
+
+    const maul = makeEntity('ruin-brute-maul-mass', this.world.app);
+    root.addChild(maul);
+    const handle = this.world.createPrimitive(
+      'ruin-brute-maul-handle',
+      'cylinder',
+      rustMaterial,
+      { x: -0.54, y: 1.02, z: -0.34 },
+      { x: 0.09, y: 1.72, z: 0.09 },
+      maul,
+    );
+    handle.setLocalEulerAngles(0, 0, 32);
+    const head = this.world.createPrimitive(
+      'ruin-brute-maul-head',
+      'box',
+      ironMaterial,
+      { x: -0.98, y: 1.78, z: -0.34 },
+      { x: 0.66, y: 0.42, z: 0.48 },
+      maul,
+    );
+    head.setLocalEulerAngles(0, 0, 12);
+
+    view.ruinBruteRoot = root;
+    view.ruinBruteShoulders = shoulders;
+    view.ruinBrutePlate = plate;
+    view.ruinBruteMaul = maul;
+    view.ruinBruteMaterials = [rustMaterial, ironMaterial, edgeMaterial];
+  }
+
+  private updateRuinBruteVisual(view: View): void {
+    if (!view.ruinBruteRoot || !view.ruinBrutePlate) return;
+    const phase = (view.animTime ?? 0) * 1.55;
+    const pulse = 1 + Math.sin(phase * 2) * 0.025;
+    view.ruinBrutePlate.setLocalScale(0.88 * pulse, 0.88 * pulse, 0.16);
+    view.ruinBruteMaul?.setLocalEulerAngles(0, Math.sin(phase) * 2.4, 0);
+    for (let index = 0; index < (view.ruinBruteShoulders?.length ?? 0); index++) {
+      const shoulderPulse = 1 + Math.sin(phase * 1.8 + index * Math.PI) * 0.018;
+      view.ruinBruteShoulders![index].setLocalScale(0.62 * shoulderPulse, 0.34, 0.72 * shoulderPulse);
+    }
+  }
+
+  private clearRuinBruteVisual(view: View): void {
+    destroyEntity(view.ruinBruteMaul);
+    destroyEntity(view.ruinBrutePlate);
+    for (const shoulder of view.ruinBruteShoulders ?? []) destroyEntity(shoulder);
+    destroyEntity(view.ruinBruteRoot);
+    for (const material of view.ruinBruteMaterials ?? []) material.destroy();
+    view.ruinBruteRoot = undefined;
+    view.ruinBruteShoulders = undefined;
+    view.ruinBrutePlate = undefined;
+    view.ruinBruteMaul = undefined;
+    view.ruinBruteMaterials = undefined;
+  }
+
+  private ensureUtraeanSentinelVisual(view: View): void {
+    if (view.utraeanSentinelRoot?.parent) return;
+    this.clearUtraeanSentinelVisual(view);
+    const stone = colorFromCss(UTRAEAN_SENTINEL_PALETTE.stone);
+    const metal = colorFromCss(UTRAEAN_SENTINEL_PALETTE.metal);
+    const rune = colorFromCss(UTRAEAN_SENTINEL_PALETTE.rune);
+    const stoneMaterial = createMaterial(stone, { emissive: stone, emissiveIntensity: 0.38, opacity: 0.96 });
+    const metalMaterial = createMaterial(metal, { emissive: metal, emissiveIntensity: 0.62, opacity: 0.96 });
+    const runeMaterial = createMaterial(rune, {
+      emissive: rune, emissiveIntensity: 2.4, opacity: 0.82,
+      additive: true, unlit: true, depthWrite: false,
+    });
+    const root = makeEntity('utraean-sentinel-adornment', this.world.app);
+    view.visual.addChild(root);
+    for (const side of [-1, 1]) {
+      const shoulder = this.world.createPrimitive(
+        `utraean-sentinel-shoulder-${side < 0 ? 'left' : 'right'}`, 'box', stoneMaterial,
+        { x: side * 0.52, y: 1.62, z: 0 }, { x: 0.5, y: 0.25, z: 0.65 }, root,
+      );
+      shoulder.setLocalEulerAngles(0, 0, side * -14);
+    }
+    const core = this.world.createPrimitive(
+      'utraean-sentinel-rune-core', 'sphere', runeMaterial,
+      { x: 0, y: 1.32, z: 0.39 }, { x: 0.19, y: 0.26, z: 0.12 }, root,
+    );
+    const crown = this.world.createPrimitive(
+      'utraean-sentinel-crown', 'torus', runeMaterial,
+      { x: 0, y: 2.25, z: 0 }, { x: 0.42, y: 0.035, z: 0.42 }, root,
+    );
+    crown.setLocalEulerAngles(90, 0, 0);
+    const spear = makeEntity('utraean-sentinel-spear', this.world.app);
+    root.addChild(spear);
+    const shaft = this.world.createPrimitive(
+      'utraean-sentinel-spear-shaft', 'cylinder', metalMaterial,
+      { x: 0.58, y: 1.12, z: 0.1 }, { x: 0.055, y: 1.75, z: 0.055 }, spear,
+    );
+    shaft.setLocalEulerAngles(0, 0, -18);
+    const tip = this.world.createPrimitive(
+      'utraean-sentinel-spear-tip', 'cone', runeMaterial,
+      { x: 0.86, y: 2.02, z: 0.1 }, { x: 0.15, y: 0.42, z: 0.15 }, spear,
+    );
+    tip.setLocalEulerAngles(0, 0, -18);
+    view.utraeanSentinelRoot = root;
+    view.utraeanSentinelCore = core;
+    view.utraeanSentinelCrown = crown;
+    view.utraeanSentinelSpear = spear;
+    view.utraeanSentinelMaterials = [stoneMaterial, metalMaterial, runeMaterial];
+  }
+
+  private updateUtraeanSentinelVisual(view: View): void {
+    if (!view.utraeanSentinelRoot || !view.utraeanSentinelCore) return;
+    const time = view.animTime ?? 0;
+    const pulse = 1 + Math.sin(time * 5.2) * 0.08;
+    view.utraeanSentinelCore.setLocalScale(0.19 * pulse, 0.26 * pulse, 0.12 * pulse);
+    view.utraeanSentinelCrown?.setLocalEulerAngles(90, time * 48, 0);
+    view.utraeanSentinelSpear?.setLocalEulerAngles(0, Math.sin(time * 2.1) * 3, 0);
+  }
+
+  private clearUtraeanSentinelVisual(view: View): void {
+    destroyEntity(view.utraeanSentinelSpear);
+    destroyEntity(view.utraeanSentinelCrown);
+    destroyEntity(view.utraeanSentinelCore);
+    destroyEntity(view.utraeanSentinelRoot);
+    for (const material of view.utraeanSentinelMaterials ?? []) material.destroy();
+    view.utraeanSentinelRoot = undefined;
+    view.utraeanSentinelCore = undefined;
+    view.utraeanSentinelCrown = undefined;
+    view.utraeanSentinelSpear = undefined;
+    view.utraeanSentinelMaterials = undefined;
+  }
+
+  /** Aura ortogonal ao archetype: nasce somente do envelope rúnico v1 validado. */
+  private syncRunicEliteVisual(view: View, entity: EntityState): void {
+    const runic = runicElitePresentationGate(entity);
+    if (this.disposed || view.kind !== 'enemy' || !runic) {
+      this.clearRunicEliteVisual(view);
+      return;
+    }
+    if (view.runicEliteRoot?.parent && view.runicElitePhase === runic.phase) return;
+    this.clearRunicEliteVisual(view);
+
+    const primaryCss = runic.phase === 'aegis' ? RUNIC_ELITE_PALETTE.aegis : RUNIC_ELITE_PALETTE.fury;
+    const coreCss = runic.phase === 'aegis' ? RUNIC_ELITE_PALETTE.aegisCore : RUNIC_ELITE_PALETTE.furyCore;
+    const primary = colorFromCss(primaryCss);
+    const core = colorFromCss(coreCss);
+    const primaryMaterial = createMaterial(primary, {
+      emissive: primary,
+      emissiveIntensity: runic.phase === 'aegis' ? 1.8 : 2.15,
+      opacity: 0.66,
+      additive: true,
+      unlit: true,
+      depthWrite: false,
+    });
+    const coreMaterial = createMaterial(core, {
+      emissive: core,
+      emissiveIntensity: 2.45,
+      opacity: 0.88,
+      additive: true,
+      unlit: true,
+      depthWrite: false,
+    });
+    const root = makeEntity(`runic-elite-${runic.phase}-aura`, this.world.app);
+    view.visual.addChild(root);
+    const rings = [0, 1].map((index) => this.world.createPrimitive(
+      `runic-elite-${runic.phase}-ring-${index}`,
+      'torus',
+      index === 0 ? primaryMaterial : coreMaterial,
+      { x: 0, y: 0.055 + index * 0.035, z: 0 },
+      { x: 1.32 + index * 0.34, y: 0.025, z: 1.32 + index * 0.34 },
+      root,
+    ));
+    const coreOrb = this.world.createPrimitive(
+      `runic-elite-${runic.phase}-core`,
+      'sphere',
+      coreMaterial,
+      { x: 0, y: 1.32, z: -0.18 },
+      { x: 0.18, y: 0.18, z: 0.18 },
+      root,
+    );
+    const runes: pc.Entity[] = [];
+    for (let index = 0; index < 4; index++) {
+      const angle = index * Math.PI * 0.5 + Math.PI * 0.25;
+      const radius = runic.phase === 'aegis' ? 0.78 : 0.86;
+      const rune = this.world.createPrimitive(
+        `runic-elite-${runic.phase}-sigil-${index}`,
+        runic.phase === 'aegis' ? 'box' : 'cone',
+        index % 2 === 0 ? primaryMaterial : coreMaterial,
+        {
+          x: Math.sin(angle) * radius,
+          y: runic.phase === 'aegis' ? 1.08 : 1.32,
+          z: Math.cos(angle) * radius,
+        },
+        runic.phase === 'aegis'
+          ? { x: 0.11, y: 0.54, z: 0.04 }
+          : { x: 0.13, y: 0.46, z: 0.13 },
+        root,
+      );
+      rune.setLocalEulerAngles(0, angle * 180 / Math.PI, runic.phase === 'aegis' ? 18 : 0);
+      runes.push(rune);
+    }
+    view.runicEliteRoot = root;
+    view.runicEliteCore = coreOrb;
+    view.runicEliteRings = rings;
+    view.runicEliteRunes = runes;
+    view.runicEliteMaterials = [primaryMaterial, coreMaterial];
+    view.runicElitePhase = runic.phase;
+  }
+
+  private updateRunicEliteVisual(view: View): void {
+    if (!view.runicEliteRoot || !view.runicEliteCore || !view.runicElitePhase) return;
+    const time = view.animTime ?? 0;
+    const fury = view.runicElitePhase === 'fury';
+    const pulse = 1 + Math.sin(time * (fury ? 8.2 : 4.1)) * (fury ? 0.14 : 0.075);
+    view.runicEliteRoot.setLocalEulerAngles(0, time * (fury ? 46 : 18), 0);
+    view.runicEliteCore.setLocalScale(0.18 * pulse, 0.18 * pulse, 0.18 * pulse);
+    for (let index = 0; index < (view.runicEliteRings?.length ?? 0); index++) {
+      const ringPulse = 1 + Math.sin(time * (fury ? 7.4 : 3.4) + index * Math.PI) * (fury ? 0.08 : 0.035);
+      const base = 1.32 + index * 0.34;
+      view.runicEliteRings![index].setLocalScale(base * ringPulse, 0.025, base * ringPulse);
+    }
+    for (let index = 0; index < (view.runicEliteRunes?.length ?? 0); index++) {
+      const bob = Math.sin(time * (fury ? 6.2 : 2.8) + index * 1.4) * (fury ? 0.12 : 0.05);
+      const rune = view.runicEliteRunes![index];
+      const position = rune.getLocalPosition();
+      rune.setLocalPosition(position.x, (fury ? 1.32 : 1.08) + bob, position.z);
+    }
+  }
+
+  private clearRunicEliteVisual(view: View): void {
+    destroyEntity(view.runicEliteCore);
+    for (const ring of view.runicEliteRings ?? []) destroyEntity(ring);
+    for (const rune of view.runicEliteRunes ?? []) destroyEntity(rune);
+    destroyEntity(view.runicEliteRoot);
+    for (const material of view.runicEliteMaterials ?? []) material.destroy();
+    view.runicEliteRoot = undefined;
+    view.runicEliteCore = undefined;
+    view.runicEliteRings = undefined;
+    view.runicEliteRunes = undefined;
+    view.runicEliteMaterials = undefined;
+    view.runicElitePhase = undefined;
+  }
+
+  /** Halo de tier ortogonal ao arquétipo e às duas runas do Elite Rúnico. */
+  private syncDifficultyAffixVisual(view: View, entity: EntityState): void {
+    const modifiers = difficultyModifiersPresentationGate(entity, this.difficultyState);
+    if (this.disposed || view.kind !== 'enemy' || !modifiers || modifiers.length === 0) {
+      this.clearDifficultyAffixVisual(view);
+      return;
+    }
+    const key = `${this.difficultyState.id}:${modifiers.map((modifier) => modifier.id).join(',')}`;
+    if (view.difficultyAffixRoot?.parent && view.difficultyAffixKey === key) return;
+    this.clearDifficultyAffixVisual(view);
+
+    const accent = colorFromCss(DIFFICULTY_PALETTE[this.difficultyState.id]);
+    const haloMaterial = createMaterial(accent, {
+      emissive: accent, emissiveIntensity: 1.65, opacity: 0.52,
+      additive: true, unlit: true, depthWrite: false,
+    });
+    const core = colorFromCss(this.difficultyState.id === 'elite' ? '#ffe4ff' : '#fff1d4');
+    const coreMaterial = createMaterial(core, {
+      emissive: core, emissiveIntensity: 2.1, opacity: 0.74,
+      additive: true, unlit: true, depthWrite: false,
+    });
+    const root = makeEntity(`difficulty-affixes-${key}`, this.world.app);
+    view.visual.addChild(root);
+    const rings = modifiers.map((modifier, index) => {
+      const ring = this.world.createPrimitive(
+        `difficulty-affix-ring-${modifier.id}`,
+        'torus',
+        index === 0 ? haloMaterial : coreMaterial,
+        { x: 0, y: 0.09 + index * 0.05, z: 0 },
+        { x: 1.56 + index * 0.25, y: 0.022, z: 1.56 + index * 0.25 },
+        root,
+      );
+      ring.setLocalEulerAngles(index * 11, index * 37, index * -9);
+      return ring;
+    });
+    const motes = modifiers.map((modifier, index) => {
+      const angle = index / modifiers.length * Math.PI * 2;
+      return this.world.createPrimitive(
+        `difficulty-affix-sigil-${modifier.id}`,
+        modifier.id === 'difficulty_fortified' ? 'box' : modifier.id === 'difficulty_vicious' ? 'cone' : 'sphere',
+        index === 0 ? coreMaterial : haloMaterial,
+        { x: Math.sin(angle) * 1.2, y: 1.05 + index * 0.32, z: Math.cos(angle) * 1.2 },
+        { x: 0.12, y: modifier.id === 'difficulty_vicious' ? 0.28 : 0.12, z: 0.12 },
+        root,
+      );
+    });
+    view.difficultyAffixRoot = root;
+    view.difficultyAffixRings = rings;
+    view.difficultyAffixMotes = motes;
+    view.difficultyAffixMaterials = [haloMaterial, coreMaterial];
+    view.difficultyAffixKey = key;
+  }
+
+  private updateDifficultyAffixVisual(view: View): void {
+    if (!view.difficultyAffixRoot) return;
+    const time = view.animTime ?? 0;
+    const elite = this.difficultyState.id === 'elite';
+    view.difficultyAffixRoot.setLocalEulerAngles(0, time * (elite ? 34 : 22), 0);
+    for (let index = 0; index < (view.difficultyAffixRings?.length ?? 0); index++) {
+      const base = 1.56 + index * 0.25;
+      const pulse = 1 + Math.sin(time * (elite ? 5.8 : 4.2) + index * Math.PI) * 0.055;
+      view.difficultyAffixRings![index].setLocalScale(base * pulse, 0.022, base * pulse);
+    }
+    for (let index = 0; index < (view.difficultyAffixMotes?.length ?? 0); index++) {
+      const mote = view.difficultyAffixMotes![index];
+      const position = mote.getLocalPosition();
+      mote.setLocalPosition(position.x, 1.05 + index * 0.32 + Math.sin(time * 4.5 + index) * 0.08, position.z);
+    }
+  }
+
+  private clearDifficultyAffixVisual(view: View): void {
+    for (const ring of view.difficultyAffixRings ?? []) destroyEntity(ring);
+    for (const mote of view.difficultyAffixMotes ?? []) destroyEntity(mote);
+    destroyEntity(view.difficultyAffixRoot);
+    for (const material of view.difficultyAffixMaterials ?? []) material.destroy();
+    view.difficultyAffixRoot = undefined;
+    view.difficultyAffixRings = undefined;
+    view.difficultyAffixMotes = undefined;
+    view.difficultyAffixMaterials = undefined;
+    view.difficultyAffixKey = undefined;
+  }
+
+  private clearEnemySpecialVisuals(view: View): void {
+    this.clearShardcasterVisual(view);
+    this.clearAshCorruptorVisual(view);
+    this.clearRuinBruteVisual(view);
+    this.clearUtraeanSentinelVisual(view);
+    this.clearRunicEliteVisual(view);
+    this.clearDifficultyAffixVisual(view);
+  }
+
+  private syncAshVeilStatus(view: View, entity: EntityState, entities: readonly EntityState[]): void {
+    const presentation = ashVeilStatusPresentationGate(entity, entities);
+    if (this.disposed || !presentation) {
+      this.clearAshVeilVisual(view);
+      return;
+    }
+    if (view.ashVeilRoot?.parent) return;
+    this.clearAshVeilVisual(view);
+
+    const veilColor = colorFromCss(ASH_CORRUPTOR_PALETTE.veil);
+    const amberColor = colorFromCss(ASH_CORRUPTOR_PALETTE.amber);
+    const veilMaterial = createMaterial(veilColor, {
+      emissive: veilColor,
+      emissiveIntensity: 1.65,
+      opacity: 0.48,
+      additive: true,
+      unlit: true,
+      depthWrite: false,
+    });
+    const amberMaterial = createMaterial(amberColor, {
+      emissive: amberColor,
+      emissiveIntensity: 2,
+      opacity: 0.66,
+      additive: true,
+      unlit: true,
+      depthWrite: false,
+    });
+    const root = makeEntity('ash-veil-status-overlay', this.world.app);
+    view.visual.addChild(root);
+    const ring = this.world.createPrimitive(
+      'ash-veil-status-orbit',
+      'torus',
+      veilMaterial,
+      { x: 0, y: 0.12, z: 0 },
+      { x: 1.35, y: 0.026, z: 1.35 },
+      root,
+    );
+    const sigil = this.world.createPrimitive(
+      'ash-veil-status-sigil',
+      'torus',
+      amberMaterial,
+      { x: 0, y: 1.28, z: 0.48 },
+      { x: 0.42, y: 0.024, z: 0.42 },
+      root,
+    );
+    sigil.setLocalEulerAngles(90, 0, 0);
+    for (let index = 0; index < 3; index++) {
+      const angle = index * Math.PI * 2 / 3;
+      this.world.createPrimitive(
+        `ash-veil-status-mote-${index}`,
+        'sphere',
+        index === 0 ? amberMaterial : veilMaterial,
+        { x: Math.sin(angle) * 0.78, y: 1.12 + index * 0.12, z: Math.cos(angle) * 0.78 },
+        { x: 0.105, y: 0.105, z: 0.105 },
+        root,
+      );
+    }
+    view.ashVeilRoot = root;
+    view.ashVeilRing = ring;
+    view.ashVeilSigil = sigil;
+    view.ashVeilMaterials = [veilMaterial, amberMaterial];
+  }
+
+  private updateAshVeilVisual(view: View): void {
+    if (!view.ashVeilRoot || !view.ashVeilRing || !view.ashVeilSigil) return;
+    const phase = (view.animTime ?? 0) * 2.6;
+    const pulse = 1 + Math.sin(phase * 2) * 0.075;
+    view.ashVeilRoot.setLocalEulerAngles(0, phase * 24, 0);
+    view.ashVeilRing.setLocalScale(1.35 * pulse, 0.026, 1.35 * pulse);
+    view.ashVeilSigil.setLocalScale(0.42 / pulse, 0.024, 0.42 / pulse);
+  }
+
+  private clearAshVeilVisual(view: View): void {
+    destroyEntity(view.ashVeilRing);
+    destroyEntity(view.ashVeilSigil);
+    destroyEntity(view.ashVeilRoot);
+    for (const material of view.ashVeilMaterials ?? []) material.destroy();
+    view.ashVeilRoot = undefined;
+    view.ashVeilRing = undefined;
+    view.ashVeilSigil = undefined;
+    view.ashVeilMaterials = undefined;
+  }
+
+  private syncRuinExposedStatus(view: View, entity: EntityState, entities: readonly EntityState[]): void {
+    const presentation = ruinExposedStatusPresentationGate(entity, entities);
+    if (this.disposed || !presentation) {
+      this.clearRuinExposedVisual(view);
+      return;
+    }
+    if (view.ruinExposedRoot?.parent) return;
+    this.clearRuinExposedVisual(view);
+
+    const rustColor = colorFromCss(RUIN_BRUTE_PALETTE.rustCore);
+    const ironColor = colorFromCss(RUIN_BRUTE_PALETTE.ironCore);
+    const rustMaterial = createMaterial(rustColor, {
+      emissive: rustColor,
+      emissiveIntensity: 1.75,
+      opacity: 0.58,
+      additive: true,
+      unlit: true,
+      depthWrite: false,
+    });
+    const ironMaterial = createMaterial(ironColor, {
+      emissive: ironColor,
+      emissiveIntensity: 1.95,
+      opacity: 0.65,
+      additive: true,
+      unlit: true,
+      depthWrite: false,
+    });
+    const root = makeEntity('ruin-exposed-status-overlay', this.world.app);
+    view.visual.addChild(root);
+    const ring = this.world.createPrimitive(
+      'ruin-exposed-status-ring',
+      'torus',
+      rustMaterial,
+      { x: 0, y: 0.1, z: 0 },
+      { x: 1.48, y: 0.03, z: 1.48 },
+      root,
+    );
+    const plates: pc.Entity[] = [];
+    for (let index = 0; index < 4; index++) {
+      const angle = index * Math.PI / 2 + Math.PI / 4;
+      const plate = this.world.createPrimitive(
+        `ruin-exposed-broken-plate-${index}`,
+        'box',
+        index % 2 === 0 ? ironMaterial : rustMaterial,
+        {
+          x: Math.sin(angle) * 0.84,
+          y: 0.84 + (index % 2) * 0.38,
+          z: Math.cos(angle) * 0.84,
+        },
+        { x: 0.28, y: 0.42, z: 0.055 },
+        root,
+      );
+      plate.setLocalEulerAngles(index % 2 === 0 ? 16 : -16, angle * 180 / Math.PI, index * 13);
+      plates.push(plate);
+    }
+    view.ruinExposedRoot = root;
+    view.ruinExposedRing = ring;
+    view.ruinExposedPlates = plates;
+    view.ruinExposedMaterials = [rustMaterial, ironMaterial];
+  }
+
+  private updateRuinExposedVisual(view: View): void {
+    if (!view.ruinExposedRoot || !view.ruinExposedRing) return;
+    const phase = (view.animTime ?? 0) * 3.4;
+    const pulse = 1 + Math.sin(phase * 2.2) * 0.08;
+    view.ruinExposedRoot.setLocalEulerAngles(0, Math.sin(phase * 0.55) * 8, 0);
+    view.ruinExposedRing.setLocalScale(1.48 * pulse, 0.03, 1.48 * pulse);
+    for (let index = 0; index < (view.ruinExposedPlates?.length ?? 0); index++) {
+      const platePulse = 1 + Math.sin(phase * 1.6 + index) * 0.09;
+      view.ruinExposedPlates![index].setLocalScale(0.28 * platePulse, 0.42 * platePulse, 0.055);
+    }
+  }
+
+  private clearRuinExposedVisual(view: View): void {
+    destroyEntity(view.ruinExposedRing);
+    for (const plate of view.ruinExposedPlates ?? []) destroyEntity(plate);
+    destroyEntity(view.ruinExposedRoot);
+    for (const material of view.ruinExposedMaterials ?? []) material.destroy();
+    view.ruinExposedRoot = undefined;
+    view.ruinExposedRing = undefined;
+    view.ruinExposedPlates = undefined;
+    view.ruinExposedMaterials = undefined;
+  }
+
+  private syncArcaneResonanceStatus(view: View, entity: EntityState, entities: readonly EntityState[]): void {
+    const presentation = arcaneResonanceStatusPresentationGate(entity, entities);
+    if (this.disposed || !presentation) {
+      this.clearArcaneResonanceVisual(view);
+      return;
+    }
+    if (view.arcaneResonanceRoot?.parent) return;
+    this.clearArcaneResonanceVisual(view);
+
+    const markColor = colorFromCss(ARCANE_RESONANCE_PALETTE.mark);
+    const coreColor = colorFromCss(ARCANE_RESONANCE_PALETTE.core);
+    const ruptureColor = colorFromCss(ARCANE_RESONANCE_PALETTE.rupture);
+    const markMaterial = createMaterial(markColor, {
+      emissive: markColor,
+      emissiveIntensity: 2.1,
+      opacity: 0.58,
+      additive: true,
+      unlit: true,
+      depthWrite: false,
+    });
+    const coreMaterial = createMaterial(coreColor, {
+      emissive: coreColor,
+      emissiveIntensity: 2.45,
+      opacity: 0.72,
+      additive: true,
+      unlit: true,
+      depthWrite: false,
+    });
+    const ruptureMaterial = createMaterial(ruptureColor, {
+      emissive: ruptureColor,
+      emissiveIntensity: 1.9,
+      opacity: 0.52,
+      additive: true,
+      unlit: true,
+      depthWrite: false,
+    });
+    const root = makeEntity('arcane-resonance-status-overlay', this.world.app);
+    view.visual.addChild(root);
+    const floorRing = this.world.createPrimitive(
+      'arcane-resonance-mark-ring',
+      'torus',
+      markMaterial,
+      { x: 0, y: 0.1, z: 0 },
+      { x: 1.18, y: 0.026, z: 1.18 },
+      root,
+    );
+    const sigil = this.world.createPrimitive(
+      'arcane-resonance-mark-sigil',
+      'torus',
+      ruptureMaterial,
+      { x: 0, y: 1.34, z: 0.47 },
+      { x: 0.48, y: 0.022, z: 0.48 },
+      root,
+    );
+    sigil.setLocalEulerAngles(90, 0, 0);
+    const motes: pc.Entity[] = [];
+    for (let index = 0; index < 4; index++) {
+      const angle = index * Math.PI / 2;
+      const mote = this.world.createPrimitive(
+        `arcane-resonance-mark-mote-${index}`,
+        index % 2 === 0 ? 'sphere' : 'box',
+        index % 2 === 0 ? coreMaterial : markMaterial,
+        { x: Math.sin(angle) * 0.76, y: 0.7 + index * 0.14, z: Math.cos(angle) * 0.76 },
+        { x: 0.095, y: 0.095, z: 0.095 },
+        root,
+      );
+      motes.push(mote);
+    }
+    view.arcaneResonanceRoot = root;
+    view.arcaneResonanceRings = [floorRing, sigil];
+    view.arcaneResonanceMotes = motes;
+    view.arcaneResonanceMaterials = [markMaterial, coreMaterial, ruptureMaterial];
+  }
+
+  private updateArcaneResonanceVisual(view: View): void {
+    if (!view.arcaneResonanceRoot || !view.arcaneResonanceRings?.length) return;
+    const phase = (view.animTime ?? 0) * 3.1;
+    const pulse = 1 + Math.sin(phase * 1.9) * 0.08;
+    view.arcaneResonanceRoot.setLocalEulerAngles(0, phase * 18, 0);
+    view.arcaneResonanceRings[0].setLocalScale(1.18 * pulse, 0.026, 1.18 * pulse);
+    view.arcaneResonanceRings[1]?.setLocalScale(0.48 / pulse, 0.022, 0.48 / pulse);
+    for (let index = 0; index < (view.arcaneResonanceMotes?.length ?? 0); index++) {
+      const mote = view.arcaneResonanceMotes![index];
+      const angle = phase * 0.75 + index * Math.PI / 2;
+      const scale = 0.085 + (Math.sin(phase * 2.4 + index) + 1) * 0.018;
+      mote.setLocalPosition(
+        Math.sin(angle) * 0.76,
+        0.74 + index * 0.12 + Math.sin(angle * 1.7) * 0.1,
+        Math.cos(angle) * 0.76,
+      );
+      mote.setLocalScale(scale, scale, scale);
+    }
+  }
+
+  private clearArcaneResonanceVisual(view: View): void {
+    for (const ring of view.arcaneResonanceRings ?? []) destroyEntity(ring);
+    for (const mote of view.arcaneResonanceMotes ?? []) destroyEntity(mote);
+    destroyEntity(view.arcaneResonanceRoot);
+    for (const material of view.arcaneResonanceMaterials ?? []) material.destroy();
+    view.arcaneResonanceRoot = undefined;
+    view.arcaneResonanceRings = undefined;
+    view.arcaneResonanceMotes = undefined;
+    view.arcaneResonanceMaterials = undefined;
+  }
+
+  /** A órbita pública nasce somente do BuffState autoritativo e suas cargas. */
+  private syncStormOrbVisual(view: View, entity: EntityState): void {
+    const presentation = stormOrbBuffPresentationGate(entity);
+    if (this.disposed || view.kind !== 'player' || !presentation) {
+      this.clearStormOrbVisual(view);
+      return;
+    }
+    const charges = presentation.buff.charges ?? 0;
+    if (view.stormOrbRoot?.parent && view.stormOrbCharges === charges) return;
+    this.clearStormOrbVisual(view);
+
+    const shell = colorFromCss(STORM_ORB_PALETTE.shell);
+    const core = colorFromCss(STORM_ORB_PALETTE.core);
+    const storm = colorFromCss(STORM_ORB_PALETTE.storm);
+    const shellMaterial = createMaterial(shell, {
+      emissive: shell,
+      emissiveIntensity: 2.25,
+      opacity: 0.58,
+      additive: true,
+      unlit: true,
+      depthWrite: false,
+    });
+    const coreMaterial = createMaterial(core, {
+      emissive: core,
+      emissiveIntensity: 2.8,
+      opacity: 0.9,
+      additive: true,
+      unlit: true,
+      depthWrite: false,
+    });
+    const stormMaterial = createMaterial(storm, {
+      emissive: storm,
+      emissiveIntensity: 2.15,
+      opacity: 0.62,
+      additive: true,
+      unlit: true,
+      depthWrite: false,
+    });
+    const root = makeEntity('storm-orb-authoritative-orbit', this.world.app);
+    view.visual.addChild(root);
+    const ring = this.world.createPrimitive(
+      'storm-orb-authoritative-ring',
+      'torus',
+      shellMaterial,
+      { x: 0, y: 1.18, z: 0 },
+      { x: 1.24, y: 0.024, z: 1.24 },
+      root,
+    );
+    const cores: pc.Entity[] = [];
+    for (let index = 0; index < charges; index++) {
+      const angle = index / Math.max(1, charges) * Math.PI * 2;
+      const orb = this.world.createPrimitive(
+        `storm-orb-authoritative-charge-${index}`,
+        'sphere',
+        index % 2 === 0 ? coreMaterial : stormMaterial,
+        { x: Math.sin(angle) * 1.02, y: 1.18, z: Math.cos(angle) * 1.02 },
+        { x: 0.18, y: 0.18, z: 0.18 },
+        root,
+      );
+      cores.push(orb);
+    }
+    view.stormOrbRoot = root;
+    view.stormOrbRing = ring;
+    view.stormOrbCores = cores;
+    view.stormOrbMaterials = [shellMaterial, coreMaterial, stormMaterial];
+    view.stormOrbCharges = charges;
+  }
+
+  private updateStormOrbVisual(view: View): void {
+    if (!view.stormOrbRoot || !view.stormOrbRing || !view.stormOrbCores?.length) return;
+    const phase = (view.animTime ?? 0) * 3.8;
+    const pulse = 1 + Math.sin(phase * 1.7) * 0.08;
+    view.stormOrbRoot.setLocalEulerAngles(0, phase * 42, 0);
+    view.stormOrbRing.setLocalScale(1.24 * pulse, 0.024, 1.24 * pulse);
+    for (let index = 0; index < view.stormOrbCores.length; index++) {
+      const orb = view.stormOrbCores[index];
+      const baseAngle = index / view.stormOrbCores.length * Math.PI * 2;
+      const scale = 0.16 + (Math.sin(phase * 2.3 + index) + 1) * 0.025;
+      orb.setLocalPosition(
+        Math.sin(baseAngle) * 1.02,
+        1.18 + Math.sin(phase * 1.5 + index * 1.4) * 0.16,
+        Math.cos(baseAngle) * 1.02,
+      );
+      orb.setLocalScale(scale, scale, scale);
+    }
+  }
+
+  private clearStormOrbVisual(view: View): void {
+    destroyEntity(view.stormOrbRing);
+    for (const orb of view.stormOrbCores ?? []) destroyEntity(orb);
+    destroyEntity(view.stormOrbRoot);
+    for (const material of view.stormOrbMaterials ?? []) material.destroy();
+    view.stormOrbRoot = undefined;
+    view.stormOrbRing = undefined;
+    view.stormOrbCores = undefined;
+    view.stormOrbMaterials = undefined;
+    view.stormOrbCharges = undefined;
+  }
+
+  /** Silhueta bestial procedural, criada somente pelo buff público autoritativo. */
+  private syncFeralFormVisual(view: View, entity: EntityState): void {
+    const presentation = feralFormBuffPresentationGate(entity);
+    if (this.disposed || view.kind !== 'player' || !presentation) {
+      this.clearFeralFormVisual(view);
+      return;
+    }
+    if (view.feralFormRoot?.parent) return;
+    this.clearFeralFormVisual(view);
+    const hide = colorFromCss(FERAL_FORM_PALETTE.hide);
+    const shadow = colorFromCss(FERAL_FORM_PALETTE.shadow);
+    const eye = colorFromCss(FERAL_FORM_PALETTE.eye);
+    const hideMaterial = createMaterial(hide, {
+      emissive: hide, emissiveIntensity: 1.35, opacity: 0.28, additive: true, unlit: true, depthWrite: false,
+    });
+    const shadowMaterial = createMaterial(shadow, {
+      emissive: shadow, emissiveIntensity: 1.15, opacity: 0.34, additive: true, unlit: true, depthWrite: false,
+    });
+    const eyeMaterial = createMaterial(eye, {
+      emissive: eye, emissiveIntensity: 2.8, opacity: 0.9, additive: true, unlit: true, depthWrite: false,
+    });
+    const root = makeEntity('feral-form-authoritative-silhouette', this.world.app);
+    view.visual.addChild(root);
+    const ring = this.world.createPrimitive(
+      'feral-form-authoritative-ground-ring', 'torus', hideMaterial,
+      { x: 0, y: 0.08, z: 0 }, { x: 0.92, y: 0.025, z: 0.92 }, root,
+    );
+    const parts: pc.Entity[] = [];
+    parts.push(this.world.createPrimitive(
+      'feral-form-authoritative-shadow-body', 'sphere', shadowMaterial,
+      { x: 0, y: 1.05, z: 0 }, { x: 0.58, y: 0.88, z: 0.46 }, root,
+    ));
+    for (const side of [-1, 1]) {
+      parts.push(this.world.createPrimitive(
+        `feral-form-authoritative-claw-${side}`, 'box', hideMaterial,
+        { x: side * 0.62, y: 0.72, z: 0.2 }, { x: 0.1, y: 0.1, z: 0.68 }, root,
+      ));
+      const eyePart = this.world.createPrimitive(
+        `feral-form-authoritative-eye-${side}`, 'sphere', eyeMaterial,
+        { x: side * 0.13, y: 1.72, z: 0.42 }, { x: 0.055, y: 0.045, z: 0.045 }, root,
+      );
+      parts.push(eyePart);
+    }
+    view.feralFormRoot = root;
+    view.feralFormRing = ring;
+    view.feralFormParts = parts;
+    view.feralFormMaterials = [hideMaterial, shadowMaterial, eyeMaterial];
+  }
+
+  private updateFeralFormVisual(view: View): void {
+    if (!view.feralFormRoot || !view.feralFormRing || !view.feralFormParts?.length) return;
+    const phase = (view.animTime ?? 0) * 5.2;
+    const pulse = 1 + Math.sin(phase * 1.7) * 0.08;
+    view.feralFormRing.setLocalScale(0.92 * pulse, 0.025, 0.92 * pulse);
+    view.feralFormRoot.setLocalEulerAngles(0, Math.sin(phase * 0.42) * 3.5, 0);
+    for (let index = 0; index < view.feralFormParts.length; index++) {
+      const part = view.feralFormParts[index];
+      if (index === 0) part.setLocalScale(0.58 * pulse, 0.88 / pulse, 0.46 * pulse);
+      else if (index === 1 || index === 3) part.setLocalEulerAngles(0, index === 1 ? -16 : 16, Math.sin(phase + index) * 12);
+    }
+  }
+
+  private clearFeralFormVisual(view: View): void {
+    destroyEntity(view.feralFormRing);
+    for (const part of view.feralFormParts ?? []) destroyEntity(part);
+    destroyEntity(view.feralFormRoot);
+    for (const material of view.feralFormMaterials ?? []) material.destroy();
+    view.feralFormRoot = undefined;
+    view.feralFormRing = undefined;
+    view.feralFormParts = undefined;
+    view.feralFormMaterials = undefined;
+  }
+
+  private syncReviveProtectionVisual(view: View, entity: EntityState): void {
+    const protection = reviveProtectionBuffPresentationGate(entity);
+    if (this.disposed || view.kind !== 'player' || !protection) {
+      this.clearReviveProtectionVisual(view);
+      return;
+    }
+    if (view.reviveProtectionRoot?.parent) return;
+    this.clearReviveProtectionVisual(view);
+    const color = colorFromCss(COOPERATIVE_REVIVE_PALETTE.protection);
+    const core = colorFromCss(COOPERATIVE_REVIVE_PALETTE.target);
+    const outerMaterial = createMaterial(color, {
+      emissive: color, emissiveIntensity: 2.05, opacity: 0.48, additive: true, unlit: true, depthWrite: false,
+    });
+    const coreMaterial = createMaterial(core, {
+      emissive: core, emissiveIntensity: 1.7, opacity: 0.42, additive: true, unlit: true, depthWrite: false,
+    });
+    const root = makeEntity('revive-protection-authoritative-aura', this.world.app);
+    view.visual.addChild(root);
+    const outer = this.world.createPrimitive(
+      'revive-protection-authoritative-outer', 'torus', outerMaterial,
+      { x: 0, y: 0.1, z: 0 }, { x: 1.02, y: 0.028, z: 1.02 }, root,
+    );
+    const inner = this.world.createPrimitive(
+      'revive-protection-authoritative-inner', 'torus', coreMaterial,
+      { x: 0, y: 1.05, z: 0 }, { x: 0.68, y: 0.022, z: 0.68 }, root,
+    );
+    inner.setLocalEulerAngles(22, 0, 0);
+    view.reviveProtectionRoot = root;
+    view.reviveProtectionRings = [outer, inner];
+    view.reviveProtectionMaterials = [outerMaterial, coreMaterial];
+  }
+
+  private updateReviveProtectionVisual(view: View): void {
+    if (!view.reviveProtectionRoot || !view.reviveProtectionRings?.length) return;
+    const phase = (view.animTime ?? 0) * 5.4;
+    const pulse = 1 + Math.sin(phase * 1.8) * 0.09;
+    view.reviveProtectionRoot.setLocalEulerAngles(0, phase * 38, 0);
+    view.reviveProtectionRings[0].setLocalScale(1.02 * pulse, 0.028, 1.02 * pulse);
+    view.reviveProtectionRings[1]?.setLocalScale(0.68 / pulse, 0.022, 0.68 / pulse);
+  }
+
+  private clearReviveProtectionVisual(view: View): void {
+    for (const ring of view.reviveProtectionRings ?? []) destroyEntity(ring);
+    destroyEntity(view.reviveProtectionRoot);
+    for (const material of view.reviveProtectionMaterials ?? []) material.destroy();
+    view.reviveProtectionRoot = undefined;
+    view.reviveProtectionRings = undefined;
+    view.reviveProtectionMaterials = undefined;
+  }
+
+  private syncGuardianRetaliationTargetVisuals(entities: readonly EntityState[]): void {
+    const local = entities.find((entity) => entity.id === this.net.playerId);
+    const presentation = guardianRetaliationBuffPresentationGate(local, entities);
+    const targetId = presentation?.target?.id ?? null;
+    for (const [id, view] of this.views) {
+      if (view.kind !== 'enemy' || id !== targetId) {
+        this.clearGuardianRetaliationVisual(view);
+        continue;
+      }
+      if (view.guardianRetaliationRoot?.parent) continue;
+      this.clearGuardianRetaliationVisual(view);
+      const targetColor = colorFromCss(GUARDIAN_RETALIATION_PALETTE.target);
+      const guardColor = colorFromCss(GUARDIAN_RETALIATION_PALETTE.guard);
+      const coreColor = colorFromCss(GUARDIAN_RETALIATION_PALETTE.core);
+      const targetMaterial = createMaterial(targetColor, {
+        emissive: targetColor,
+        emissiveIntensity: 2.1,
+        opacity: 0.62,
+        additive: true,
+        unlit: true,
+        depthWrite: false,
+      });
+      const guardMaterial = createMaterial(guardColor, {
+        emissive: guardColor,
+        emissiveIntensity: 2.35,
+        opacity: 0.7,
+        additive: true,
+        unlit: true,
+        depthWrite: false,
+      });
+      const coreMaterial = createMaterial(coreColor, {
+        emissive: coreColor,
+        emissiveIntensity: 2.5,
+        opacity: 0.76,
+        additive: true,
+        unlit: true,
+        depthWrite: false,
+      });
+      const root = makeEntity('guardian-retaliation-target-overlay', this.world.app);
+      view.visual.addChild(root);
+      const outer = this.world.createPrimitive(
+        'guardian-retaliation-target-ring',
+        'torus',
+        targetMaterial,
+        { x: 0, y: 0.1, z: 0 },
+        { x: 1.34, y: 0.032, z: 1.34 },
+        root,
+      );
+      const inner = this.world.createPrimitive(
+        'guardian-retaliation-guard-ring',
+        'torus',
+        guardMaterial,
+        { x: 0, y: 0.14, z: 0 },
+        { x: 0.92, y: 0.026, z: 0.92 },
+        root,
+      );
+      const chevrons: pc.Entity[] = [];
+      for (let index = 0; index < 3; index++) {
+        const angle = index / 3 * Math.PI * 2;
+        const chevron = this.world.createPrimitive(
+          `guardian-retaliation-chevron-${index}`,
+          'box',
+          index === 1 ? coreMaterial : guardMaterial,
+          { x: Math.sin(angle) * 0.82, y: 1.2 + index * 0.17, z: Math.cos(angle) * 0.82 },
+          { x: 0.28, y: 0.12, z: 0.065 },
+          root,
+        );
+        chevron.setLocalEulerAngles(0, angle * 180 / Math.PI, index % 2 === 0 ? 38 : -38);
+        chevrons.push(chevron);
+      }
+      view.guardianRetaliationRoot = root;
+      view.guardianRetaliationRings = [outer, inner];
+      view.guardianRetaliationChevrons = chevrons;
+      view.guardianRetaliationMaterials = [targetMaterial, guardMaterial, coreMaterial];
+    }
+  }
+
+  private updateGuardianRetaliationVisual(view: View): void {
+    if (!view.guardianRetaliationRoot || !view.guardianRetaliationRings?.length) return;
+    const phase = (view.animTime ?? 0) * 3.8;
+    const pulse = 1 + Math.sin(phase * 2) * 0.075;
+    view.guardianRetaliationRoot.setLocalEulerAngles(0, -phase * 20, 0);
+    view.guardianRetaliationRings[0].setLocalScale(1.34 * pulse, 0.032, 1.34 * pulse);
+    view.guardianRetaliationRings[1]?.setLocalScale(0.92 / pulse, 0.026, 0.92 / pulse);
+    for (let index = 0; index < (view.guardianRetaliationChevrons?.length ?? 0); index++) {
+      const chevron = view.guardianRetaliationChevrons![index];
+      const scale = 1 + Math.sin(phase * 2.2 + index) * 0.12;
+      chevron.setLocalScale(0.28 * scale, 0.12 * scale, 0.065);
+    }
+  }
+
+  private clearGuardianRetaliationVisual(view: View): void {
+    for (const ring of view.guardianRetaliationRings ?? []) destroyEntity(ring);
+    for (const chevron of view.guardianRetaliationChevrons ?? []) destroyEntity(chevron);
+    destroyEntity(view.guardianRetaliationRoot);
+    for (const material of view.guardianRetaliationMaterials ?? []) material.destroy();
+    view.guardianRetaliationRoot = undefined;
+    view.guardianRetaliationRings = undefined;
+    view.guardianRetaliationChevrons = undefined;
+    view.guardianRetaliationMaterials = undefined;
+  }
+
+  private syncBossSealPhaseVisual(view: View, entity: EntityState): void {
+    const phase = bossPhasePresentationGate(entity);
+    const phaseTwo = this.zone === 'dungeon'
+      && view.kind === 'enemy'
+      && entity.alive
+      && phase?.applies === true
+      && phase.phase === 2;
+    if (this.disposed || !phaseTwo) {
+      this.clearBossSealPhaseVisual(view);
+      return;
+    }
+    if (view.bossSealPhaseRoot?.parent) return;
+    this.clearBossSealPhaseVisual(view);
+
+    const sealColor = colorFromCss(BOSS_SEAL_PALETTE.seal);
+    const coreColor = colorFromCss(BOSS_SEAL_PALETTE.sealCore);
+    const ruptureColor = colorFromCss(BOSS_SEAL_PALETTE.rupture);
+    const sealMaterial = createMaterial(sealColor, {
+      emissive: sealColor,
+      emissiveIntensity: 1.75,
+      opacity: 0.48,
+      additive: true,
+      unlit: true,
+      depthWrite: false,
+    });
+    const coreMaterial = createMaterial(coreColor, {
+      emissive: coreColor,
+      emissiveIntensity: 2.15,
+      opacity: 0.66,
+      additive: true,
+      unlit: true,
+      depthWrite: false,
+    });
+    const ruptureMaterial = createMaterial(ruptureColor, {
+      emissive: ruptureColor,
+      emissiveIntensity: 1.95,
+      opacity: 0.62,
+      additive: true,
+      unlit: true,
+      depthWrite: false,
+    });
+
+    const root = makeEntity('boss-seal-phase2-persistent-aura', this.world.app);
+    view.visual.addChild(root);
+    const aura = this.world.createPrimitive(
+      'boss-seal-phase2-aura-ring',
+      'torus',
+      sealMaterial,
+      { x: 0, y: 0.1, z: 0 },
+      { x: 1.72, y: 0.035, z: 1.72 },
+      root,
+    );
+    const crown = makeEntity('boss-seal-phase2-ruptured-crown', this.world.app);
+    root.addChild(crown);
+    this.world.createPrimitive(
+      'boss-seal-phase2-crown-ring',
+      'torus',
+      coreMaterial,
+      { x: 0, y: 2.18, z: 0 },
+      { x: 0.68, y: 0.035, z: 0.68 },
+      crown,
+    );
+    for (let index = 0; index < 8; index++) {
+      const angle = index * Math.PI / 4;
+      const shard = this.world.createPrimitive(
+        `boss-seal-phase2-crown-shard-${index}`,
+        'cone',
+        index % 2 === 0 ? ruptureMaterial : sealMaterial,
+        {
+          x: Math.sin(angle) * 0.5,
+          y: 2.34 + (index % 2) * 0.09,
+          z: Math.cos(angle) * 0.5,
+        },
+        { x: 0.1, y: 0.34, z: 0.1 },
+        crown,
+      );
+      shard.setLocalEulerAngles(index % 2 === 0 ? 12 : -12, angle * 180 / Math.PI, index * 7);
+    }
+
+    const cracks: pc.Entity[] = [];
+    const crackSpecs = [
+      { x: -0.24, y: 1.45, z: 0.53, roll: -34, length: 0.58 },
+      { x: 0.18, y: 1.31, z: 0.54, roll: 31, length: 0.48 },
+      { x: -0.06, y: 1.08, z: 0.55, roll: -9, length: 0.42 },
+      { x: 0.32, y: 1.62, z: 0.52, roll: 52, length: 0.38 },
+    ] as const;
+    for (let index = 0; index < crackSpecs.length; index++) {
+      const spec = crackSpecs[index];
+      const crack = this.world.createPrimitive(
+        `boss-seal-phase2-chest-crack-${index}`,
+        'box',
+        index % 2 === 0 ? ruptureMaterial : coreMaterial,
+        { x: spec.x, y: spec.y, z: spec.z },
+        { x: 0.045, y: spec.length, z: 0.025 },
+        root,
+      );
+      crack.setLocalEulerAngles(0, 0, spec.roll);
+      cracks.push(crack);
+    }
+
+    view.bossSealPhaseRoot = root;
+    view.bossSealPhaseAura = aura;
+    view.bossSealPhaseCrown = crown;
+    view.bossSealPhaseCracks = cracks;
+    view.bossSealPhaseMaterials = [sealMaterial, coreMaterial, ruptureMaterial];
+  }
+
+  private updateBossSealPhaseVisual(view: View): void {
+    if (!view.bossSealPhaseRoot || !view.bossSealPhaseAura || !view.bossSealPhaseCrown) return;
+    const phase = (view.animTime ?? 0) * 2.25;
+    const pulse = 1 + Math.sin(phase * 2.1) * 0.07;
+    view.bossSealPhaseAura.setLocalScale(1.72 * pulse, 0.035, 1.72 * pulse);
+    view.bossSealPhaseCrown.setLocalEulerAngles(0, phase * 18, 0);
+    for (let index = 0; index < (view.bossSealPhaseCracks?.length ?? 0); index++) {
+      const crackPulse = 1 + Math.sin(phase * 2.8 + index * 0.9) * 0.12;
+      const specLength = [0.58, 0.48, 0.42, 0.38][index] ?? 0.4;
+      view.bossSealPhaseCracks![index].setLocalScale(0.045 * crackPulse, specLength, 0.025);
+    }
+  }
+
+  private clearBossSealPhaseVisual(view: View): void {
+    destroyEntity(view.bossSealPhaseAura);
+    destroyEntity(view.bossSealPhaseCrown);
+    for (const crack of view.bossSealPhaseCracks ?? []) destroyEntity(crack);
+    destroyEntity(view.bossSealPhaseRoot);
+    for (const material of view.bossSealPhaseMaterials ?? []) material.destroy();
+    view.bossSealPhaseRoot = undefined;
+    view.bossSealPhaseAura = undefined;
+    view.bossSealPhaseCrown = undefined;
+    view.bossSealPhaseCracks = undefined;
+    view.bossSealPhaseMaterials = undefined;
   }
 
   private getZombieClipConfigs(): Promise<Partial<Record<VisualAnimState, ClipConfig>>> {
@@ -4314,6 +7734,7 @@ export class Game {
       configureImportedModel(model);
       setVisualAssetTransform(model, HERO_VISUAL_SCALE);
       view.visual.addChild(model);
+      view.weaponGripPose = createWeaponGripPose(model);
       view.anim = new PcClipController(model, buildHeroClipConfigs(tracks));
       view.heroLoading = false;
       view.equippedWeaponKey = undefined;
@@ -4335,7 +7756,7 @@ export class Game {
       this.world.models.instantiate(ZOMBIE_VISUAL_URL),
       this.getZombieClipConfigs(),
     ]).then(([model, clipConfigs]) => {
-      if (!view.entity.parent) {
+      if (this.disposed || !view.entity.parent) {
         destroyEntity(model);
         return;
       }
@@ -4345,6 +7766,12 @@ export class Game {
       view.visual.addChild(model);
       view.anim = new PcClipController(model, clipConfigs);
       view.zombieLoading = false;
+      this.syncEnemyPresentation(view, view.enemyVariant);
+      const current = this.latestEntities.get(view.entity.name);
+      if (current) {
+        this.syncRunicEliteVisual(view, current);
+        this.syncDifficultyAffixVisual(view, current);
+      }
     }).catch((error) => {
       view.zombieLoading = false;
       view.zombieFailed = true;
@@ -4358,22 +7785,40 @@ export class Game {
       if (!view) continue;
       view.animTime = (view.animTime ?? 0) + dt;
       const jumping = !!entity.jumping;
+      const evading = activeEvasionStatePresentationGate(entity)?.evading === true;
       if (jumping && !view.wasJumping) view.jumpArc = 0;
       if (jumping) view.jumpArc = Math.min((view.jumpArc ?? 0) + dt, JUMP_TIME);
       view.wasJumping = jumping;
       const jumpArc = view.jumpArc ?? 0;
-      const yOffset = jumping ? Math.sin(Math.PI * (jumpArc / JUMP_TIME)) * JUMP_HEIGHT : 0;
+      const yOffset = jumping ? Math.sin(Math.PI * (jumpArc / JUMP_TIME)) * JUMP_HEIGHT : evading ? -0.1 : 0;
       const bob = entity.alive && entity.action !== 'idle'
-        ? Math.sin((view.animTime ?? 0) * (entity.action === 'run' ? 13 : 9)) * 0.035
+        ? Math.sin((view.animTime ?? 0) * (evading ? 20 : entity.action === 'run' ? 13 : 9)) * (evading ? 0.018 : 0.035)
         : 0;
       view.visual.setLocalPosition(0, yOffset + bob, 0);
       const predictedAction = entity.id === this.net.playerId && this.localPlayerMoving
         ? (this.localPlayerRunning ? 'run' : 'walk')
         : entity.action;
-      const animState = jumping ? 'jump' : predictedAction;
+      const animState = jumping ? 'jump' : evading ? 'run' : predictedAction;
       view.anim?.setState(animState);
-      view.anim?.setPlaybackSpeed(animState === 'attack' ? entity.attackSpeed ?? 1 : 1);
+      view.anim?.setPlaybackSpeed(evading ? 1.65 : animState === 'attack' ? entity.attackSpeed ?? 1 : 1);
+      // O callback do jogo roda apos animationUpdate do PlayCanvas; esta camada
+      // aditiva e aplicada por ultimo e, portanto, nao e apagada pelo clipe.
+      applyWeaponGripPose(view);
       this.updateWeaponPose(view, animState, entity.alive);
+      this.updateShardcasterVisual(view);
+      this.updateAshCorruptorVisual(view);
+      this.updateRuinBruteVisual(view);
+      this.updateUtraeanSentinelVisual(view);
+      this.updateRunicEliteVisual(view);
+      this.updateDifficultyAffixVisual(view);
+      this.updateAshVeilVisual(view);
+      this.updateRuinExposedVisual(view);
+      this.updateBossSealPhaseVisual(view);
+      this.updateArcaneResonanceVisual(view);
+      this.updateStormOrbVisual(view);
+      this.updateFeralFormVisual(view);
+      this.updateReviveProtectionVisual(view);
+      this.updateGuardianRetaliationVisual(view);
     }
   }
 
@@ -4454,9 +7899,10 @@ export class Game {
       const anchor = view.weaponAnchor;
       const hand = anchor.getPosition();
       const dir = anchor.up;
-      const cx = hand.x + dir.x * WEAPON_BLADE_CENTER;
-      const cy = hand.y + dir.y * WEAPON_BLADE_CENTER;
-      const cz = hand.z + dir.z * WEAPON_BLADE_CENTER;
+      const bladeCenter = (view.weaponGlowLength ?? WEAPON_WORLD_LENGTH) * (0.5 - WEAPON_GRIP_FROM_BOTTOM);
+      const cx = hand.x + dir.x * bladeCenter;
+      const cy = hand.y + dir.y * bladeCenter;
+      const cz = hand.z + dir.z * bladeCenter;
       view.weaponLight?.setPosition(cx, cy, cz);
       const rotation = anchor.getRotation();
       for (const fx of view.weaponFx ?? []) {
@@ -4738,19 +8184,19 @@ export class Game {
     if (!weapon || !isWeaponKind(weapon.kind)) return;
     // Armas 2H (espadao/machado duplo/martelo) sao desenhadas maiores.
     const worldLength = isTwoHandedKind(weapon.kind) ? WEAPON_WORLD_LENGTH * TWO_HANDED_LENGTH_MULTIPLIER : WEAPON_WORLD_LENGTH;
-    const socketParent = findDescendantEntity(view.visual, WEAPON_SOCKET_BONE_NAMES);
+    const socketParent = findDescendantEntity(view.visual, RIGHT_HAND_BONE_NAMES);
     const attachToBone = !!socketParent;
     const inheritedScale = attachToBone ? maxWorldScale(socketParent) : 1;
-    const localWeaponLength = worldLength / inheritedScale;
     const anchor = makeEntity('weapon-anchor', this.world.app);
     (socketParent ?? view.visual).addChild(anchor);
     if (attachToBone) {
-      anchor.setLocalPosition(0, 0, 0);
-      anchor.setLocalEulerAngles(0, 0, -90);
+      // Usa a posicao calibrada do socket Weapon, mas orienta em espaco da mao.
+      // Assim +Y do asset aponta para a frente, como na referencia do WoW.
+      setHandWeaponSocket(anchor, RIGHT_HAND_SOCKET_POSITION, PRIMARY_WEAPON_SOCKET_EULER, inheritedScale);
     }
     view.weaponAnchor = anchor;
     view.weaponAttachedToBone = attachToBone;
-    view.weaponGlowLength = localWeaponLength;
+    view.weaponGlowLength = worldLength;
     void this.world.models.instantiate(lootModelUrlFor(weapon.kind, weapon.rarity)).then((model) => {
       if (view.equippedWeaponKey !== key || !view.entity.parent || view.weaponAnchor !== anchor || !anchor.parent) {
         destroyEntity(model);
@@ -4759,7 +8205,7 @@ export class Game {
       model.name = 'equipped-weapon';
       model.setLocalPosition(0, 0, 0);
       model.setLocalScale(1, 1, 1);
-      fitWeaponToGrip(model, worldLength, WEAPON_GRIP_FROM_BOTTOM, inheritedScale);
+      fitEquippedWeaponToGrip(model, weapon.kind, worldLength, inheritedScale);
       anchor.addChild(model);
       view.weapon = model;
       const stage = weaponGlowStageFor(weapon.upgradeLevel, weapon.rarity, weapon.element);
@@ -4885,8 +8331,11 @@ export class Game {
     socketParent.addChild(anchor);
     anchor.setLocalPosition(0, 0, 0);
     if (slot === 'offhand') {
-      // Espelha o anchor da mao direita (que usa -90).
-      anchor.setLocalEulerAngles(0, 0, 90);
+      setHandWeaponSocket(anchor, LEFT_HAND_SOCKET_POSITION, OFFHAND_WEAPON_SOCKET_EULER, inheritedScale);
+    } else if (slot === 'helmet') {
+      setScaledSocketPosition(anchor, HELMET_SOCKET_POSITION, inheritedScale);
+    } else {
+      setScaledSocketPosition(anchor, CHEST_SOCKET_POSITION, inheritedScale);
     }
     view[anchorField] = anchor;
 
@@ -4900,15 +8349,18 @@ export class Game {
       model.setLocalPosition(0, 0, 0);
       model.setLocalScale(1, 1, 1);
       if (slot === 'offhand') {
-        fitWeaponToGrip(model, WEAPON_WORLD_LENGTH, WEAPON_GRIP_FROM_BOTTOM, inheritedScale);
+        fitEquippedWeaponToGrip(model, visual.kind, WEAPON_WORLD_LENGTH, inheritedScale);
       } else {
         const safeScale = Math.max(inheritedScale, 0.0001);
         const target = (slot === 'helmet' ? HELMET_WORLD_SIZE : CHEST_ARMOR_WORLD_SIZE) / safeScale;
         const bounds = fitEntityToLargest(model, target);
         if (bounds && slot === 'armor') {
-          // Centraliza o peitoral verticalmente no osso do tronco.
+          // Centraliza o peitoral no tronco e da folga em profundidade para a
+          // malha rigida envolver o corpo, em vez de atravessa-lo.
           const scale = target / bounds.largest;
-          model.setLocalPosition(-bounds.center.x * scale, -bounds.center.y * scale, -bounds.center.z * scale);
+          const depthScale = scale * ARMOR_DEPTH_SCALE_BY_RARITY[visual.rarity];
+          model.setLocalScale(scale, scale, depthScale);
+          model.setLocalPosition(-bounds.center.x * scale, -bounds.center.y * scale, -bounds.center.z * depthScale);
         }
       }
       anchor.addChild(model);
@@ -4921,6 +8373,7 @@ export class Game {
     const seen = new Set<string>();
     for (const item of loot) {
       seen.add(item.id);
+      const groundY = this.world.groundHeightAt(item.position.x, item.position.z);
       let view = this.lootViews.get(item.id);
       if (!view) {
         const entity = makeEntity(`loot-${item.id}`, this.world.app);
@@ -4950,17 +8403,17 @@ export class Game {
           labelColor,
           labelText: item.name,
           rarityGlowScale: 1,
-          baseY: item.position.y,
+          baseY: groundY,
           phase: this.lootViews.size * 0.9,
         };
         this.lootViews.set(item.id, view);
         this.playNotableLootSound(item);
-        void this.replaceLootModel(entity, item.modelUrl);
+        void this.replaceLootModel(entity, item.modelUrl, item.kind);
       }
-      view.baseY = item.position.y;
+      view.baseY = groundY;
       view.labelText = item.name;
       this.syncLootRarityVisual(view, item);
-      setEntityPosition(view.entity, { x: item.position.x, y: item.position.y, z: item.position.z });
+      setEntityPosition(view.entity, { x: item.position.x, y: groundY, z: item.position.z });
     }
 
     for (const [id, view] of this.lootViews) {
@@ -5025,7 +8478,35 @@ export class Game {
     view.rarityRingMaterial = undefined;
   }
 
-  private async replaceLootModel(container: pc.Entity, url: string): Promise<void> {
+  private async replaceLootModel(container: pc.Entity, url: string, kind: ItemKind): Promise<void> {
+    const barColor = BAR_LOOT_COLORS[kind];
+    if (barColor !== undefined) {
+      clearChildren(container);
+      const material = this.world.material(`loot-${kind}-ingot`, barColor, {
+        gloss: kind === 'mithril_bar' ? 0.82 : 0.65,
+        metalness: 0.78,
+        emissive: kind === 'mithril_bar' ? colorFromCss('#184c57') : undefined,
+        emissiveIntensity: kind === 'mithril_bar' ? 0.62 : undefined,
+      });
+      const base = this.world.createPrimitive(
+        `${kind}-ingot-base`,
+        'box',
+        material,
+        { x: 0, y: 0.12, z: 0 },
+        { x: 0.78, y: 0.18, z: 0.36 },
+        container,
+      );
+      base.setLocalEulerAngles(0, 0, 3);
+      this.world.createPrimitive(
+        `${kind}-ingot-crown`,
+        'box',
+        material,
+        { x: 0, y: 0.25, z: 0 },
+        { x: 0.58, y: 0.1, z: 0.28 },
+        container,
+      );
+      return;
+    }
     try {
       const model = await this.world.models.instantiate(url);
       if (!container.parent) {
@@ -5060,6 +8541,676 @@ export class Game {
     }
   }
 
+  private reconcileOreNodes(nodes: readonly OreNodeState[]): void {
+    const seen = new Set<string>();
+    for (const node of nodes) {
+      seen.add(node.id);
+      let view = this.oreNodeViews.get(node.id);
+      if (view && (view.visual.kind !== node.kind || view.visual.rich !== (node.rich === true))) {
+        view.label.dispose();
+        destroyOreNodeVisual(view.visual);
+        this.oreNodeViews.delete(node.id);
+        view = undefined;
+      }
+      if (!view) {
+        const visual = createOreNodeVisual(this.world, {
+          kind: node.kind,
+          position: node.position,
+          state: node.depleted ? 'depleted' : 'active',
+          name: `ore-node-${node.id}`,
+          seed: this.oreNodeSeed(node.id),
+          scale: (node.kind === 'mithril' ? 1.08 : 1) * (node.rich ? 1.18 : 1),
+          rich: node.rich === true,
+        });
+        const label = new WorldLabel(this.uiLayer, 'ore-node-label', ORE_NODE_NAMES[node.kind], ORE_NODE_COLORS[node.kind]);
+        label.el.dataset.ore = node.kind;
+        label.el.dataset.rich = node.rich ? 'true' : 'false';
+        view = { visual, state: node, label };
+        this.oreNodeViews.set(node.id, view);
+      }
+      view.state = node;
+      setEntityPosition(view.visual.root, node.position);
+    }
+
+    for (const [id, view] of this.oreNodeViews) {
+      if (seen.has(id)) continue;
+      view.label.dispose();
+      destroyOreNodeVisual(view.visual);
+      this.oreNodeViews.delete(id);
+    }
+  }
+
+  private reconcileDisplacers(states: readonly DisplacerState[]): void {
+    const seen = new Set<string>();
+    for (const state of states) {
+      seen.add(state.id);
+      let view = this.displacerViews.get(state.id);
+      if (!view) {
+        const visual = createDisplacerVisual(
+          this.world,
+          state,
+          state.zone === 'dungeon' ? this.world.dungeon : this.world.exterior,
+        );
+        const label = new WorldLabel(this.uiLayer, 'displacer-world-label', state.label, displacerColor(state));
+        label.el.dataset.displacer = state.id;
+        view = { visual, state, label };
+        this.displacerViews.set(state.id, view);
+      }
+      view.state = state;
+      setEntityPosition(view.visual.root, state.position);
+    }
+
+    for (const [id, view] of this.displacerViews) {
+      if (seen.has(id)) continue;
+      view.label.dispose();
+      destroyDisplacerVisual(view.visual);
+      this.displacerViews.delete(id);
+    }
+  }
+
+  private updateDisplacerViews(): void {
+    for (const view of this.displacerViews.values()) {
+      const state = view.state;
+      updateDisplacerVisual(view.visual, state, this.elapsed);
+      const distance = this.localPlayerDistanceTo(state.position.x, state.position.z);
+      if (state.zone !== this.zone || distance > 30) {
+        view.label.el.style.display = 'none';
+        continue;
+      }
+      const status = state.current
+        ? state.canActivate
+          ? 'Clique para ativar'
+          : state.activated
+            ? 'Clique para abrir a rede'
+            : state.lockedReason || 'Âncora instável'
+        : state.activated
+          ? 'Âncora descoberta'
+          : distance <= 8
+            ? state.lockedReason || `Requer nível ${state.requiredLevel}`
+            : 'Âncora desconhecida';
+      view.label.setText(`${state.label} · ${status}`);
+      view.label.el.style.color = displacerColor(state);
+      view.label.el.dataset.state = state.current ? 'current' : state.activated ? 'active' : 'locked';
+      view.label.setWorldPosition(state.position.x, state.position.y + 2.45, state.position.z);
+      view.label.update(this.world);
+    }
+  }
+
+  private syncTreasureLodePresentation(value: unknown, zone: WorldZone): void {
+    const state = treasureLodeStatePresentationGate(value);
+    if (!state || zone !== 'overworld') {
+      this.clearTreasureLodePresentation();
+      return;
+    }
+    this.treasureLodeState = state;
+    if (!this.treasureLodeVisual) {
+      this.treasureLodeVisual = createTreasureLodeVisual(this.world, state, this.world.exterior);
+    }
+    updateTreasureLodeVisual(this.treasureLodeVisual, state, this.elapsed);
+  }
+
+  private updateTreasureLodePresentation(): void {
+    if (!this.treasureLodeVisual || !this.treasureLodeState) return;
+    updateTreasureLodeVisual(this.treasureLodeVisual, this.treasureLodeState, this.elapsed);
+  }
+
+  private clearTreasureLodePresentation(): void {
+    if (this.treasureLodeVisual) destroyTreasureLodeVisual(this.treasureLodeVisual);
+    this.treasureLodeVisual = null;
+    this.treasureLodeState = null;
+  }
+
+  private syncUtraeanRelayPresentation(value: unknown, zone: WorldZone): void {
+    const state = utraeanRelayStatePresentationGate(value);
+    if (!state || zone !== 'overworld') {
+      this.clearUtraeanRelayPresentation();
+      return;
+    }
+    this.utraeanRelayState = state;
+    if (!this.utraeanRelayVisual) {
+      this.utraeanRelayVisual = createUtraeanRelayVisual(this.world, state, this.world.exterior);
+    }
+    updateUtraeanRelayVisual(this.utraeanRelayVisual, state, this.elapsed);
+  }
+
+  private updateUtraeanRelayPresentation(): void {
+    if (!this.utraeanRelayVisual || !this.utraeanRelayState) return;
+    updateUtraeanRelayVisual(this.utraeanRelayVisual, this.utraeanRelayState, this.elapsed);
+  }
+
+  private clearUtraeanRelayPresentation(): void {
+    if (this.utraeanRelayVisual) destroyUtraeanRelayVisual(this.utraeanRelayVisual);
+    this.utraeanRelayVisual = null;
+    this.utraeanRelayState = null;
+  }
+
+  private syncArhokFrostPresentation(value: unknown, zone: WorldZone): void {
+    const state = arhokFrostBiomePresentationGate(value);
+    if (!state || zone !== 'overworld') {
+      this.clearArhokFrostPresentation();
+      return;
+    }
+    this.biomeState = state;
+    if (!this.arhokFrostVisual) {
+      this.arhokFrostVisual = createArhokFrostVisual(this.world, state, this.world.exterior);
+    }
+    this.updateArhokFrostPresentation();
+  }
+
+  private updateArhokFrostPresentation(): void {
+    if (!this.arhokFrostVisual || !this.biomeState) return;
+    const view = this.views.get(this.net.playerId);
+    const player = view ? entityPosition(view.entity) : this.latestEntities.get(this.net.playerId)?.position;
+    if (!player) return;
+    updateArhokFrostVisual(this.arhokFrostVisual, this.biomeState, player, this.elapsed);
+  }
+
+  private clearArhokFrostPresentation(): void {
+    if (this.arhokFrostVisual) destroyArhokFrostVisual(this.arhokFrostVisual);
+    this.arhokFrostVisual = null;
+    this.biomeState = null;
+  }
+
+  private syncCorruptedJunglePresentation(value: unknown, zone: WorldZone): void {
+    const state = corruptedJunglePresentationGate(value);
+    if (!state || zone !== 'overworld') {
+      this.clearCorruptedJunglePresentation();
+      return;
+    }
+    this.corruptedJungleState = state;
+    if (!this.corruptedJungleVisual) {
+      this.corruptedJungleVisual = createCorruptedJungleVisual(this.world, state, this.world.exterior);
+    }
+    updateCorruptedJungleVisual(this.corruptedJungleVisual, state, this.elapsed);
+  }
+
+  private updateCorruptedJunglePresentation(): void {
+    if (!this.corruptedJungleVisual || !this.corruptedJungleState) return;
+    updateCorruptedJungleVisual(this.corruptedJungleVisual, this.corruptedJungleState, this.elapsed);
+  }
+
+  private clearCorruptedJunglePresentation(): void {
+    if (this.corruptedJungleVisual) destroyCorruptedJungleVisual(this.corruptedJungleVisual);
+    this.corruptedJungleVisual = null;
+    this.corruptedJungleState = null;
+  }
+
+  private oreNodeSeed(id: string): number {
+    let hash = 2166136261;
+    for (let index = 0; index < id.length; index++) {
+      hash ^= id.charCodeAt(index);
+      hash = Math.imul(hash, 16777619);
+    }
+    return hash >>> 0;
+  }
+
+  private updateOreNodeViews(dt = 0): void {
+    if (dt > 0 && (this.miningState.cooldownRemaining > 0 || this.miningState.focusRemaining > 0)) {
+      const focusRemaining = Math.max(0, this.miningState.focusRemaining - dt);
+      this.miningState = {
+        ...this.miningState,
+        cooldownRemaining: Math.max(0, this.miningState.cooldownRemaining - dt),
+        focusRemaining,
+        ...(focusRemaining <= 0 ? {
+          focusNodeId: undefined,
+          strikeStreak: 0,
+          perfectReady: false,
+        } : {}),
+      };
+    }
+    for (const [id, view] of this.oreNodeViews) {
+      const node = view.state;
+      const professionLocked = this.professions.mining.level < node.requiredLevel;
+      const toolLocked = this.miningState.tool.tier < (node.requiredToolTier ?? 0);
+      const treasure = this.treasureLodeState?.nodeId === id ? this.treasureLodeState : null;
+      const treasureLocked = treasure?.phase === 'wave' || treasure?.phase === 'intermission';
+      const locked = professionLocked || toolLocked || treasureLocked;
+      const focused = this.miningState.focusNodeId === id && this.miningState.focusRemaining > 0;
+      const distance = this.localPlayerDistanceTo(node.position.x, node.position.z);
+      const nearby = distance <= node.interactRange + 1.4;
+      updateOreNodeVisual(view.visual, {
+        time: this.elapsed,
+        state: node.depleted ? 'depleted' : 'active',
+        emphasis: nearby || focused || (
+          this.miningState.lastNodeId === id && this.miningState.cooldownRemaining > 0
+        ) ? 1 : 0,
+      });
+
+      const labelVisible = this.zone === 'overworld' && distance <= (node.depleted ? 12 : 26);
+      if (!labelVisible) {
+        view.label.el.style.display = 'none';
+        continue;
+      }
+      view.label.el.dataset.locked = locked ? 'true' : 'false';
+      view.label.el.dataset.toolLocked = toolLocked ? 'true' : 'false';
+      view.label.el.dataset.focus = focused ? 'true' : 'false';
+      view.label.el.dataset.rich = node.rich ? 'true' : 'false';
+      view.label.el.dataset.treasureLode = treasure ? treasure.phase : '';
+      const focusSuffix = focused
+        ? this.miningState.perfectReady
+          ? ' · Próximo: GOLPE PERFEITO'
+          : ` · Ritmo ${this.miningState.strikeStreak}/3 (${Math.max(1, Math.ceil(this.miningState.focusRemaining))}s)`
+        : '';
+      const suffix = node.depleted
+        ? `Esgotado · retorna em ${Math.max(1, Math.ceil(node.respawnRemaining))}s`
+        : professionLocked
+          ? `Bloqueado · requer Mineração Nv ${node.requiredLevel} (você: Nv ${this.professions.mining.level})`
+          : toolLocked
+            ? `Bloqueado · requer ${miningToolForTier(node.requiredToolTier ?? 0).label}`
+            : treasureLocked
+              ? `EMBOSCADA · ${treasure?.remainingEnemies ?? 0} invasores · onda ${treasure?.wave ?? 0}/2`
+              : treasure?.phase === 'dormant'
+                ? `JAZIDA · mine para iniciar o desafio · ${node.remaining}/${node.capacity}`
+                : treasure?.phase === 'reward'
+                  ? `PROTEGIDA · cofre mineral revelado · ${node.remaining}/${node.capacity}`
+            : `${node.rich ? 'RICO · x2 · ' : ''}${node.remaining}/${node.capacity} · clique ou R para minerar · +XP${focusSuffix}`;
+      const name = node.rich ? `Veio Rico de ${ORE_NODE_NAMES[node.kind].replace('Veio de ', '')}` : ORE_NODE_NAMES[node.kind];
+      view.label.setText(`${name} · ${suffix}`);
+      view.label.setWorldPosition(
+        node.position.x,
+        node.position.y + (node.kind === 'mithril' ? 1.65 : 1.25) + (node.rich ? 0.28 : 0),
+        node.position.z,
+      );
+      view.label.update(this.world);
+    }
+  }
+
+  private reconcileProjectiles(projectiles: readonly ProjectileState[]): void {
+    const canonical = new Map<string, ProjectileState>();
+    for (const projectile of projectiles) {
+      // JSON nao e validado em runtime. Kind futuro/desconhecido nao herda por
+      // acidente lifecycle nem visual de um projetil conhecido.
+      if (!projectile?.id || !isSupportedProjectileKind(projectile.kind)) continue;
+      canonical.set(projectile.id, projectile);
+    }
+    const incoming = [...canonical.values()];
+    const lifecycle = projectileLifecyclePlan(this.projectileViews.keys(), incoming);
+
+    for (const id of lifecycle.remove) this.removeProjectileView(id);
+    for (const id of lifecycle.create) {
+      const state = canonical.get(id);
+      if (state) this.projectileViews.set(id, this.createProjectileView(state));
+    }
+    for (const id of lifecycle.update) {
+      const state = canonical.get(id);
+      const view = this.projectileViews.get(id);
+      if (!state || !view) continue;
+      if (view.state.kind !== state.kind) {
+        this.removeProjectileView(id);
+        this.projectileViews.set(id, this.createProjectileView(state));
+        continue;
+      }
+      view.state = state;
+      view.snapshotAt = this.elapsed;
+    }
+  }
+
+  private reconcileControlZones(zones: readonly ControlZoneState[]): void {
+    const incoming = new Map(zones.map((zone) => [zone.id, zone]));
+    for (const [id, view] of this.controlZoneViews) {
+      const state = incoming.get(id);
+      if (!state) {
+        destroyRootSnareVisual(view.visual);
+        this.controlZoneViews.delete(id);
+        continue;
+      }
+      view.state = state;
+    }
+    for (const [id, state] of incoming) {
+      if (this.controlZoneViews.has(id)) continue;
+      this.controlZoneViews.set(id, {
+        visual: createRootSnareVisual(this.world, state, this.world.root),
+        state,
+      });
+    }
+  }
+
+  private updateControlZoneViews(): void {
+    for (const view of this.controlZoneViews.values()) {
+      updateRootSnareVisual(view.visual, view.state, this.elapsed);
+    }
+  }
+
+  private clearControlZoneViews(): void {
+    for (const view of this.controlZoneViews.values()) destroyRootSnareVisual(view.visual);
+    this.controlZoneViews.clear();
+  }
+
+  private reconcileNatureSpirits(states: readonly NatureSpiritState[]): void {
+    const incoming = new Map(states.map((state) => [state.id, state]));
+    for (const id of [...this.natureSpiritViews.keys()]) {
+      if (!incoming.has(id)) this.removeNatureSpiritView(id);
+    }
+    for (const [id, state] of incoming) {
+      const existing = this.natureSpiritViews.get(id);
+      if (existing) {
+        existing.state = state;
+      } else {
+        this.natureSpiritViews.set(id, this.createNatureSpiritView(state));
+      }
+    }
+  }
+
+  private createNatureSpiritView(state: NatureSpiritState): NatureSpiritView {
+    const leaf = colorFromCss(NATURE_SPIRIT_PALETTE.leaf);
+    const soul = colorFromCss(NATURE_SPIRIT_PALETTE.soul);
+    const halo = colorFromCss(NATURE_SPIRIT_PALETTE.halo);
+    const leafMaterial = createMaterial(leaf, {
+      emissive: leaf, emissiveIntensity: 2.7, opacity: 0.76,
+      additive: true, unlit: true, depthWrite: false,
+    });
+    const soulMaterial = createMaterial(soul, {
+      emissive: soul, emissiveIntensity: 3.4, opacity: 0.9,
+      additive: true, unlit: true, depthWrite: false,
+    });
+    const haloMaterial = createMaterial(halo, {
+      emissive: halo, emissiveIntensity: 2.5, opacity: 0.62,
+      additive: true, unlit: true, depthWrite: false,
+    });
+    const root = makeEntity(state.id, this.world.app);
+    setEntityPosition(root, state.position);
+    this.world.root.addChild(root);
+    const core = this.world.createPrimitive(
+      `${state.id}-core`, 'sphere', soulMaterial,
+      { x: 0, y: 0, z: 0 }, { x: 0.24, y: 0.31, z: 0.24 }, root,
+    );
+    const haloRing = this.world.createPrimitive(
+      `${state.id}-halo`, 'torus', haloMaterial,
+      { x: 0, y: 0, z: 0 }, { x: 0.43, y: 0.025, z: 0.43 }, root,
+    );
+    haloRing.setLocalEulerAngles(68, 0, 18);
+    const motes: pc.Entity[] = [];
+    for (let index = 0; index < 3; index++) {
+      const angle = index / 3 * Math.PI * 2;
+      motes.push(this.world.createPrimitive(
+        `${state.id}-mote-${index}`, 'sphere', index === 0 ? soulMaterial : leafMaterial,
+        { x: Math.sin(angle) * 0.48, y: Math.sin(angle * 2) * 0.12, z: Math.cos(angle) * 0.48 },
+        { x: 0.065, y: 0.065, z: 0.065 }, root,
+      ));
+    }
+    const light = makeEntity(`${state.id}-light`, this.world.app);
+    light.addComponent('light', {
+      type: 'omni', color: halo, intensity: 1.25, range: 3.4,
+      castShadows: false, falloffMode: pc.LIGHTFALLOFF_INVERSESQUARED,
+    });
+    root.addChild(light);
+    return {
+      root, core, halo: haloRing, motes, light,
+      materials: [leafMaterial, soulMaterial, haloMaterial], state,
+      phase: this.projectilePhase(state.id),
+    };
+  }
+
+  private updateNatureSpiritViews(dt: number): void {
+    for (const view of this.natureSpiritViews.values()) {
+      const alpha = dt <= 0 ? 1 : 1 - Math.exp(-dt * 15);
+      lerpEntityPosition(view.root, view.state.position, alpha);
+      const phase = this.elapsed * 2.8 + view.phase;
+      const pulse = 1 + Math.sin(phase * 2.1) * 0.09;
+      view.core.setLocalScale(0.24 * pulse, 0.31 * pulse, 0.24 * pulse);
+      view.halo.setLocalEulerAngles(68, phase * 64, 18);
+      view.halo.setLocalScale(0.43 * pulse, 0.025, 0.43 * pulse);
+      for (let index = 0; index < view.motes.length; index++) {
+        const angle = phase + index / view.motes.length * Math.PI * 2;
+        view.motes[index].setLocalPosition(
+          Math.sin(angle) * 0.48,
+          Math.sin(angle * 1.7 + index) * 0.14,
+          Math.cos(angle) * 0.48,
+        );
+      }
+      if (view.light.light) view.light.light.intensity = 1.15 + pulse * 0.18;
+    }
+  }
+
+  private removeNatureSpiritView(id: string): void {
+    const view = this.natureSpiritViews.get(id);
+    if (!view) return;
+    destroyEntity(view.root);
+    for (const material of view.materials) material.destroy();
+    view.materials.length = 0;
+    this.natureSpiritViews.delete(id);
+  }
+
+  private clearNatureSpiritViews(): void {
+    for (const id of [...this.natureSpiritViews.keys()]) this.removeNatureSpiritView(id);
+  }
+
+  private reconcileExpeditionCargo(party: PartyState | null): void {
+    const state = expeditionCargoPresentationGate(party);
+    if (!state) {
+      this.clearExpeditionCargoView();
+      return;
+    }
+    if (this.expeditionCargoView?.state.id !== state.id) {
+      this.clearExpeditionCargoView();
+      this.expeditionCargoView = this.createExpeditionCargoView(state);
+      return;
+    }
+    this.expeditionCargoView.state = state;
+  }
+
+  private createExpeditionCargoView(state: ExpeditionCargoState): ExpeditionCargoView {
+    const hide = colorFromCss(EXPEDITION_CARGO_PALETTE.hide);
+    const harness = colorFromCss(EXPEDITION_CARGO_PALETTE.harness);
+    const pack = colorFromCss(EXPEDITION_CARGO_PALETTE.pack);
+    const rune = colorFromCss(EXPEDITION_CARGO_PALETTE.rune);
+    const hideMaterial = createMaterial(hide, { gloss: 0.12 });
+    const harnessMaterial = createMaterial(harness, { gloss: 0.2 });
+    const packMaterial = createMaterial(pack, { gloss: 0.08 });
+    const runeMaterial = createMaterial(rune, {
+      emissive: rune, emissiveIntensity: 2.5, opacity: 0.72,
+      additive: true, unlit: true, depthWrite: false,
+    });
+    const root = makeEntity(state.id, this.world.app);
+    setEntityPosition(root, state.position);
+    this.world.root.addChild(root);
+    const body = this.world.createPrimitive(`${state.id}-body`, 'box', hideMaterial, { x: 0, y: 0.92, z: 0 }, { x: 0.78, y: 0.72, z: 1.55 }, root);
+    this.world.createPrimitive(`${state.id}-neck`, 'cylinder', hideMaterial, { x: 0, y: 1.3, z: 0.72 }, { x: 0.25, y: 0.78, z: 0.25 }, root).setLocalEulerAngles(-28, 0, 0);
+    this.world.createPrimitive(`${state.id}-head`, 'box', hideMaterial, { x: 0, y: 1.66, z: 1.02 }, { x: 0.45, y: 0.42, z: 0.62 }, root);
+    for (const side of [-1, 1]) {
+      this.world.createPrimitive(`${state.id}-ear-${side}`, 'cone', hideMaterial, { x: side * 0.16, y: 2.01, z: 1.02 }, { x: 0.1, y: 0.34, z: 0.1 }, root);
+      this.world.createPrimitive(`${state.id}-pack-${side}`, 'box', packMaterial, { x: side * 0.52, y: 1.08, z: -0.05 }, { x: 0.42, y: 0.68, z: 1.05 }, root);
+    }
+    this.world.createPrimitive(`${state.id}-harness`, 'box', harnessMaterial, { x: 0, y: 1.25, z: 0 }, { x: 1.16, y: 0.11, z: 0.22 }, root);
+    const legs: pc.Entity[] = [];
+    for (const x of [-0.26, 0.26]) for (const z of [-0.52, 0.52]) {
+      legs.push(this.world.createPrimitive(`${state.id}-leg-${x}-${z}`, 'cylinder', hideMaterial, { x, y: 0.38, z }, { x: 0.13, y: 0.76, z: 0.13 }, root));
+    }
+    const runeRing = this.world.createPrimitive(`${state.id}-rune`, 'torus', runeMaterial, { x: 0, y: 1.55, z: -0.78 }, { x: 0.22, y: 0.025, z: 0.22 }, root);
+    runeRing.setLocalEulerAngles(90, 0, 0);
+    const light = makeEntity(`${state.id}-light`, this.world.app);
+    light.setLocalPosition(0, 1.55, -0.78);
+    light.addComponent('light', { type: 'omni', color: rune, intensity: 0.75, range: 2.5, castShadows: false });
+    root.addChild(light);
+    return { root, body, legs, rune: runeRing, light, materials: [hideMaterial, harnessMaterial, packMaterial, runeMaterial], state, phase: this.projectilePhase(state.id) };
+  }
+
+  private updateExpeditionCargoView(dt: number): void {
+    const view = this.expeditionCargoView;
+    if (!view) return;
+    const before = entityPosition(view.root);
+    const alpha = dt <= 0 ? 1 : 1 - Math.exp(-dt * 12);
+    lerpEntityPosition(view.root, view.state.position, alpha);
+    const after = entityPosition(view.root);
+    const dx = after.x - before.x;
+    const dz = after.z - before.z;
+    const moving = Math.hypot(dx, dz) > 0.0005;
+    if (moving) setYaw(view.root, Math.atan2(dx, dz));
+    const phase = this.elapsed * 7 + view.phase;
+    for (let index = 0; index < view.legs.length; index++) {
+      view.legs[index].setLocalEulerAngles(Math.sin(phase + (index % 2) * Math.PI) * (moving ? 16 : 2), 0, 0);
+    }
+    const pulse = 1 + Math.sin(this.elapsed * 3 + view.phase) * 0.08;
+    view.rune.setLocalScale(0.22 * pulse, 0.025, 0.22 * pulse);
+    if (view.light.light) view.light.light.intensity = 0.68 + pulse * 0.12;
+  }
+
+  private clearExpeditionCargoView(): void {
+    const view = this.expeditionCargoView;
+    if (!view) return;
+    destroyEntity(view.root);
+    for (const material of view.materials) material.destroy();
+    this.expeditionCargoView = null;
+  }
+
+  private reconcileCooperativeRevives(entities: readonly EntityState[]): void {
+    const incoming = new Map(reviveChannelPresentations(entities).map((presentation) => [presentation.reviver.id, presentation]));
+    for (const [id, view] of this.cooperativeReviveViews) {
+      const presentation = incoming.get(id);
+      if (!presentation) {
+        destroyCooperativeReviveVisual(view.visual);
+        this.cooperativeReviveViews.delete(id);
+        continue;
+      }
+      view.presentation = presentation;
+    }
+    for (const [id, presentation] of incoming) {
+      if (this.cooperativeReviveViews.has(id)) continue;
+      this.cooperativeReviveViews.set(id, {
+        visual: createCooperativeReviveVisual(this.world, presentation, this.world.root),
+        presentation,
+      });
+    }
+  }
+
+  private updateCooperativeReviveViews(): void {
+    for (const view of this.cooperativeReviveViews.values()) {
+      updateCooperativeReviveVisual(view.visual, view.presentation, this.elapsed);
+    }
+  }
+
+  private clearCooperativeReviveViews(): void {
+    for (const view of this.cooperativeReviveViews.values()) destroyCooperativeReviveVisual(view.visual);
+    this.cooperativeReviveViews.clear();
+  }
+
+  private createProjectileView(state: ProjectileState): ProjectileView {
+    const root = makeEntity(`projectile-${state.id}`, this.world.app);
+    setEntityPosition(root, state.position);
+    this.world.root.addChild(root);
+
+    const presentation = projectilePresentation(state.kind);
+    const coreColor = colorFromCss(presentation.coreColor);
+    const trailColor = colorFromCss(presentation.trailColor);
+    const coreMaterial = createMaterial(coreColor, {
+      emissive: coreColor,
+      emissiveIntensity: presentation.coreEmissive,
+      opacity: 0.94,
+      additive: true,
+      unlit: true,
+      depthWrite: false,
+    });
+    const trailMaterial = createMaterial(trailColor, {
+      emissive: trailColor,
+      emissiveIntensity: presentation.trailEmissive,
+      opacity: 0.5,
+      additive: true,
+      unlit: true,
+      depthWrite: false,
+    });
+    const radius = Math.max(0.12, Math.min(0.8, state.radius || 0.28));
+    const core = this.world.createPrimitive(
+      state.kind === 'arcaneBolt' ? 'arcane-bolt-core' : 'corrupted-shard-core',
+      'sphere',
+      coreMaterial,
+      { x: 0, y: 0, z: 0 },
+      state.kind === 'arcaneBolt'
+        ? { x: radius * 1.55, y: radius * 1.55, z: radius * 2.9 }
+        : { x: radius * 2, y: radius * 1.2, z: radius * 2.4 },
+      root,
+    );
+    core.setLocalEulerAngles(state.kind === 'arcaneBolt' ? 0 : 18, 0, state.kind === 'arcaneBolt' ? 0 : 45);
+    const trailLength = Math.max(0.72, radius * 3.4);
+    const trail = this.world.createPrimitive(
+      state.kind === 'arcaneBolt' ? 'arcane-bolt-trail' : 'corrupted-shard-trail',
+      'cone',
+      trailMaterial,
+      { x: 0, y: 0, z: -trailLength * 0.48 },
+      { x: radius * 0.9, y: trailLength, z: radius * 0.9 },
+      root,
+    );
+    trail.setLocalEulerAngles(90, 0, 0);
+
+    const light = makeEntity(state.kind === 'arcaneBolt' ? 'arcane-bolt-light' : 'corrupted-shard-light', this.world.app);
+    light.addComponent('light', {
+      type: 'omni',
+      color: colorFromCss(presentation.lightColor),
+      intensity: state.kind === 'arcaneBolt' ? 1.75 : 1.35,
+      range: state.kind === 'arcaneBolt' ? 3.8 : 3.2,
+      castShadows: false,
+      falloffMode: pc.LIGHTFALLOFF_INVERSESQUARED,
+    });
+    root.addChild(light);
+
+    const view: ProjectileView = {
+      root,
+      core,
+      trail,
+      light,
+      materials: [coreMaterial, trailMaterial],
+      state,
+      snapshotAt: this.elapsed,
+      phase: this.projectilePhase(state.id),
+    };
+    this.updateProjectileDirection(view);
+    return view;
+  }
+
+  private updateProjectileViews(dt: number): void {
+    for (const view of this.projectileViews.values()) {
+      const presentation = projectilePresentation(view.state.kind);
+      const predicted = extrapolatedProjectilePosition(view.state, this.elapsed - view.snapshotAt);
+      const corrected = correctedProjectilePosition(entityPosition(view.root), predicted, dt);
+      setEntityPosition(view.root, corrected);
+      this.updateProjectileDirection(view);
+
+      const radius = Math.max(0.12, Math.min(0.8, view.state.radius || 0.28));
+      const pulse = 1 + Math.sin(this.elapsed * presentation.pulseSpeed + view.phase) * 0.08;
+      if (view.state.kind === 'arcaneBolt') {
+        view.core.setLocalScale(radius * 1.55 * pulse, radius * 1.55 * pulse, radius * 2.9 * pulse);
+      } else {
+        view.core.setLocalScale(radius * 2 * pulse, radius * 1.2 * pulse, radius * 2.4 * pulse);
+      }
+      const speed = Math.hypot(view.state.velocity.x, view.state.velocity.y, view.state.velocity.z);
+      const trailLength = Math.max(0.72, Math.min(2.4, radius * 2.2 + speed * 0.055));
+      view.trail.setLocalPosition(0, 0, -trailLength * 0.48);
+      view.trail.setLocalScale(radius * 0.9, trailLength, radius * 0.9);
+      if (view.light.light) view.light.light.intensity = (view.state.kind === 'arcaneBolt' ? 1.55 : 1.25) + pulse * 0.22;
+    }
+  }
+
+  private updateProjectileDirection(view: ProjectileView): void {
+    const { x, z } = view.state.velocity;
+    if (Math.hypot(x, z) > 0.001) setYaw(view.root, Math.atan2(x, z));
+  }
+
+  private projectilePhase(id: string): number {
+    let hash = 2166136261;
+    for (let index = 0; index < id.length; index++) {
+      hash ^= id.charCodeAt(index);
+      hash = Math.imul(hash, 16777619);
+    }
+    return ((hash >>> 0) % 6283) / 1000;
+  }
+
+  private removeProjectileView(id: string): void {
+    const view = this.projectileViews.get(id);
+    if (!view) return;
+    // Destruicao explicita deixa o ownership auditavel: nenhuma luz ou material
+    // sobrevive ao root quando o servidor remove o projetil.
+    destroyEntity(view.core);
+    destroyEntity(view.trail);
+    destroyEntity(view.light);
+    destroyEntity(view.root);
+    for (const material of view.materials) material.destroy();
+    view.materials.length = 0;
+    this.projectileViews.delete(id);
+  }
+
+  private clearProjectileViews(): void {
+    for (const id of [...this.projectileViews.keys()]) this.removeProjectileView(id);
+  }
+
   private reconcileChests(chests: ChestState[]): void {
     const seen = new Set<string>();
     for (const chest of chests) {
@@ -5076,7 +9227,13 @@ export class Game {
         view.opened = chest.opened;
         void this.replaceChestModel(view.entity, chest.opened);
       }
-      setEntityPosition(view.entity, chest.position);
+      // A dungeon usa uma laje plana; o backend ainda envia Y calculado pelo
+      // relevo externo para os baus. Normaliza apenas a apresentacao para que
+      // west/deep nao fiquem afundados no novo piso modular.
+      setEntityPosition(view.entity, {
+        ...chest.position,
+        y: this.world.groundHeightAt(chest.position.x, chest.position.z),
+      });
       setYaw(view.entity, chest.id.endsWith('east')
         ? -Math.PI * 0.72
         : chest.id.endsWith('west')
@@ -5111,32 +9268,425 @@ export class Game {
   }
 
   private lootLabelColor(item: LootState): string {
+    const setItem = equipmentSetItemPresentation(item);
+    if (setItem) return EQUIPMENT_SET_COLORS[setItem.definition.id];
     if (item.rarity) return RARITY_COLORS[item.rarity];
     if (item.glowGem) return glowColorForGem(item.glowGem);
     return '#f0dfb2';
   }
 
   private lootAccentColor(item: LootState): string | null {
+    const setItem = equipmentSetItemPresentation(item);
+    if (setItem) return EQUIPMENT_SET_COLORS[setItem.definition.id];
     if (item.element === 'fire') return '#ff7a2f';
     if (item.glowGem) return glowColorForGem(item.glowGem);
     if (!item.rarity || item.rarity === 'comum') return null;
     return RARITY_COLORS[item.rarity];
   }
 
-  private syncCombatEvents(events: readonly CombatEvent[]): void {
+  private syncCombatEvents(
+    events: readonly CombatEvent[],
+    entities: readonly EntityState[],
+    oreNodes: readonly OreNodeState[],
+    doctrinePresentationEnabled: boolean,
+    activeDoctrineId: CombatDoctrineId | null,
+  ): void {
     for (const event of events) {
       if (this.seenCombatEvents.has(event.id)) continue;
       this.seenCombatEvents.add(event.id);
+      if (
+        event.type === 'encounter-seal-arming'
+        || event.type === 'encounter-seal-wave'
+        || event.type === 'encounter-seal-complete'
+        || event.type === 'encounter-seal-reset'
+      ) {
+        const encounter = sealChamberEventPresentationGate(event);
+        if (!encounter || this.zone !== 'dungeon') continue;
+        const encounterLabelPosition = {
+          x: encounter.position.x,
+          y: this.world.groundHeightAt(encounter.position.x, encounter.position.z),
+          z: encounter.position.z,
+        };
+        if (encounter.type === 'arming') {
+          this.sfx.play('ui');
+          this.showSealChamberPulse(encounter.position, encounter.radius, 'arming', encounter.delay);
+          this.showCombatText('O SELO DESPERTA', encounterLabelPosition, 'magic');
+        } else if (encounter.type === 'wave') {
+          this.sfx.play('boss-slam');
+          this.showSealChamberPulse(encounter.position, encounter.radius, 'wave', 0.72);
+          this.showCombatText(`ONDA ${encounter.wave}/3`, encounterLabelPosition, 'incoming');
+        } else if (encounter.type === 'complete') {
+          this.sfx.play('rare-loot');
+          this.showSealChamberPulse(encounter.position, encounter.radius, 'complete', 1.15);
+          this.showCombatText('SELO ROMPIDO', encounterLabelPosition, 'critical');
+          this.world.rig.addShake(0.3);
+        } else {
+          this.sfx.play('miss');
+          this.showSealChamberPulse(encounter.position, encounter.radius, 'reset', 0.75);
+          this.showCombatText('RITUAL DESFEITO', encounterLabelPosition, 'stagger');
+        }
+        continue;
+      }
+      if (
+        event.type === 'boss-seal-rupture'
+        || event.type === 'boss-seal-pulse-warning'
+        || event.type === 'boss-seal-pulse-impact'
+      ) {
+        const seal = bossSealEventPresentationGate(event, entities);
+        if (!seal || this.zone !== 'dungeon') continue;
+        if (seal.type === 'rupture') {
+          this.sfx.play('boss-slam');
+          this.showBossSealRupture(seal.position, seal.radius, seal.duration);
+        } else if (seal.type === 'pulse-warning') {
+          this.sfx.play('ui');
+          this.showBossSealPulseWarning(
+            seal.position,
+            seal.innerRadius,
+            seal.radius,
+            seal.delay,
+          );
+        } else {
+          this.sfx.play('hit-magic');
+          this.showBossSealPulseImpact(seal.position, seal.innerRadius, seal.radius);
+        }
+        continue;
+      }
+      if (event.type === 'runic-elite-fury' || event.type === 'runic-elite-defeated') {
+        const runic = runicEliteEventPresentationGate(event, entities);
+        if (!runic || this.zone !== 'dungeon') continue;
+        if (runic.type === 'fury') {
+          this.sfx.play('boss-slam');
+          this.showCombatText('FÚRIA RÚNICA', runic.position, 'incoming');
+          this.showRunicElitePulse(runic.position, runic.radius, 'fury');
+          this.world.rig.addShake(0.16);
+        } else {
+          this.sfx.play('rare-loot');
+          this.showCombatText('ELITE DERROTADO', runic.position, 'critical');
+          this.showRunicElitePulse(runic.position, runic.radius, 'defeated');
+          this.world.rig.addShake(0.22);
+        }
+        continue;
+      }
+      if (event.type === 'mining-perfect-strike') {
+        const strike = miningPerfectStrikeEventGate(event, entities, oreNodes);
+        if (!strike || this.zone !== 'overworld') continue;
+        this.sfx.play('rare-loot');
+        this.showCombatText(`GOLPE PERFEITO +${strike.event.amount}`, strike.event.position, 'critical');
+        this.showMiningPerfectStrike(strike.event.position, strike.event.radius, strike.event.variant);
+        if (strike.event.casterId === this.net.playerId) this.world.rig.addShake(0.12);
+        continue;
+      }
+      if (event.type === 'arcane-resonance-rupture') {
+        const resonance = arcaneResonanceEventPresentationGate(event, entities);
+        if (!resonance) continue;
+        this.sfx.play('arcane-nova');
+        this.showCombatText(`RUPTURA · +${resonance.event.amount} MANA`, resonance.event.position, 'magic');
+        this.showArcaneResonanceRupture(resonance.event.position, resonance.event.radius);
+        if (resonance.event.casterId === this.net.playerId) this.world.rig.addShake(0.14);
+        continue;
+      }
+      if (event.type === 'guardian-retaliation-ready' || event.type === 'guardian-retaliation-release') {
+        const retaliation = guardianRetaliationEventPresentationGate(event, entities);
+        if (!retaliation) continue;
+        this.sfx.play(retaliation.phase === 'ready' ? 'ui' : 'hit-physical');
+        this.showCombatText(
+          retaliation.phase === 'ready' ? 'RETALIAÇÃO PRONTA' : 'CONTRA-ATAQUE',
+          retaliation.event.position,
+          retaliation.phase === 'ready' ? 'stagger' : 'critical',
+        );
+        this.showGuardianRetaliationPulse(retaliation.event.position, retaliation.event.radius, retaliation.phase);
+        if (retaliation.phase === 'release' && retaliation.event.casterId === this.net.playerId) {
+          this.world.rig.addShake(0.18);
+        }
+        continue;
+      }
+      if (event.type === 'evade-start' || event.type === 'evade-avoid') {
+        const evasion = activeEvasionEventPresentationGate(event, entities);
+        if (!evasion) continue;
+        this.sfx.play('evade');
+        if (evasion.phase === 'start') {
+          this.showActiveEvasionTrail(
+            evasion.event.origin,
+            evasion.event.position,
+            evasion.event.radius,
+          );
+          if (evasion.event.casterId === this.net.playerId) this.world.rig.addShake(0.08);
+        } else {
+          this.showCombatText('EVITADO', evasion.event.position, 'miss');
+          this.showActiveEvasionAvoid(evasion.event.position, evasion.event.radius);
+          if (evasion.event.casterId === this.net.playerId) this.world.rig.addShake(0.11);
+        }
+        continue;
+      }
+      if (event.type === 'storm-orb-discharge' || (event.type === 'skill-effect' && event.skill === 'storm-orb')) {
+        const orb = stormOrbEventPresentationGate(event, entities);
+        if (!orb) continue;
+        if (orb.phase === 'cast') {
+          this.sfx.play('arcane-nova');
+          this.showStormOrbCast(orb.event.position, orb.event.radius);
+        } else {
+          this.sfx.play('hit-magic');
+          this.showStormOrbDischarge(orb.event.origin, orb.event.position, orb.event.radius);
+          this.showCombatText(`ORBE · ${orb.event.charges}`, orb.event.position, 'magic');
+          if (orb.event.casterId === this.net.playerId) this.world.rig.addShake(0.07);
+        }
+        continue;
+      }
+      if (event.type === 'skill-effect' && event.skill === 'feral-form') {
+        const form = feralFormEventPresentationGate(event, entities);
+        if (!form || form.phase !== 'cast') continue;
+        this.sfx.play('ui');
+        this.showFeralFormCast(form.event.position, form.event.radius);
+        this.showCombatText('FORMA FERAL', form.event.position, 'stagger');
+        if (form.event.casterId === this.net.playerId) this.world.rig.addShake(0.1);
+        continue;
+      }
+      if (event.type === 'skill-effect' && event.skill === 'root-snare') {
+        const roots = rootSnareEventPresentationGate(event, entities);
+        if (!roots) continue;
+        this.sfx.play('ui');
+        this.showRootSnareCast(roots.event.position, roots.event.radius);
+        this.showCombatText('RAÍZES', roots.event.position, 'stagger');
+        if (roots.event.casterId === this.net.playerId) this.world.rig.addShake(0.08);
+        continue;
+      }
+      if (event.type === 'skill-effect' && event.skill === 'chain-lightning-impact') {
+        const lightning = chainLightningEventPresentationGate(event, entities);
+        if (!lightning) continue;
+        this.sfx.play('hit-magic');
+        this.showChainLightningArc(lightning.event.origin, lightning.event.position, lightning.hop);
+        if (lightning.hop === 1 && lightning.event.casterId === this.net.playerId) this.world.rig.addShake(0.09);
+        continue;
+      }
+      if (event.type === 'skill-effect' && event.skill === 'renewal-wave-heal') {
+        const renewal = renewalWaveEventPresentationGate(event, entities);
+        if (!renewal) continue;
+        this.sfx.play('ui');
+        this.showRenewalWaveHeal(renewal.event.origin, renewal.event.position, renewal.event.amount, renewal.hop);
+        this.showCombatText(`+${Math.max(1, Math.round(renewal.event.amount))}`, renewal.event.position, 'magic');
+        continue;
+      }
+      if (event.type === 'skill-effect' && event.skill === 'phase-step') {
+        const step = phaseStepEventPresentationGate(event, entities);
+        if (!step) continue;
+        this.sfx.play('evade');
+        this.showPhaseStep(step.event.origin, step.event.position);
+        this.showCombatText('PASSO ESPECTRAL', step.event.position, 'magic');
+        if (step.event.casterId === this.net.playerId) this.world.rig.addShake(0.07);
+        continue;
+      }
+      if (event.type === 'skill-effect' && (event.skill === 'nature-spirit-summon' || event.skill === 'nature-spirit-bolt')) {
+        const spirit = natureSpiritEventPresentationGate(event, entities);
+        if (!spirit) continue;
+        if (spirit.phase === 'summon') {
+          this.sfx.play('ui');
+          this.showNatureSpiritSummon(spirit.event.origin, spirit.event.position);
+          this.showCombatText('ESPÍRITO DE ARANNA', spirit.event.position, 'magic');
+        } else {
+          this.sfx.play('hit-magic');
+          this.showNatureSpiritBolt(spirit.event.origin, spirit.event.position);
+        }
+        continue;
+      }
+      if (event.type === 'steel-sweep-effect') {
+        const form = steelSweepFormEventPresentationGate(event, entities);
+        if (!form) continue;
+        this.sfx.play('hit-physical');
+        if (form.formId === 'warrior_sweep_form_orbit') {
+          this.showSteelSweepOrbit(form.position, form.radius, event.casterId, form.variant);
+        } else {
+          this.showSteelSweepWedge(
+            form.position,
+            form.rotationY!,
+            form.radius,
+            form.arcDegrees!,
+            event.casterId,
+            form.variant,
+          );
+        }
+        continue;
+      }
       if (event.type === 'skill-effect') {
         if (event.skill === 'arcane-nova') {
           this.sfx.play('arcane-nova');
           this.showArcaneNova(event.position, event.radius);
+        }
+        if (event.skill === 'arcane-bolt') {
+          this.sfx.play('arcane-nova');
+          this.showArcaneBoltCast(event.position, event.radius);
+        }
+        if (event.skill === 'arcane-bolt-impact') {
+          this.sfx.play('hit-magic');
+          this.showArcaneBoltImpact(event.position, event.radius);
+        }
+        if (event.skill === 'arcane-bolt-slow') {
+          this.showCombatText('DESCOMPASSO', event.position, 'stagger');
+          this.showArcaneBoltSlow(event.position, event.radius);
+        }
+        if (event.skill === 'bulwark-call') {
+          this.sfx.play('ui');
+          this.showBulwarkCall(event.position, event.radius, event.casterId);
+        }
+        if (event.skill === 'bulwark-call-block') {
+          this.sfx.play('hit-physical');
+          this.showBulwarkBlock(event.position, event.radius, event.casterId);
+        }
+        const validVanguardReady = event.skill === 'doctrine-vanguard-ready' && event.sourceSkill === 'charge';
+        const validVanguardRelease = event.skill === 'doctrine-vanguard-release' && event.sourceSkill === 'steel-sweep';
+        const remoteDoctrineCaster = event.casterId !== this.net.playerId;
+        if (
+          doctrinePresentationEnabled
+          && (remoteDoctrineCaster || activeDoctrineId === 'warrior_doctrine_vanguard')
+          && (validVanguardReady || validVanguardRelease)
+        ) {
+          this.sfx.play(event.skill === 'doctrine-vanguard-release' ? 'hit-physical' : 'ui');
+          this.showDoctrineVanguard(
+            event.position,
+            event.radius,
+            event.skill === 'doctrine-vanguard-release' ? 'release' : 'ready',
+            event.casterId,
+          );
+        }
+        const validArcaneFlow = event.skill === 'doctrine-arcane-flow' && (
+          (event.variant === 'bolt-to-nova' && event.sourceSkill === 'arcane-bolt')
+          || (event.variant === 'nova-to-bolt' && event.sourceSkill === 'arcane-nova')
+        );
+        if (
+          doctrinePresentationEnabled
+          && (remoteDoctrineCaster || activeDoctrineId === 'warrior_doctrine_arcane_convergence')
+          && validArcaneFlow
+        ) {
+          this.sfx.play('hit-magic');
+          this.showDoctrineArcaneFlow(event.position, event.radius, event.variant, event.sourceSkill);
+        }
+        const validGuardianFlow = event.skill === 'doctrine-guardian-flow' && (
+          (event.variant === 'guard-to-bulwark' && event.sourceSkill === 'iron-guard')
+          || (event.variant === 'bulwark-to-guard' && event.sourceSkill === 'bulwark-call')
+        );
+        if (
+          doctrinePresentationEnabled
+          && (remoteDoctrineCaster || activeDoctrineId === 'warrior_doctrine_guardian_cadence')
+          && validGuardianFlow
+        ) {
+          this.sfx.play('ui');
+          this.showDoctrineGuardianFlow(event.position, event.radius, event.variant, event.sourceSkill);
         }
         if (event.skill === 'charge') {
           this.sfx.play('hit-physical');
           this.showChargeTrail(event.position, event.casterId, event.radius);
           this.showHitImpact(event.position, 'physical');
         }
+        if (event.skill === 'steel-sweep') {
+          this.sfx.play('hit-physical');
+          this.showSteelSweep(event.position, event.radius, event.casterId, event.variant);
+        }
+        if (event.skill === 'steel-sweep-bleed') {
+          this.showCombatText('SANGRANDO', event.position, 'bleed');
+          this.showSteelSweepStatus(event.position, event.radius, 'axe');
+        }
+        if (event.skill === 'steel-sweep-stagger') {
+          this.showCombatText('ABALO', event.position, 'stagger');
+          this.showSteelSweepStatus(event.position, event.radius, 'hammer');
+        }
+        if (event.skill === 'iron-guard') {
+          this.sfx.play('ui');
+          this.showIronGuard(event.position, event.radius, event.casterId, 'cast');
+        }
+        if (event.skill === 'iron-guard-block') {
+          this.sfx.play('hit-physical');
+          this.showIronGuard(event.position, event.radius, event.casterId, 'block');
+        }
+        if (event.skill === 'iron-guard-perfect') {
+          this.sfx.play('hit-magic');
+          this.showIronGuard(event.position, event.radius, event.casterId, 'perfect');
+        }
+        continue;
+      }
+      if (event.type === 'enemy-projectile-warning') {
+        const casterPosition = entities.find((entity) => entity.id === event.casterId)?.position;
+        this.showEnemyProjectileWarning(
+          event.position,
+          event.radius,
+          event.delay ?? 0.7,
+          event.casterId,
+          casterPosition,
+        );
+        continue;
+      }
+      if (
+        event.type === 'enemy-support-warning'
+        || event.type === 'enemy-support-apply'
+        || event.type === 'enemy-support-interrupted'
+      ) {
+        const support = ashSupportEventPresentationGate(event, entities);
+        if (!support) continue;
+        if (support.type === 'warning') {
+          this.showAshVeilWarning(
+            support.caster.position,
+            support.target.position,
+            support.radius,
+            support.delay,
+          );
+        } else if (support.type === 'apply') {
+          this.sfx.play('ui');
+          this.showAshVeilApply(support.caster.position, support.target.position, support.duration);
+        } else {
+          this.sfx.play('hit-physical');
+          this.showAshVeilInterrupted(support.caster.position, support.interrupter.id);
+        }
+        continue;
+      }
+      if (
+        event.type === 'enemy-brute-warning'
+        || event.type === 'enemy-brute-impact'
+        || event.type === 'enemy-brute-exposed'
+      ) {
+        const brute = ruinBruteEventPresentationGate(event, entities);
+        if (!brute) continue;
+        if (brute.type === 'warning') {
+          this.showRuinCleaveWarning(
+            brute.position,
+            brute.rotationY,
+            brute.radius,
+            brute.arcDegrees,
+            brute.delay,
+          );
+        } else if (brute.type === 'impact') {
+          this.sfx.play('hit-physical');
+          this.showRuinCleaveImpact(
+            brute.position,
+            brute.rotationY,
+            brute.radius,
+            brute.arcDegrees,
+          );
+        } else {
+          this.sfx.play('hit-physical');
+          this.showRuinBruteExposed(brute.position, brute.guarder.id);
+        }
+        continue;
+      }
+      if (
+        event.type === 'utraean-lance-warning'
+        || event.type === 'utraean-lance-impact'
+        || event.type === 'utraean-lance-interrupted'
+      ) {
+        const sentinel = utraeanSentinelEventPresentationGate(event, entities);
+        if (!sentinel) continue;
+        if (sentinel.type === 'warning') {
+          this.showUtraeanLanceWarning(sentinel.event.origin, sentinel.event.position, sentinel.event.radius, sentinel.event.delay);
+        } else if (sentinel.type === 'impact') {
+          this.sfx.play('hit-magic');
+          this.showUtraeanLanceImpact(sentinel.event.origin, sentinel.event.position, sentinel.event.radius);
+        } else {
+          this.sfx.play('hit-physical');
+          this.showUtraeanLanceInterrupted(sentinel.event.position);
+          this.showCombatText('LANÇA INTERROMPIDA', sentinel.event.position, 'stagger');
+        }
+        continue;
+      }
+      if (event.type === 'enemy-projectile-impact') {
+        this.sfx.play('hit-magic');
+        this.showEnemyProjectileImpact(event.position, event.radius, event.targetId);
         continue;
       }
       if (event.type === 'boss-slam-warning') {
@@ -5153,9 +9703,20 @@ export class Game {
         this.showCombatText('MISS', event.position, 'miss');
         continue;
       }
-      this.sfx.play(event.damageKind === 'magic' ? 'hit-magic' : 'hit-physical');
-      this.showDamageText(event.amount, event.position, event.critical ? 'critical' : event.damageKind);
-      this.showHitImpact(event.position, event.damageKind);
+      if (event.type !== 'damage') continue;
+      const feral = event.sourceSkill === 'feral-form'
+        ? feralFormEventPresentationGate(event, entities)
+        : null;
+      if (feral?.phase === 'claw') this.showFeralClaw(feral.event.position);
+      if (event.damageEffect === 'bleed') {
+        // DoT pode gerar varios eventos por segundo: texto menor, sem repetir o
+        // som e a explosao visual de um impacto direto em cada tick.
+        this.showDamageText(event.amount, event.position, 'bleed');
+      } else {
+        this.sfx.play(event.damageKind === 'magic' ? 'hit-magic' : 'hit-physical');
+        this.showDamageText(event.amount, event.position, event.critical ? 'critical' : event.damageKind);
+        this.showHitImpact(event.position, event.damageKind);
+      }
     }
     if (this.seenCombatEvents.size > 256) {
       const keep = new Set(events.map((event) => event.id));
@@ -5163,10 +9724,65 @@ export class Game {
     }
   }
 
+  /**
+   * O chip e o halo de provocacao nascem somente do StatusState autoritativo.
+   * O conjunto evita repetir o VFX a cada snapshot e nao participa de alvo,
+   * mitigacao, dano ou progressao.
+   */
+  private syncBulwarkTauntStatuses(entities: readonly EntityState[]): void {
+    const next = new Map<string, number>();
+    for (const entity of entities) {
+      if (entity.kind !== 'enemy' || !entity.alive) continue;
+      for (const status of entity.statuses ?? []) {
+        if (status.id !== 'bulwark-taunt' || status.sourceSkill !== 'bulwark-call') continue;
+        const key = `${entity.id}:${status.sourceId ?? ''}`;
+        const lastPulse = this.activeBulwarkTaunts.get(key);
+        if (lastPulse === undefined) this.showCombatText('PROVOCADO', entity.position, 'stagger');
+        if (lastPulse === undefined || this.elapsed - lastPulse >= 0.8) {
+          this.showBulwarkTaunt(entity.position);
+          next.set(key, this.elapsed);
+        } else {
+          next.set(key, lastPulse);
+        }
+      }
+    }
+    this.activeBulwarkTaunts.clear();
+    for (const [key, lastPulse] of next) this.activeBulwarkTaunts.set(key, lastPulse);
+  }
+
   private syncPartyEvents(events: readonly PartyEvent[]): void {
     for (const event of events) {
       if (this.seenPartyEvents.has(event.id)) continue;
       this.seenPartyEvents.add(event.id);
+      if (event.type === 'item_forged' || event.type === 'ore_smelted' || event.type === 'tool_forged') {
+        this.confirmForgeRecipePendingFromEvent(
+          event.type,
+          event.message || (event.type === 'ore_smelted'
+            ? 'Fundição concluída com sucesso.'
+            : event.type === 'tool_forged'
+              ? 'Picareta forjada e vinculada ao ofício.'
+              : 'Equipamento forjado com sucesso.'),
+        );
+      }
+      if (event.type === 'forge_error' || event.type === 'smelt_error') {
+        this.clearForgeRecipePending(event.message || 'A forja recusou o pedido.');
+      }
+      if (event.type === 'profession_contract_claimed') {
+        this.clearProfessionContractPending(event.message || 'Contrato concluído. Recompensa recebida.', true);
+      }
+      if (event.type === 'profession_contract_error') {
+        this.clearProfessionContractPending(event.message || 'Borin recusou o resgate do contrato.');
+      }
+      if (event.type === 'profession_level_up') {
+        this.sfx.play('rare-loot');
+        const active = this.activeQuestNpcId ? this.npcViews.get(this.activeQuestNpcId) : null;
+        if (active?.definition.kind === 'blacksmith') {
+          this.refreshBlacksmithDialogue(event.message || 'Um ofício alcançou um novo nível.');
+        }
+      } else if (event.type === 'profession_progress' && event.message) {
+        const active = this.activeQuestNpcId ? this.npcViews.get(this.activeQuestNpcId) : null;
+        if (active?.definition.kind === 'blacksmith') this.hud.setNpcDialogueStatus(event.message);
+      }
       if (event.message) this.hud.pushSystemMessage(event.message);
     }
     if (this.seenPartyEvents.size > 128) {
@@ -5247,7 +9863,7 @@ export class Game {
     return { x: state.position.x, y: state.position.y + 2.45, z: state.position.z };
   }
 
-  private showDamageText(amount: number, position: Vec3Like, damageKind: DamageKind | 'critical'): void {
+  private showDamageText(amount: number, position: Vec3Like, damageKind: CombatTextKind): void {
     // Numero de dano flutuante (apresentacao; client-side). O backend manda
     // valores com fracao (Round2, ex.: 14.85) — arredonda para leitura.
     this.showCombatText(Math.round(amount), position, damageKind);
@@ -5256,7 +9872,17 @@ export class Game {
   private showCombatText(text: number | string, position: Vec3Like, textKind: CombatTextKind): void {
     if (typeof text === 'number' && text <= 0) return;
     if (this.damageTexts.length >= MAX_FLOATING_COMBAT_TEXTS) this.damageTexts.shift()?.dispose();
-    const verticalOffset = textKind === 'magic' ? 3.18 : textKind === 'miss' ? 2.95 : textKind === 'incoming' ? 3.05 : 2.75;
+    const verticalOffset = textKind === 'magic'
+      ? 3.18
+      : textKind === 'miss'
+        ? 2.95
+        : textKind === 'incoming'
+          ? 3.05
+          : textKind === 'bleed'
+            ? 2.55
+            : textKind === 'stagger'
+              ? 2.92
+              : 2.75;
     this.damageTexts.push(new FloatingText(this.uiLayer, text, { x: position.x, y: position.y + verticalOffset, z: position.z }, textKind));
   }
 
@@ -5361,11 +9987,2007 @@ export class Game {
     this.effects.push(new PulseEffect(entity, material, 0.58, 0.6, radius * 2, 0.035));
   }
 
+  private showArcaneBoltCast(position: Vec3Like, radius: number): void {
+    const color = colorFromCss('#dffcff');
+    const material = createMaterial(color, {
+      emissive: color,
+      emissiveIntensity: 2.35,
+      opacity: 0.64,
+      additive: true,
+      unlit: true,
+      depthWrite: false,
+    });
+    const ring = this.world.createPrimitive(
+      'arcane-bolt-cast',
+      'torus',
+      material,
+      { x: position.x, y: position.y + 0.12, z: position.z },
+      { x: 0.34, y: 0.018, z: 0.34 },
+    );
+    this.effects.push(new PulseEffect(ring, material, 0.28, 0.34, Math.max(0.9, radius * 1.6), 0.018));
+  }
+
+  /** Aparece tanto ao acertar entidade quanto ao colidir com parede. */
+  private showArcaneBoltImpact(position: Vec3Like, radius: number): void {
+    const color = colorFromCss('#efffff');
+    const burstMaterial = createMaterial(color, {
+      emissive: color,
+      emissiveIntensity: 2.8,
+      opacity: 0.78,
+      additive: true,
+      unlit: true,
+      depthWrite: false,
+    });
+    const burst = this.world.createPrimitive(
+      'arcane-bolt-impact',
+      'sphere',
+      burstMaterial,
+      { x: position.x, y: position.y + 0.42, z: position.z },
+      { x: 0.2, y: 0.2, z: 0.2 },
+    );
+    this.effects.push(new PulseEffect(burst, burstMaterial, 0.34, 0.2, Math.max(1.35, radius * 4.2), 1));
+
+    const ringColor = colorFromCss('#67e9ff');
+    const ringMaterial = createMaterial(ringColor, {
+      emissive: ringColor,
+      emissiveIntensity: 2.1,
+      opacity: 0.58,
+      additive: true,
+      unlit: true,
+      depthWrite: false,
+    });
+    const ring = this.world.createPrimitive(
+      'arcane-bolt-impact-ring',
+      'torus',
+      ringMaterial,
+      { x: position.x, y: position.y + 0.075, z: position.z },
+      { x: 0.24, y: 0.018, z: 0.24 },
+    );
+    this.effects.push(new PulseEffect(ring, ringMaterial, 0.42, 0.24, Math.max(1.45, radius * 4.6), 0.018));
+  }
+
+  private showArcaneBoltSlow(position: Vec3Like, radius: number): void {
+    const color = colorFromCss('#76eaff');
+    const material = createMaterial(color, {
+      emissive: color,
+      emissiveIntensity: 1.8,
+      opacity: 0.5,
+      additive: true,
+      unlit: true,
+      depthWrite: false,
+    });
+    const ring = this.world.createPrimitive(
+      'arcane-bolt-slow',
+      'torus',
+      material,
+      { x: position.x, y: position.y + 0.11, z: position.z },
+      { x: 0.36, y: 0.022, z: 0.36 },
+    );
+    this.effects.push(new PulseEffect(ring, material, 0.52, 0.36, Math.max(1.25, radius * 3.8), 0.022));
+  }
+
+  private showArcaneResonanceRupture(position: Vec3Like, radius: number): void {
+    const mark = colorFromCss(ARCANE_RESONANCE_PALETTE.mark);
+    const rupture = colorFromCss(ARCANE_RESONANCE_PALETTE.rupture);
+    const core = colorFromCss(ARCANE_RESONANCE_PALETTE.core);
+    for (let index = 0; index < 2; index++) {
+      const tone = index === 0 ? mark : rupture;
+      const material = createMaterial(tone, {
+        emissive: tone,
+        emissiveIntensity: 2.65,
+        opacity: index === 0 ? 0.78 : 0.62,
+        additive: true,
+        unlit: true,
+        depthWrite: false,
+      });
+      const ring = this.world.createPrimitive(
+        `arcane-resonance-rupture-ring-${index}`,
+        'torus',
+        material,
+        { x: position.x, y: position.y + 0.09 + index * 0.055, z: position.z },
+        { x: 0.32 + index * 0.16, y: 0.028, z: 0.32 + index * 0.16 },
+      );
+      this.effects.push(new PulseEffect(
+        ring,
+        material,
+        0.58 + index * 0.1,
+        0.32 + index * 0.16,
+        radius * (index === 0 ? 2 : 1.68),
+        0.028,
+      ));
+    }
+    for (let index = 0; index < 10; index++) {
+      const angle = index / 10 * Math.PI * 2;
+      const tone = index % 3 === 0 ? core : index % 2 === 0 ? rupture : mark;
+      const material = createMaterial(tone, {
+        emissive: tone,
+        emissiveIntensity: 2.35,
+        opacity: 0.8,
+        additive: true,
+        unlit: true,
+        depthWrite: false,
+      });
+      const shard = this.world.createPrimitive(
+        `arcane-resonance-rupture-shard-${index}`,
+        index % 2 === 0 ? 'cone' : 'box',
+        material,
+        {
+          x: position.x + Math.sin(angle) * radius * 0.42,
+          y: position.y + 0.35 + (index % 3) * 0.18,
+          z: position.z + Math.cos(angle) * radius * 0.42,
+        },
+        index % 2 === 0 ? { x: 0.11, y: 0.44, z: 0.11 } : { x: 0.12, y: 0.3, z: 0.065 },
+      );
+      shard.setLocalEulerAngles(22, angle * 180 / Math.PI, index % 2 === 0 ? 28 : -28);
+      this.effects.push(new FadingEntityEffect(shard, material, 0.58, 0.82));
+    }
+  }
+
+  private showBulwarkCall(position: Vec3Like, radius: number, casterId: string): void {
+    const amber = colorFromCss('#f6b94d');
+    const paleAmber = colorFromCss('#ffe6a4');
+    const visualRadius = Math.max(2.2, Math.min(9, radius || 8.5));
+    for (let i = 0; i < 2; i++) {
+      const color = i === 0 ? amber : paleAmber;
+      const material = createMaterial(color, {
+        emissive: color,
+        emissiveIntensity: 1.9 - i * 0.25,
+        opacity: 0.58 - i * 0.12,
+        additive: true,
+        unlit: true,
+        depthWrite: false,
+      });
+      const ring = this.world.createPrimitive(
+        `bulwark-call-ring-${i}`,
+        'torus',
+        material,
+        { x: position.x, y: position.y + 0.07 + i * 0.025, z: position.z },
+        { x: 0.55 + i * 0.2, y: 0.025, z: 0.55 + i * 0.2 },
+      );
+      this.effects.push(new PulseEffect(
+        ring,
+        material,
+        0.72 + i * 0.1,
+        0.55 + i * 0.2,
+        visualRadius * (1.85 - i * 0.08),
+        0.025,
+      ));
+    }
+
+    // Quatro placas douradas formam uma leitura de baluarte ao redor do heroi.
+    const panels: ChargeTrailSegment[] = [];
+    for (let i = 0; i < 4; i++) {
+      const angle = (i / 4) * Math.PI * 2 + Math.PI / 4;
+      const material = createMaterial(paleAmber, {
+        emissive: paleAmber,
+        emissiveIntensity: 2,
+        opacity: 0.58,
+        additive: true,
+        unlit: true,
+        depthWrite: false,
+      });
+      const scale = { x: 0.42, y: 0.72, z: 0.055 };
+      const panel = this.world.createPrimitive(
+        'bulwark-call-shield',
+        'box',
+        material,
+        {
+          x: position.x + Math.sin(angle) * 0.82,
+          y: position.y + 0.9,
+          z: position.z + Math.cos(angle) * 0.82,
+        },
+        scale,
+      );
+      setYaw(panel, angle);
+      panels.push({ entity: panel, material, opacity: 0.58, scale });
+    }
+    this.effects.push(new ChargeTrailEffect(panels, 0.68));
+    if (casterId === this.net.playerId) this.world.rig.addShake(0.08);
+  }
+
+  private showBulwarkTaunt(position: Vec3Like): void {
+    const amber = colorFromCss('#ffbd52');
+    const material = createMaterial(amber, {
+      emissive: amber,
+      emissiveIntensity: 2.05,
+      opacity: 0.62,
+      additive: true,
+      unlit: true,
+      depthWrite: false,
+    });
+    const ring = this.world.createPrimitive(
+      'bulwark-taunt-ring',
+      'torus',
+      material,
+      { x: position.x, y: position.y + 0.12, z: position.z },
+      { x: 0.34, y: 0.022, z: 0.34 },
+    );
+    this.effects.push(new PulseEffect(ring, material, 0.5, 0.34, 1.45, 0.022));
+
+    const horns: ChargeTrailSegment[] = [];
+    for (const side of [-1, 1]) {
+      const hornMaterial = createMaterial(amber, {
+        emissive: amber,
+        emissiveIntensity: 2.2,
+        opacity: 0.68,
+        additive: true,
+        unlit: true,
+        depthWrite: false,
+      });
+      const scale = { x: 0.08, y: 0.42, z: 0.08 };
+      const horn = this.world.createPrimitive(
+        'bulwark-taunt-horn',
+        'cone',
+        hornMaterial,
+        { x: position.x + side * 0.28, y: position.y + 2.15, z: position.z },
+        scale,
+      );
+      horn.setLocalEulerAngles(0, 0, side * -24);
+      horns.push({ entity: horn, material: hornMaterial, opacity: 0.68, scale });
+    }
+    this.effects.push(new ChargeTrailEffect(horns, 0.58));
+  }
+
+  private showBulwarkBlock(position: Vec3Like, radius: number, defenderId: string): void {
+    const color = colorFromCss('#ffd278');
+    const visualRadius = Math.max(0.9, Math.min(2.2, radius || 1.25));
+    const material = createMaterial(color, {
+      emissive: color,
+      emissiveIntensity: 2.45,
+      opacity: 0.76,
+      additive: true,
+      unlit: true,
+      depthWrite: false,
+    });
+    const burst = this.world.createPrimitive(
+      'bulwark-call-block',
+      'sphere',
+      material,
+      { x: position.x, y: position.y + 1.05, z: position.z },
+      { x: 0.2, y: 0.32, z: 0.2 },
+    );
+    this.effects.push(new PulseEffect(burst, material, 0.34, 0.2, visualRadius * 1.45, 1));
+    if (defenderId === this.net.playerId) this.world.rig.addShake(0.1);
+  }
+
+  private showDoctrineVanguard(
+    position: Vec3Like,
+    radius: number,
+    phase: 'ready' | 'release',
+    casterId: string,
+  ): void {
+    const color = colorFromCss(phase === 'release' ? '#ff7a2f' : '#ffad61');
+    const visualRadius = Math.max(0.7, Math.min(2.8, radius || 1.2));
+    const material = createMaterial(color, {
+      emissive: color,
+      emissiveIntensity: phase === 'release' ? 2.45 : 1.9,
+      opacity: phase === 'release' ? 0.72 : 0.54,
+      additive: true,
+      unlit: true,
+      depthWrite: false,
+    });
+    const ring = this.world.createPrimitive(
+      `doctrine-vanguard-${phase}`,
+      phase === 'release' ? 'sphere' : 'torus',
+      material,
+      { x: position.x, y: position.y + (phase === 'release' ? 0.72 : 0.09), z: position.z },
+      phase === 'release'
+        ? { x: 0.2, y: 0.28, z: 0.2 }
+        : { x: 0.42, y: 0.024, z: 0.42 },
+    );
+    this.effects.push(new PulseEffect(
+      ring,
+      material,
+      phase === 'release' ? 0.38 : 0.58,
+      phase === 'release' ? 0.2 : 0.42,
+      visualRadius * (phase === 'release' ? 1.7 : 2.1),
+      phase === 'release' ? 1 : 0.024,
+    ));
+    this.showCombatText(phase === 'release' ? 'VANGUARDA!' : 'ÍMPETO', position, 'critical');
+    if (phase === 'release' && casterId === this.net.playerId) this.world.rig.addShake(0.12);
+  }
+
+  private showDoctrineArcaneFlow(
+    position: Vec3Like,
+    radius: number,
+    variant: unknown,
+    sourceSkill?: SkillId,
+  ): void {
+    const color = colorFromCss('#69eaff');
+    const visualRadius = Math.max(0.8, Math.min(2.6, radius || 1.15));
+    const material = createMaterial(color, {
+      emissive: color,
+      emissiveIntensity: 2.25,
+      opacity: 0.64,
+      additive: true,
+      unlit: true,
+      depthWrite: false,
+    });
+    const ring = this.world.createPrimitive(
+      'doctrine-arcane-flow',
+      'torus',
+      material,
+      { x: position.x, y: position.y + 0.1, z: position.z },
+      { x: 0.3, y: 0.02, z: 0.3 },
+    );
+    this.effects.push(new PulseEffect(ring, material, 0.48, 0.3, visualRadius * 2.25, 0.02));
+    const direction = variant === 'bolt-to-nova' && sourceSkill === 'arcane-bolt'
+      ? 'DARDO → NOVA'
+      : variant === 'nova-to-bolt' && sourceSkill === 'arcane-nova'
+        ? 'NOVA → DARDO'
+        : 'CONVERGÊNCIA';
+    this.showCombatText(direction, position, 'magic');
+  }
+
+  private showDoctrineGuardianFlow(
+    position: Vec3Like,
+    radius: number,
+    variant: unknown,
+    sourceSkill?: SkillId,
+  ): void {
+    const color = colorFromCss('#ffc768');
+    const visualRadius = Math.max(0.8, Math.min(2.5, radius || 1.1));
+    const material = createMaterial(color, {
+      emissive: color,
+      emissiveIntensity: 2.05,
+      opacity: 0.6,
+      additive: true,
+      unlit: true,
+      depthWrite: false,
+    });
+    const ring = this.world.createPrimitive(
+      'doctrine-guardian-flow',
+      'torus',
+      material,
+      { x: position.x, y: position.y + 0.1, z: position.z },
+      { x: 0.38, y: 0.026, z: 0.38 },
+    );
+    this.effects.push(new PulseEffect(ring, material, 0.52, 0.38, visualRadius * 2.1, 0.026));
+    const direction = variant === 'guard-to-bulwark' && sourceSkill === 'iron-guard'
+      ? 'GUARDA → BALUARTE'
+      : variant === 'bulwark-to-guard' && sourceSkill === 'bulwark-call'
+        ? 'BALUARTE → GUARDA'
+        : 'CADÊNCIA GUARDIÃ';
+    this.showCombatText(direction, position, 'stagger');
+  }
+
+  private showSteelSweep(position: Vec3Like, radius: number, casterId: string, variant: unknown): void {
+    const presentation = steelSweepPresentationForVariant(variant);
+    const visualRadius = Math.max(0.8, radius);
+    for (let i = 0; i < presentation.ringCount; i++) {
+      const ringColor = colorFromCss(presentation.ringColor);
+      const ringMaterial = createMaterial(ringColor, {
+        emissive: ringColor,
+        emissiveIntensity: 1.65 + i * 0.12,
+        opacity: 0.62 - i * 0.08,
+        additive: true,
+        unlit: true,
+      });
+      const startRadius = 0.5 + i * 0.2;
+      const ring = this.world.createPrimitive(
+        `steel-sweep-${presentation.variant ?? 'generic'}-ring`,
+        'torus',
+        ringMaterial,
+        { x: position.x, y: position.y + 0.085 + i * 0.012, z: position.z },
+        { x: startRadius, y: 0.026, z: startRadius },
+      );
+      this.effects.push(new PulseEffect(
+        ring,
+        ringMaterial,
+        0.4 + i * 0.07,
+        startRadius,
+        visualRadius * 2 * (1 - i * 0.08),
+        0.026,
+      ));
+    }
+
+    // A geometria continua feita com primitivas ja carregadas; quantidade,
+    // largura e cor tornam cada familia de arma legivel sem novos assets.
+    const slashColor = colorFromCss(presentation.slashColor);
+    const slashes: ChargeTrailSegment[] = [];
+    for (let i = 0; i < presentation.slashCount; i++) {
+      const angle = (i / presentation.slashCount) * Math.PI * 2;
+      const material = createMaterial(slashColor, {
+        emissive: slashColor,
+        emissiveIntensity: 1.8,
+        opacity: 0.55,
+        additive: true,
+        unlit: true,
+      });
+      const entity = this.world.createPrimitive(
+        `steel-sweep-${presentation.variant ?? 'generic'}-slash`,
+        'box',
+        material,
+        {
+          x: position.x + Math.sin(angle) * visualRadius * 0.52,
+          y: position.y + 0.12 + i * 0.004,
+          z: position.z + Math.cos(angle) * visualRadius * 0.52,
+        },
+        { x: presentation.slashWidth, y: 0.018, z: visualRadius * presentation.slashLengthScale },
+      );
+      setYaw(entity, angle);
+      slashes.push({
+        entity,
+        material,
+        opacity: 0.55,
+        scale: {
+          x: presentation.slashWidth,
+          y: 0.018,
+          z: visualRadius * presentation.slashLengthScale,
+        },
+      });
+    }
+    this.effects.push(new ChargeTrailEffect(slashes, 0.38));
+    if (casterId === this.net.playerId) this.world.rig.addShake(presentation.shake);
+  }
+
+  private showSteelSweepOrbit(
+    position: Vec3Like,
+    radius: number,
+    casterId: string,
+    variant: unknown,
+  ): void {
+    // A familia da arma continua legivel por baixo da nova geometria.
+    this.showSteelSweep(position, radius, casterId, variant);
+    for (let index = 0; index < 3; index++) {
+      const color = colorFromCss(index % 2 === 0
+        ? STEEL_SWEEP_FORM_PALETTE.orbit
+        : STEEL_SWEEP_FORM_PALETTE.orbitCore);
+      const material = createMaterial(color, {
+        emissive: color,
+        emissiveIntensity: 1.9 + index * 0.16,
+        opacity: 0.62 - index * 0.1,
+        additive: true,
+        unlit: true,
+        depthWrite: false,
+      });
+      const startRadius = radius * (0.24 + index * 0.13);
+      const ring = this.world.createPrimitive(
+        `steel-sweep-form-orbit-authoritative-ring-${index}`,
+        'torus',
+        material,
+        { x: position.x, y: position.y + 0.1 + index * 0.012, z: position.z },
+        { x: startRadius, y: 0.025, z: startRadius },
+      );
+      this.effects.push(new PulseEffect(
+        ring,
+        material,
+        0.48 + index * 0.06,
+        startRadius,
+        radius * 2 * (0.92 + index * 0.04),
+        0.025,
+      ));
+    }
+  }
+
+  private showSteelSweepWedge(
+    position: Vec3Like,
+    rotationY: number,
+    radius: number,
+    arcDegrees: number,
+    casterId: string,
+    variant: unknown,
+  ): void {
+    const weapon = steelSweepPresentationForVariant(variant);
+    const halfArcRadians = arcDegrees * Math.PI / 360;
+    const waves: ChargeTrailSegment[] = [];
+    const waveCount = 9;
+    for (let index = 0; index < waveCount; index++) {
+      const ratio = waveCount > 1 ? index / (waveCount - 1) : 0.5;
+      const offset = -halfArcRadians + ratio * halfArcRadians * 2;
+      const yaw = rotationY + offset;
+      const length = radius * (index === 0 || index === waveCount - 1 ? 0.98 : 0.86);
+      const color = colorFromCss(index % 3 === 1
+        ? weapon.slashColor
+        : index % 2 === 0
+          ? STEEL_SWEEP_FORM_PALETTE.wedge
+          : STEEL_SWEEP_FORM_PALETTE.wedgeCore);
+      const material = createMaterial(color, {
+        emissive: color,
+        emissiveIntensity: 1.95,
+        opacity: 0.7,
+        additive: true,
+        unlit: true,
+        depthWrite: false,
+      });
+      const scale = {
+        x: index === 0 || index === waveCount - 1 ? 0.14 : 0.09,
+        y: 0.026,
+        z: length,
+      };
+      const wave = this.world.createPrimitive(
+        `steel-sweep-form-wedge-authoritative-sector-${index}`,
+        'box',
+        material,
+        {
+          x: position.x + Math.sin(yaw) * length * 0.5,
+          y: position.y + 0.105 + (index % 3) * 0.01,
+          z: position.z + Math.cos(yaw) * length * 0.5,
+        },
+        scale,
+      );
+      setYaw(wave, yaw);
+      waves.push({ entity: wave, material, opacity: 0.7, scale });
+    }
+    this.effects.push(new ChargeTrailEffect(waves, 0.46));
+    this.showCombatText('CUNHA', position, 'critical');
+    if (casterId === this.net.playerId) this.world.rig.addShake(Math.max(0.16, weapon.shake + 0.08));
+  }
+
+  /** Feedback curto de aplicacao; dano periodico posterior fica apenas no texto vermelho. */
+  private showSteelSweepStatus(position: Vec3Like, radius: number, variant: 'axe' | 'hammer'): void {
+    const presentation = steelSweepPresentationForVariant(variant);
+    const color = colorFromCss(presentation.statusColor);
+    const material = createMaterial(color, {
+      emissive: color,
+      emissiveIntensity: 1.55,
+      opacity: 0.56,
+      additive: true,
+      unlit: true,
+    });
+    const startRadius = 0.22;
+    const endRadius = Math.max(0.9, Math.min(1.8, radius * 2));
+    const ring = this.world.createPrimitive(
+      `steel-sweep-${variant}-status`,
+      'torus',
+      material,
+      { x: position.x, y: position.y + 0.1, z: position.z },
+      { x: startRadius, y: 0.018, z: startRadius },
+    );
+    this.effects.push(new PulseEffect(ring, material, 0.3, startRadius, endRadius, 0.018));
+  }
+
+  private showFeralFormCast(position: Vec3Like, radius: number): void {
+    const hide = colorFromCss(FERAL_FORM_PALETTE.hide);
+    const shadow = colorFromCss(FERAL_FORM_PALETTE.shadow);
+    for (let index = 0; index < 3; index++) {
+      const material = createMaterial(index === 1 ? shadow : hide, {
+        emissive: index === 1 ? shadow : hide,
+        emissiveIntensity: 2.1,
+        opacity: 0.68 - index * 0.1,
+        additive: true,
+        unlit: true,
+        depthWrite: false,
+      });
+      const start = 0.2 + index * 0.09;
+      const ring = this.world.createPrimitive(
+        `feral-form-authoritative-cast-ring-${index}`,
+        'torus',
+        material,
+        { x: position.x, y: position.y + 0.08 + index * 0.03, z: position.z },
+        { x: start, y: 0.024, z: start },
+      );
+      this.effects.push(new PulseEffect(ring, material, 0.52 + index * 0.05, start, radius * 2 * (0.88 + index * 0.06), 0.024));
+    }
+  }
+
+  private showRootSnareCast(position: Vec3Like, radius: number): void {
+    const rootColor = colorFromCss(ROOT_SNARE_PALETTE.root);
+    const pulseColor = colorFromCss(ROOT_SNARE_PALETTE.pulse);
+    for (let index = 0; index < 3; index++) {
+      const color = index === 1 ? pulseColor : rootColor;
+      const material = createMaterial(color, {
+        emissive: color,
+        emissiveIntensity: 1.85,
+        opacity: 0.68 - index * 0.1,
+        additive: true,
+        unlit: true,
+        depthWrite: false,
+      });
+      const start = 0.22 + index * 0.12;
+      const ring = this.world.createPrimitive(
+        `root-snare-authoritative-cast-ring-${index}`,
+        'torus',
+        material,
+        { x: position.x, y: position.y + 0.06 + index * 0.018, z: position.z },
+        { x: start, y: 0.024, z: start },
+      );
+      this.effects.push(new PulseEffect(ring, material, 0.46 + index * 0.06, start, radius * 2 * (0.9 + index * 0.05), 0.024));
+    }
+  }
+
+  private showFeralClaw(position: Vec3Like): void {
+    const claw = colorFromCss(FERAL_FORM_PALETTE.claw);
+    for (const side of [-1, 1]) {
+      const material = createMaterial(claw, {
+        emissive: claw, emissiveIntensity: 2.4, opacity: 0.76, additive: true, unlit: true, depthWrite: false,
+      });
+      const slash = this.world.createPrimitive(
+        `feral-form-authoritative-claw-impact-${side}`,
+        'box',
+        material,
+        { x: position.x + side * 0.12, y: position.y + 0.78, z: position.z },
+        { x: 0.055, y: 0.72, z: 0.055 },
+      );
+      slash.setLocalEulerAngles(0, 0, side * 32);
+      this.effects.push(new FadingEntityEffect(slash, material, 0.34, 0.76));
+    }
+  }
+
+  private showStormOrbCast(position: Vec3Like, radius: number): void {
+    const shell = colorFromCss(STORM_ORB_PALETTE.shell);
+    const storm = colorFromCss(STORM_ORB_PALETTE.storm);
+    const ringMaterial = createMaterial(shell, {
+      emissive: shell,
+      emissiveIntensity: 2.55,
+      opacity: 0.74,
+      additive: true,
+      unlit: true,
+      depthWrite: false,
+    });
+    const ring = this.world.createPrimitive(
+      'storm-orb-authoritative-cast-ring',
+      'torus',
+      ringMaterial,
+      { x: position.x, y: position.y + 0.12, z: position.z },
+      { x: 0.28, y: 0.028, z: 0.28 },
+    );
+    this.effects.push(new PulseEffect(ring, ringMaterial, 0.58, 0.28, radius * 2, 0.028));
+    for (let index = 0; index < 4; index++) {
+      const angle = index * Math.PI * 0.5;
+      const material = createMaterial(index % 2 === 0 ? shell : storm, {
+        emissive: index % 2 === 0 ? shell : storm,
+        emissiveIntensity: 2.3,
+        opacity: 0.72,
+        additive: true,
+        unlit: true,
+        depthWrite: false,
+      });
+      const mote = this.world.createPrimitive(
+        `storm-orb-authoritative-cast-mote-${index}`,
+        'sphere',
+        material,
+        {
+          x: position.x + Math.sin(angle) * 0.72,
+          y: position.y + 0.55 + index * 0.18,
+          z: position.z + Math.cos(angle) * 0.72,
+        },
+        { x: 0.13, y: 0.13, z: 0.13 },
+      );
+      this.effects.push(new FadingEntityEffect(mote, material, 0.62, 0.72));
+    }
+  }
+
+  /** Tether e impacto usam somente a origem/alvo congelados no evento. */
+  private showStormOrbDischarge(origin: Vec3Like, position: Vec3Like, radius: number): void {
+    const dx = position.x - origin.x;
+    const dz = position.z - origin.z;
+    const distance = Math.hypot(dx, dz);
+    if (distance > 0.001) {
+      const bolt = colorFromCss(STORM_ORB_PALETTE.bolt);
+      const material = createMaterial(bolt, {
+        emissive: bolt,
+        emissiveIntensity: 3,
+        opacity: 0.82,
+        additive: true,
+        unlit: true,
+        depthWrite: false,
+      });
+      const tether = this.world.createPrimitive(
+        'storm-orb-authoritative-discharge-tether',
+        'box',
+        material,
+        {
+          x: (origin.x + position.x) * 0.5,
+          y: Math.max(origin.y, position.y) + 1.08,
+          z: (origin.z + position.z) * 0.5,
+        },
+        { x: 0.055, y: 0.055, z: distance },
+      );
+      setYaw(tether, Math.atan2(dx, dz));
+      this.effects.push(new FadingEntityEffect(tether, material, 0.24, 0.82));
+    }
+    const storm = colorFromCss(STORM_ORB_PALETTE.storm);
+    const impactMaterial = createMaterial(storm, {
+      emissive: storm,
+      emissiveIntensity: 2.75,
+      opacity: 0.78,
+      additive: true,
+      unlit: true,
+      depthWrite: false,
+    });
+    const impact = this.world.createPrimitive(
+      'storm-orb-authoritative-discharge-impact',
+      'sphere',
+      impactMaterial,
+      { x: position.x, y: position.y + 1.08, z: position.z },
+      { x: 0.18, y: 0.18, z: 0.18 },
+    );
+    this.effects.push(new PulseEffect(impact, impactMaterial, 0.34, 0.18, radius * 2.2, 1));
+  }
+
+  private showUtraeanLanceWarning(origin: Vec3Like, endpoint: Vec3Like, halfWidth: number, delay: number): void {
+    this.showUtraeanLanceStrip(origin, endpoint, halfWidth, UTRAEAN_SENTINEL_PALETTE.warning, delay, 0.34, 'warning');
+  }
+
+  private showUtraeanLanceImpact(origin: Vec3Like, endpoint: Vec3Like, halfWidth: number): void {
+    this.showUtraeanLanceStrip(origin, endpoint, halfWidth, UTRAEAN_SENTINEL_PALETTE.impact, 0.3, 0.88, 'impact');
+    const tone = colorFromCss(UTRAEAN_SENTINEL_PALETTE.rune);
+    for (let index = 0; index < 5; index++) {
+      const material = createMaterial(tone, {
+        emissive: tone, emissiveIntensity: 3.6, opacity: 0.86,
+        additive: true, unlit: true, depthWrite: false,
+      });
+      const progress = (index + 0.5) / 5;
+      const mote = this.world.createPrimitive(
+        `utraean-lance-impact-mote-${index}`, 'sphere', material,
+        {
+          x: origin.x + (endpoint.x - origin.x) * progress,
+          y: origin.y + (endpoint.y - origin.y) * progress + 0.72,
+          z: origin.z + (endpoint.z - origin.z) * progress,
+        },
+        { x: 0.12, y: 0.12, z: 0.12 },
+      );
+      this.effects.push(new PulseEffect(mote, material, 0.28, 0.12, 2.2, 1));
+    }
+  }
+
+  private showUtraeanLanceStrip(
+    origin: Vec3Like,
+    endpoint: Vec3Like,
+    halfWidth: number,
+    color: string,
+    duration: number,
+    opacity: number,
+    phase: 'warning' | 'impact',
+  ): void {
+    const dx = endpoint.x - origin.x;
+    const dz = endpoint.z - origin.z;
+    const distance = Math.hypot(dx, dz);
+    if (distance < 0.001) return;
+    const tone = colorFromCss(color);
+    const material = createMaterial(tone, {
+      emissive: tone, emissiveIntensity: phase === 'impact' ? 3.2 : 1.8,
+      opacity, additive: true, unlit: true, depthWrite: false,
+    });
+    const strip = this.world.createPrimitive(
+      `utraean-lance-${phase}-strip`, 'box', material,
+      {
+        x: (origin.x + endpoint.x) * 0.5,
+        y: Math.max(origin.y, endpoint.y) + (phase === 'impact' ? 0.72 : 0.055),
+        z: (origin.z + endpoint.z) * 0.5,
+      },
+      { x: halfWidth * 2, y: phase === 'impact' ? 0.08 : 0.025, z: distance },
+    );
+    setYaw(strip, Math.atan2(dx, dz));
+    this.effects.push(new FadingEntityEffect(strip, material, Math.max(0.12, duration), opacity));
+  }
+
+  private showUtraeanLanceInterrupted(position: Vec3Like): void {
+    const tone = colorFromCss(UTRAEAN_SENTINEL_PALETTE.interrupted);
+    const material = createMaterial(tone, {
+      emissive: tone, emissiveIntensity: 2.8, opacity: 0.78,
+      additive: true, unlit: true, depthWrite: false,
+    });
+    const ring = this.world.createPrimitive(
+      'utraean-lance-interrupted-ring', 'torus', material,
+      { x: position.x, y: position.y + 0.08, z: position.z },
+      { x: 0.8, y: 0.035, z: 0.8 },
+    );
+    this.effects.push(new PulseEffect(ring, material, 0.52, 0.8, 2.6, 1));
+  }
+
+  /** Arco segmentado usa somente os dois pontos congelados pelo servidor. */
+  private showChainLightningArc(origin: Vec3Like, position: Vec3Like, hop: 1 | 2 | 3 | 4): void {
+    const dx = position.x - origin.x;
+    const dz = position.z - origin.z;
+    const distance = Math.hypot(dx, dz);
+    if (distance < 0.001) return;
+    const sideX = dz / distance;
+    const sideZ = -dx / distance;
+    const segments = 6;
+    const points: Vec3Like[] = [];
+    for (let index = 0; index <= segments; index++) {
+      const progress = index / segments;
+      const terminal = index === 0 || index === segments;
+      const jitter = terminal ? 0 : (index % 2 === 0 ? 1 : -1) * (0.14 + (index % 3) * 0.035);
+      points.push({
+        x: origin.x + dx * progress + sideX * jitter,
+        y: origin.y + (position.y - origin.y) * progress + 1.05 + Math.sin(progress * Math.PI) * 0.16,
+        z: origin.z + dz * progress + sideZ * jitter,
+      });
+    }
+    const tone = colorFromCss(hop === 1 ? CHAIN_LIGHTNING_PALETTE.core : hop === 4 ? CHAIN_LIGHTNING_PALETTE.branch : CHAIN_LIGHTNING_PALETTE.bolt);
+    for (let index = 0; index < points.length - 1; index++) {
+      const start = points[index];
+      const end = points[index + 1];
+      const segX = end.x - start.x;
+      const segZ = end.z - start.z;
+      const length = Math.hypot(segX, segZ);
+      const material = createMaterial(tone, {
+        emissive: tone,
+        emissiveIntensity: hop === 1 ? 3.8 : 3.1,
+        opacity: 0.9 - hop * 0.08,
+        additive: true,
+        unlit: true,
+        depthWrite: false,
+      });
+      const segment = this.world.createPrimitive(
+        `chain-lightning-authoritative-hop-${hop}-${index}`,
+        'box', material,
+        { x: (start.x + end.x) * 0.5, y: (start.y + end.y) * 0.5, z: (start.z + end.z) * 0.5 },
+        { x: hop === 1 ? 0.045 : 0.035, y: hop === 1 ? 0.045 : 0.035, z: length },
+      );
+      setYaw(segment, Math.atan2(segX, segZ));
+      this.effects.push(new FadingEntityEffect(segment, material, 0.23, 0.9));
+    }
+    const impactTone = colorFromCss(CHAIN_LIGHTNING_PALETTE.impact);
+    const impactMaterial = createMaterial(impactTone, {
+      emissive: impactTone, emissiveIntensity: 3.4, opacity: 0.82,
+      additive: true, unlit: true, depthWrite: false,
+    });
+    const impact = this.world.createPrimitive(
+      `chain-lightning-authoritative-impact-${hop}`, 'sphere', impactMaterial,
+      { x: position.x, y: position.y + 1.05, z: position.z },
+      { x: 0.16, y: 0.16, z: 0.16 },
+    );
+    this.effects.push(new PulseEffect(impact, impactMaterial, 0.28, 0.16, 2.6, 1));
+  }
+
+  /** Elo suave e florescimento usam somente a geometria e a cura confirmadas pelo servidor. */
+  private showRenewalWaveHeal(origin: Vec3Like, position: Vec3Like, amount: number, hop: 1 | 2 | 3 | 4): void {
+    const dx = position.x - origin.x;
+    const dz = position.z - origin.z;
+    const distance = Math.hypot(dx, dz);
+    if (distance >= 0.001) {
+      const sideX = dz / distance;
+      const sideZ = -dx / distance;
+      const segments = 7;
+      for (let index = 0; index < segments; index++) {
+        const from = index / segments;
+        const to = (index + 1) / segments;
+        const curveFrom = Math.sin(from * Math.PI) * (hop % 2 === 0 ? -0.16 : 0.16);
+        const curveTo = Math.sin(to * Math.PI) * (hop % 2 === 0 ? -0.16 : 0.16);
+        const start = {
+          x: origin.x + dx * from + sideX * curveFrom,
+          y: origin.y + (position.y - origin.y) * from + 0.9 + Math.sin(from * Math.PI) * 0.28,
+          z: origin.z + dz * from + sideZ * curveFrom,
+        };
+        const end = {
+          x: origin.x + dx * to + sideX * curveTo,
+          y: origin.y + (position.y - origin.y) * to + 0.9 + Math.sin(to * Math.PI) * 0.28,
+          z: origin.z + dz * to + sideZ * curveTo,
+        };
+        const segX = end.x - start.x;
+        const segZ = end.z - start.z;
+        const length = Math.hypot(segX, segZ);
+        const tone = colorFromCss(index % 2 === 0 ? RENEWAL_WAVE_PALETTE.tether : RENEWAL_WAVE_PALETTE.core);
+        const material = createMaterial(tone, {
+          emissive: tone, emissiveIntensity: 2.4, opacity: 0.72 - hop * 0.055,
+          additive: true, unlit: true, depthWrite: false,
+        });
+        const segment = this.world.createPrimitive(
+          `renewal-wave-authoritative-tether-${hop}-${index}`, 'box', material,
+          { x: (start.x + end.x) * 0.5, y: (start.y + end.y) * 0.5, z: (start.z + end.z) * 0.5 },
+          { x: 0.035, y: 0.035, z: length },
+        );
+        setYaw(segment, Math.atan2(segX, segZ));
+        this.effects.push(new FadingEntityEffect(segment, material, 0.34, 0.72));
+      }
+    }
+
+    const bloomTone = colorFromCss(hop === 1 ? RENEWAL_WAVE_PALETTE.core : RENEWAL_WAVE_PALETTE.bloom);
+    const bloomMaterial = createMaterial(bloomTone, {
+      emissive: bloomTone, emissiveIntensity: 2.8, opacity: 0.78,
+      additive: true, unlit: true, depthWrite: false,
+    });
+    const bloomScale = Math.min(0.52, 0.24 + amount * 0.008);
+    const bloom = this.world.createPrimitive(
+      `renewal-wave-authoritative-bloom-${hop}`, 'torus', bloomMaterial,
+      { x: position.x, y: position.y + 0.08, z: position.z },
+      { x: bloomScale, y: 0.03, z: bloomScale },
+    );
+    this.effects.push(new PulseEffect(bloom, bloomMaterial, 0.48, bloomScale, 2.4, 1));
+  }
+
+  /** Fenda curta desenhada exclusivamente entre origem e destino confirmados. */
+  private showPhaseStep(origin: Vec3Like, position: Vec3Like): void {
+    const dx = position.x - origin.x;
+    const dz = position.z - origin.z;
+    const distance = Math.hypot(dx, dz);
+    if (distance < 0.001) return;
+    const dirX = dx / distance;
+    const dirZ = dz / distance;
+    const sideX = dirZ;
+    const sideZ = -dirX;
+    const segments = Math.max(4, Math.ceil(distance * 1.4));
+    for (let index = 0; index < segments; index++) {
+      const progress = (index + 0.5) / segments;
+      const width = index % 2 === 0 ? 0.055 : 0.035;
+      const offset = (index % 2 === 0 ? 1 : -1) * 0.08 * Math.sin(progress * Math.PI);
+      const tone = colorFromCss(index === segments - 1 ? PHASE_STEP_PALETTE.arrival : PHASE_STEP_PALETTE.trail);
+      const opacity = 0.7 - Math.abs(progress - 0.5) * 0.3;
+      const material = createMaterial(tone, {
+        emissive: tone, emissiveIntensity: 3, opacity,
+        additive: true, unlit: true, depthWrite: false,
+      });
+      const shard = this.world.createPrimitive(
+        `phase-step-authoritative-rift-${index}`, 'box', material,
+        {
+          x: origin.x + dx * progress + sideX * offset,
+          y: origin.y + (position.y - origin.y) * progress + 0.72 + Math.sin(progress * Math.PI) * 0.24,
+          z: origin.z + dz * progress + sideZ * offset,
+        },
+        { x: width, y: 0.05, z: Math.max(0.12, distance / segments * 0.68) },
+      );
+      setYaw(shard, Math.atan2(dirX, dirZ));
+      this.effects.push(new FadingEntityEffect(shard, material, 0.3, opacity));
+    }
+
+    const makePortal = (point: Vec3Like, color: string, name: string, startScale: number): void => {
+      const tone = colorFromCss(color);
+      const material = createMaterial(tone, {
+        emissive: tone, emissiveIntensity: 3.1, opacity: 0.82,
+        additive: true, unlit: true, depthWrite: false,
+      });
+      const portal = this.world.createPrimitive(
+        name, 'torus', material,
+        { x: point.x, y: point.y + 0.09, z: point.z },
+        { x: startScale, y: 0.035, z: startScale },
+      );
+      this.effects.push(new PulseEffect(portal, material, 0.42, startScale, 2.7, 1));
+    };
+    makePortal(origin, PHASE_STEP_PALETTE.origin, 'phase-step-authoritative-origin', 0.3);
+    makePortal(position, PHASE_STEP_PALETTE.arrival, 'phase-step-authoritative-arrival', 0.36);
+
+    const coreTone = colorFromCss(PHASE_STEP_PALETTE.core);
+    const coreMaterial = createMaterial(coreTone, {
+      emissive: coreTone, emissiveIntensity: 3.6, opacity: 0.74,
+      additive: true, unlit: true, depthWrite: false,
+    });
+    const core = this.world.createPrimitive(
+      'phase-step-authoritative-arrival-core', 'sphere', coreMaterial,
+      { x: position.x, y: position.y + 0.92, z: position.z },
+      { x: 0.13, y: 0.32, z: 0.13 },
+    );
+    this.effects.push(new PulseEffect(core, coreMaterial, 0.31, 0.18, 2.4, 1));
+  }
+
+  private showNatureSpiritSummon(origin: Vec3Like, position: Vec3Like): void {
+    const tone = colorFromCss(NATURE_SPIRIT_PALETTE.halo);
+    for (let index = 0; index < 3; index++) {
+      const material = createMaterial(tone, {
+        emissive: tone, emissiveIntensity: 3, opacity: 0.78,
+        additive: true, unlit: true, depthWrite: false,
+      });
+      const ring = this.world.createPrimitive(
+        `nature-spirit-authoritative-summon-ring-${index}`, 'torus', material,
+        { x: position.x, y: position.y - 0.42 + index * 0.22, z: position.z },
+        { x: 0.28 + index * 0.1, y: 0.025, z: 0.28 + index * 0.1 },
+      );
+      this.effects.push(new PulseEffect(ring, material, 0.48 + index * 0.04, 0.28 + index * 0.1, 2.5, 1));
+    }
+    const dx = position.x - origin.x;
+    const dz = position.z - origin.z;
+    const distance = Math.hypot(dx, dz);
+    if (distance > 0.001) {
+      const tetherMaterial = createMaterial(tone, {
+        emissive: tone, emissiveIntensity: 3, opacity: 0.72,
+        additive: true, unlit: true, depthWrite: false,
+      });
+      const tether = this.world.createPrimitive(
+        'nature-spirit-authoritative-summon-tether', 'box', tetherMaterial,
+        { x: (origin.x + position.x) * 0.5, y: (origin.y + position.y) * 0.5 + 0.5, z: (origin.z + position.z) * 0.5 },
+        { x: 0.035, y: 0.035, z: distance },
+      );
+      setYaw(tether, Math.atan2(dx, dz));
+      this.effects.push(new FadingEntityEffect(tether, tetherMaterial, 0.4, 0.72));
+    }
+  }
+
+  private showNatureSpiritBolt(origin: Vec3Like, position: Vec3Like): void {
+    const dx = position.x - origin.x;
+    const dz = position.z - origin.z;
+    const distance = Math.hypot(dx, dz);
+    if (distance < 0.001) return;
+    const sideX = dz / distance;
+    const sideZ = -dx / distance;
+    const segments = 5;
+    for (let index = 0; index < segments; index++) {
+      const from = index / segments;
+      const to = (index + 1) / segments;
+      const bendA = Math.sin(from * Math.PI) * 0.12;
+      const bendB = Math.sin(to * Math.PI) * 0.12;
+      const start = {
+        x: origin.x + dx * from + sideX * bendA,
+        y: origin.y + (position.y - origin.y) * from,
+        z: origin.z + dz * from + sideZ * bendA,
+      };
+      const end = {
+        x: origin.x + dx * to + sideX * bendB,
+        y: origin.y + (position.y - origin.y) * to,
+        z: origin.z + dz * to + sideZ * bendB,
+      };
+      const segX = end.x - start.x;
+      const segZ = end.z - start.z;
+      const length = Math.hypot(segX, segZ);
+      const tone = colorFromCss(index % 2 === 0 ? NATURE_SPIRIT_PALETTE.bolt : NATURE_SPIRIT_PALETTE.soul);
+      const material = createMaterial(tone, {
+        emissive: tone, emissiveIntensity: 3.3, opacity: 0.86,
+        additive: true, unlit: true, depthWrite: false,
+      });
+      const segment = this.world.createPrimitive(
+        `nature-spirit-authoritative-bolt-${index}`, 'box', material,
+        { x: (start.x + end.x) * 0.5, y: (start.y + end.y) * 0.5, z: (start.z + end.z) * 0.5 },
+        { x: 0.035, y: 0.035, z: length },
+      );
+      setYaw(segment, Math.atan2(segX, segZ));
+      this.effects.push(new FadingEntityEffect(segment, material, 0.24, 0.86));
+    }
+  }
+
+  /** Rastro congelado exclusivamente pelo evento origem→destino do servidor. */
+  private showActiveEvasionTrail(origin: Vec3Like, position: Vec3Like, radius: number): void {
+    const dx = position.x - origin.x;
+    const dz = position.z - origin.z;
+    const distance = Math.hypot(dx, dz);
+    if (distance < 0.001) return;
+    const dirX = dx / distance;
+    const dirZ = dz / distance;
+    const sideX = dirZ;
+    const sideZ = -dirX;
+    const yaw = Math.atan2(dirX, dirZ);
+    const panels: ChargeTrailSegment[] = [];
+    const count = 7;
+    for (let index = 0; index < count; index++) {
+      const progress = (index + 0.5) / count;
+      const tone = colorFromCss(index % 2 === 0 ? ACTIVE_EVASION_PALETTE.trail : ACTIVE_EVASION_PALETTE.core);
+      const opacity = 0.58 - progress * 0.3;
+      const material = createMaterial(tone, {
+        emissive: tone,
+        emissiveIntensity: 2.2,
+        opacity,
+        additive: true,
+        unlit: true,
+        depthWrite: false,
+      });
+      const scale = { x: 0.18 + progress * 0.08, y: 0.035, z: Math.max(0.28, distance / count * 0.72) };
+      const side = (index % 2 === 0 ? -1 : 1) * 0.09;
+      const panel = this.world.createPrimitive(
+        `active-evasion-authoritative-afterimage-${index}`,
+        'box',
+        material,
+        {
+          x: origin.x + dx * progress + sideX * side,
+          y: origin.y + 0.12 + index * 0.006,
+          z: origin.z + dz * progress + sideZ * side,
+        },
+        scale,
+      );
+      setYaw(panel, yaw);
+      panels.push({ entity: panel, material, opacity, scale });
+    }
+    this.effects.push(new ChargeTrailEffect(panels, 0.34));
+
+    const core = colorFromCss(ACTIVE_EVASION_PALETTE.core);
+    const ringMaterial = createMaterial(core, {
+      emissive: core,
+      emissiveIntensity: 2.6,
+      opacity: 0.76,
+      additive: true,
+      unlit: true,
+      depthWrite: false,
+    });
+    const ring = this.world.createPrimitive(
+      'active-evasion-authoritative-landing',
+      'torus',
+      ringMaterial,
+      { x: position.x, y: position.y + 0.08, z: position.z },
+      { x: 0.24, y: 0.024, z: 0.24 },
+    );
+    this.effects.push(new PulseEffect(ring, ringMaterial, 0.36, 0.24, Math.max(1.1, radius * 0.55), 0.024));
+  }
+
+  private showActiveEvasionAvoid(position: Vec3Like, radius: number): void {
+    const avoid = colorFromCss(ACTIVE_EVASION_PALETTE.avoid);
+    const shadow = colorFromCss(ACTIVE_EVASION_PALETTE.shadow);
+    const ringMaterial = createMaterial(avoid, {
+      emissive: avoid,
+      emissiveIntensity: 2.75,
+      opacity: 0.78,
+      additive: true,
+      unlit: true,
+      depthWrite: false,
+    });
+    const ring = this.world.createPrimitive(
+      'active-evasion-authoritative-avoid-ring',
+      'torus',
+      ringMaterial,
+      { x: position.x, y: position.y + 0.46, z: position.z },
+      { x: 0.2, y: 0.028, z: 0.2 },
+    );
+    ring.setLocalEulerAngles(90, 0, 0);
+    this.effects.push(new PulseEffect(ring, ringMaterial, 0.42, 0.2, radius * 2, 0.028));
+    for (let index = 0; index < 6; index++) {
+      const angle = index / 6 * Math.PI * 2;
+      const material = createMaterial(index % 2 === 0 ? avoid : shadow, {
+        emissive: index % 2 === 0 ? avoid : shadow,
+        emissiveIntensity: 2.2,
+        opacity: 0.72,
+        additive: true,
+        unlit: true,
+        depthWrite: false,
+      });
+      const shard = this.world.createPrimitive(
+        `active-evasion-authoritative-avoid-shard-${index}`,
+        'box',
+        material,
+        {
+          x: position.x + Math.sin(angle) * 0.52,
+          y: position.y + 0.42 + (index % 3) * 0.22,
+          z: position.z + Math.cos(angle) * 0.52,
+        },
+        { x: 0.08, y: 0.36, z: 0.045 },
+      );
+      shard.setLocalEulerAngles(16, angle * 180 / Math.PI, index % 2 === 0 ? 28 : -28);
+      this.effects.push(new FadingEntityEffect(shard, material, 0.46, 0.72));
+    }
+  }
+
+  private showGuardianRetaliationPulse(
+    position: Vec3Like,
+    radius: number,
+    phase: 'ready' | 'release',
+  ): void {
+    const primary = colorFromCss(phase === 'ready'
+      ? GUARDIAN_RETALIATION_PALETTE.guard
+      : GUARDIAN_RETALIATION_PALETTE.release);
+    const accent = colorFromCss(phase === 'ready'
+      ? GUARDIAN_RETALIATION_PALETTE.target
+      : GUARDIAN_RETALIATION_PALETTE.core);
+    const ringMaterial = createMaterial(primary, {
+      emissive: primary,
+      emissiveIntensity: phase === 'release' ? 2.75 : 2.25,
+      opacity: 0.76,
+      additive: true,
+      unlit: true,
+      depthWrite: false,
+    });
+    const ring = this.world.createPrimitive(
+      `guardian-retaliation-${phase}-authoritative-ring`,
+      'torus',
+      ringMaterial,
+      { x: position.x, y: position.y + 0.09, z: position.z },
+      { x: 0.34, y: 0.03, z: 0.34 },
+    );
+    this.effects.push(new PulseEffect(ring, ringMaterial, phase === 'release' ? 0.48 : 0.68, 0.34, radius * 2, 0.03));
+    const count = phase === 'release' ? 8 : 4;
+    for (let index = 0; index < count; index++) {
+      const angle = index / count * Math.PI * 2;
+      const tone = index % 2 === 0 ? primary : accent;
+      const material = createMaterial(tone, {
+        emissive: tone,
+        emissiveIntensity: 2.3,
+        opacity: 0.78,
+        additive: true,
+        unlit: true,
+        depthWrite: false,
+      });
+      const shard = this.world.createPrimitive(
+        `guardian-retaliation-${phase}-authoritative-shard-${index}`,
+        phase === 'release' ? 'box' : 'cone',
+        material,
+        {
+          x: position.x + Math.sin(angle) * radius * 0.44,
+          y: position.y + 0.38 + (index % 3) * 0.17,
+          z: position.z + Math.cos(angle) * radius * 0.44,
+        },
+        phase === 'release' ? { x: 0.14, y: 0.34, z: 0.075 } : { x: 0.11, y: 0.4, z: 0.11 },
+      );
+      shard.setLocalEulerAngles(20, angle * 180 / Math.PI, index % 2 === 0 ? 34 : -34);
+      this.effects.push(new FadingEntityEffect(shard, material, phase === 'release' ? 0.5 : 0.66, 0.8));
+    }
+  }
+
+  private showIronGuard(
+    position: Vec3Like,
+    radius: number,
+    defenderId: string,
+    phase: 'cast' | 'block' | 'perfect',
+  ): void {
+    const perfect = phase === 'perfect';
+    const cast = phase === 'cast';
+    const visualRadius = Math.max(0.9, Math.min(2.2, radius || 1.25));
+    const color = colorFromCss(perfect ? '#dff8ff' : cast ? '#78c8ea' : '#9adcf5');
+    const ringMaterial = createMaterial(color, {
+      emissive: color,
+      emissiveIntensity: perfect ? 2.3 : cast ? 1.7 : 1.45,
+      opacity: perfect ? 0.82 : cast ? 0.62 : 0.48,
+      additive: true,
+      unlit: true,
+    });
+    const ring = this.world.createPrimitive(
+      `iron-guard-${phase}-ring`,
+      'torus',
+      ringMaterial,
+      { x: position.x, y: position.y + 0.09, z: position.z },
+      { x: 0.42, y: 0.026, z: 0.42 },
+    );
+    const duration = perfect ? 0.48 : cast ? 0.56 : 0.3;
+    this.effects.push(new PulseEffect(
+      ring,
+      ringMaterial,
+      duration,
+      perfect ? 0.38 : 0.48,
+      visualRadius * (perfect ? 2.25 : cast ? 2 : 1.45),
+      perfect ? 0.034 : 0.026,
+    ));
+
+    // Placas verticais em volta do defensor formam uma silhueta de escudo sem
+    // depender de asset novo. O perfeito usa mais placas, maiores e quase
+    // brancas para ser distinguivel mesmo no meio de varios impactos.
+    const panelCount = perfect ? 8 : cast ? 6 : 3;
+    const panels: ChargeTrailSegment[] = [];
+    for (let i = 0; i < panelCount; i++) {
+      const angle = (i / panelCount) * Math.PI * 2 + (perfect ? Math.PI / 8 : 0);
+      const panelColor = colorFromCss(perfect && i % 2 === 0 ? '#ffffff' : perfect ? '#a8e9ff' : '#69badd');
+      const material = createMaterial(panelColor, {
+        emissive: panelColor,
+        emissiveIntensity: perfect ? 2.45 : 1.55,
+        opacity: perfect ? 0.72 : cast ? 0.46 : 0.36,
+        additive: true,
+        unlit: true,
+      });
+      const orbit = visualRadius * (perfect ? 0.68 : cast ? 0.62 : 0.48);
+      const scale = {
+        x: perfect ? 0.34 : cast ? 0.29 : 0.2,
+        y: perfect ? 0.72 : cast ? 0.61 : 0.42,
+        z: perfect ? 0.055 : 0.045,
+      };
+      const entity = this.world.createPrimitive(
+        `iron-guard-${phase}-shield`,
+        'box',
+        material,
+        {
+          x: position.x + Math.sin(angle) * orbit,
+          y: position.y + (perfect ? 0.98 : cast ? 0.86 : 0.72),
+          z: position.z + Math.cos(angle) * orbit,
+        },
+        scale,
+      );
+      setYaw(entity, angle);
+      panels.push({ entity, material, opacity: perfect ? 0.72 : cast ? 0.46 : 0.36, scale });
+    }
+    this.effects.push(new ChargeTrailEffect(panels, duration));
+
+    // O id do caster representa o proprio defensor nos eventos de bloqueio.
+    // Nunca deixa a defesa de outro jogador sacudir a camera local.
+    if (defenderId === this.net.playerId) {
+      this.world.rig.addShake(perfect ? 0.2 : phase === 'block' ? 0.08 : 0.04);
+    }
+  }
+
+  private showAshVeilTether(
+    casterPosition: Vec3Like,
+    targetPosition: Vec3Like,
+    duration: number,
+    opacity: number,
+  ): void {
+    const dx = targetPosition.x - casterPosition.x;
+    const dz = targetPosition.z - casterPosition.z;
+    const length = Math.hypot(dx, dz);
+    if (length < 0.1) return;
+    const tetherColor = colorFromCss(ASH_CORRUPTOR_PALETTE.tether);
+    const material = createMaterial(tetherColor, {
+      emissive: tetherColor,
+      emissiveIntensity: 1.75,
+      opacity,
+      additive: true,
+      unlit: true,
+      depthWrite: false,
+    });
+    const tether = this.world.createPrimitive(
+      'ash-veil-authoritative-target-tether',
+      'box',
+      material,
+      {
+        x: casterPosition.x + dx * 0.5,
+        y: Math.max(casterPosition.y, targetPosition.y) + 0.72,
+        z: casterPosition.z + dz * 0.5,
+      },
+      { x: 0.045, y: 0.018, z: length },
+    );
+    setYaw(tether, Math.atan2(dx, dz));
+    this.effects.push(new FadingEntityEffect(tether, material, duration, opacity));
+  }
+
+  private showAshVeilWarning(
+    casterPosition: Vec3Like,
+    targetPosition: Vec3Like,
+    radius: number,
+    delay: number,
+  ): void {
+    const duration = Math.max(0.2, Math.min(3, delay));
+    // Radius apenas calibra a leitura da runa; os alvos ja vieram congelados no
+    // evento e nunca sao descobertos por distancia no cliente.
+    const runeRadius = Math.max(0.95, Math.min(1.35, radius * 0.12));
+    const veilColor = colorFromCss(ASH_CORRUPTOR_PALETTE.veil);
+    const circleMaterial = createMaterial(veilColor, {
+      emissive: veilColor,
+      emissiveIntensity: 1.65,
+      opacity: 0.54,
+      additive: true,
+      unlit: true,
+      depthWrite: false,
+    });
+    const circle = this.world.createPrimitive(
+      'ash-veil-warning-target-rune',
+      'torus',
+      circleMaterial,
+      { x: targetPosition.x, y: targetPosition.y + 0.06, z: targetPosition.z },
+      { x: runeRadius, y: 0.026, z: runeRadius },
+    );
+    this.effects.push(new PulseEffect(
+      circle,
+      circleMaterial,
+      duration,
+      runeRadius * 0.86,
+      runeRadius * 1.08,
+      0.026,
+    ));
+
+    const amberColor = colorFromCss(ASH_CORRUPTOR_PALETTE.amber);
+    const runeMaterial = createMaterial(amberColor, {
+      emissive: amberColor,
+      emissiveIntensity: 2,
+      opacity: 0.54,
+      additive: true,
+      unlit: true,
+      depthWrite: false,
+    });
+    const rune = makeEntity('ash-veil-warning-sigil', this.world.app);
+    this.world.root.addChild(rune);
+    setEntityPosition(rune, { x: targetPosition.x, y: targetPosition.y + 0.075, z: targetPosition.z });
+    const barA = this.world.createPrimitive(
+      'ash-veil-warning-sigil-bar-a',
+      'box',
+      runeMaterial,
+      { x: 0, y: 0, z: 0 },
+      { x: 0.055, y: 0.014, z: runeRadius * 1.3 },
+      rune,
+    );
+    const barB = this.world.createPrimitive(
+      'ash-veil-warning-sigil-bar-b',
+      'box',
+      runeMaterial,
+      { x: 0, y: 0, z: 0 },
+      { x: 0.055, y: 0.014, z: runeRadius * 1.3 },
+      rune,
+    );
+    barA.setLocalEulerAngles(0, 45, 0);
+    barB.setLocalEulerAngles(0, -45, 0);
+    this.effects.push(new FadingEntityEffect(rune, runeMaterial, duration, 0.54));
+    this.showAshVeilTether(casterPosition, targetPosition, duration, 0.48);
+  }
+
+  private showAshVeilApply(
+    casterPosition: Vec3Like,
+    targetPosition: Vec3Like,
+    duration: number,
+  ): void {
+    const flashDuration = Math.max(0.36, Math.min(0.68, duration * 0.16));
+    const veilColor = colorFromCss(ASH_CORRUPTOR_PALETTE.veilCore);
+    const pulseMaterial = createMaterial(veilColor, {
+      emissive: veilColor,
+      emissiveIntensity: 2.2,
+      opacity: 0.68,
+      additive: true,
+      unlit: true,
+      depthWrite: false,
+    });
+    const pulse = this.world.createPrimitive(
+      'ash-veil-apply-target-pulse',
+      'sphere',
+      pulseMaterial,
+      { x: targetPosition.x, y: targetPosition.y + 0.72, z: targetPosition.z },
+      { x: 0.22, y: 0.34, z: 0.22 },
+    );
+    this.effects.push(new PulseEffect(pulse, pulseMaterial, flashDuration, 0.2, 1.4, 1));
+
+    const amberColor = colorFromCss(ASH_CORRUPTOR_PALETTE.amber);
+    const ringMaterial = createMaterial(amberColor, {
+      emissive: amberColor,
+      emissiveIntensity: 1.9,
+      opacity: 0.58,
+      additive: true,
+      unlit: true,
+      depthWrite: false,
+    });
+    const ring = this.world.createPrimitive(
+      'ash-veil-apply-target-ring',
+      'torus',
+      ringMaterial,
+      { x: targetPosition.x, y: targetPosition.y + 0.07, z: targetPosition.z },
+      { x: 0.5, y: 0.025, z: 0.5 },
+    );
+    this.effects.push(new PulseEffect(ring, ringMaterial, flashDuration, 0.5, 1.55, 0.025));
+    this.showAshVeilTether(casterPosition, targetPosition, flashDuration, 0.62);
+    this.showCombatText('VÉU DE CINZAS', targetPosition, 'critical');
+  }
+
+  private showAshVeilInterrupted(casterPosition: Vec3Like, interrupterId: string): void {
+    const amberColor = colorFromCss(ASH_CORRUPTOR_PALETTE.amberCore);
+    const collapseMaterial = createMaterial(amberColor, {
+      emissive: amberColor,
+      emissiveIntensity: 2.5,
+      opacity: 0.76,
+      additive: true,
+      unlit: true,
+      depthWrite: false,
+    });
+    const collapse = this.world.createPrimitive(
+      'ash-veil-interrupted-collapse',
+      'torus',
+      collapseMaterial,
+      { x: casterPosition.x, y: casterPosition.y + 0.12, z: casterPosition.z },
+      { x: 1.8, y: 0.035, z: 1.8 },
+    );
+    this.effects.push(new PulseEffect(collapse, collapseMaterial, 0.48, 1.8, 0.24, 0.035));
+
+    const shards: ChargeTrailSegment[] = [];
+    for (let index = 0; index < 6; index++) {
+      const angle = index * Math.PI / 3;
+      const shardColor = colorFromCss(index % 2 === 0
+        ? ASH_CORRUPTOR_PALETTE.amber
+        : ASH_CORRUPTOR_PALETTE.ash);
+      const material = createMaterial(shardColor, {
+        emissive: shardColor,
+        emissiveIntensity: 2.1,
+        opacity: 0.72,
+        additive: true,
+        unlit: true,
+        depthWrite: false,
+      });
+      const scale = { x: 0.12, y: 0.42, z: 0.12 };
+      const shard = this.world.createPrimitive(
+        `ash-veil-interrupted-shard-${index}`,
+        'cone',
+        material,
+        {
+          x: casterPosition.x + Math.sin(angle) * 0.82,
+          y: casterPosition.y + 0.68 + (index % 2) * 0.28,
+          z: casterPosition.z + Math.cos(angle) * 0.82,
+        },
+        scale,
+      );
+      shard.setLocalEulerAngles(index % 2 === 0 ? 58 : -58, angle * 180 / Math.PI, 18);
+      shards.push({ entity: shard, material, opacity: 0.72, scale });
+    }
+    this.effects.push(new ChargeTrailEffect(shards, 0.56));
+    this.showCombatText('VÉU INTERROMPIDO', casterPosition, 'critical');
+    if (interrupterId === this.net.playerId) this.world.rig.addShake(0.16);
+  }
+
+  private showEnemyProjectileWarning(
+    position: Vec3Like,
+    radius: number,
+    delay: number,
+    casterId: string,
+    casterSnapshotPosition?: Vec3Like,
+  ): void {
+    const warningRadius = Math.max(0.45, Math.min(3.2, radius || 0.8));
+    const duration = Math.max(0.2, delay || 0.7);
+    const warningColor = colorFromCss(SHARDCASTER_PALETTE.warning);
+    const circleMaterial = createMaterial(warningColor, {
+      emissive: warningColor,
+      emissiveIntensity: 1.65,
+      opacity: 0.52,
+      additive: true,
+      unlit: true,
+      depthWrite: false,
+    });
+    const circle = this.world.createPrimitive(
+      'enemy-projectile-warning-circle',
+      'torus',
+      circleMaterial,
+      { x: position.x, y: position.y + 0.055, z: position.z },
+      { x: warningRadius * 1.8, y: 0.025, z: warningRadius * 1.8 },
+    );
+    this.effects.push(new PulseEffect(
+      circle,
+      circleMaterial,
+      duration,
+      warningRadius * 1.8,
+      warningRadius * 2.08,
+      0.025,
+    ));
+
+    // syncCombatEvents roda antes do reconcile para preservar a ordem dos VFX de
+    // Investida. No primeiro snapshot do caster, usa a posicao autoritativa que
+    // veio no mesmo payload; a view anterior e apenas a opcao mais suave.
+    const casterView = this.views.get(casterId);
+    const fallbackAngle = this.projectilePhase(casterId || 'shardcaster-warning');
+    const fallbackLength = Math.max(2.8, warningRadius * 3.6);
+    const casterPosition = casterView?.entity.parent
+      ? entityPosition(casterView.entity)
+      : casterSnapshotPosition ?? {
+          x: position.x - Math.sin(fallbackAngle) * fallbackLength,
+          y: position.y,
+          z: position.z - Math.cos(fallbackAngle) * fallbackLength,
+        };
+    let dx = position.x - casterPosition.x;
+    let dz = position.z - casterPosition.z;
+    let lineLength = Math.hypot(dx, dz);
+    if (lineLength < 0.1) {
+      dx = Math.sin(fallbackAngle) * fallbackLength;
+      dz = Math.cos(fallbackAngle) * fallbackLength;
+      lineLength = fallbackLength;
+    }
+    const angle = Math.atan2(dx, dz);
+    const lineMaterial = createMaterial(warningColor, {
+      emissive: warningColor,
+      emissiveIntensity: 1.25,
+      opacity: 0.34,
+      additive: true,
+      unlit: true,
+      depthWrite: false,
+    });
+    const lineScale = { x: 0.055, y: 0.012, z: lineLength };
+    const line = this.world.createPrimitive(
+      'enemy-projectile-warning-line',
+      'box',
+      lineMaterial,
+      {
+        x: position.x - dx * 0.5,
+        y: position.y + 0.04,
+        z: position.z - dz * 0.5,
+      },
+      lineScale,
+    );
+    setYaw(line, angle);
+    this.effects.push(new FadingEntityEffect(line, lineMaterial, duration, 0.34));
+  }
+
+  private showEnemyProjectileImpact(position: Vec3Like, radius: number, targetId?: string): void {
+    const impactRadius = Math.max(0.5, Math.min(3.4, radius || 0.85));
+    const impactColor = colorFromCss(SHARDCASTER_PALETTE.impact);
+    const burstMaterial = createMaterial(impactColor, {
+      emissive: impactColor,
+      emissiveIntensity: 2.1,
+      opacity: 0.66,
+      additive: true,
+      unlit: true,
+      depthWrite: false,
+    });
+    const burst = this.world.createPrimitive(
+      'enemy-projectile-impact-burst',
+      'sphere',
+      burstMaterial,
+      { x: position.x, y: position.y + 0.22, z: position.z },
+      { x: 0.35, y: 0.08, z: 0.35 },
+    );
+    this.effects.push(new PulseEffect(
+      burst,
+      burstMaterial,
+      0.42,
+      0.35,
+      impactRadius * 2.25,
+      0.08,
+    ));
+
+    const ringColor = colorFromCss(SHARDCASTER_PALETTE.crystalCore);
+    const ringMaterial = createMaterial(ringColor, {
+      emissive: ringColor,
+      emissiveIntensity: 1.85,
+      opacity: 0.52,
+      additive: true,
+      unlit: true,
+      depthWrite: false,
+    });
+    const ring = this.world.createPrimitive(
+      'enemy-projectile-impact-ring',
+      'torus',
+      ringMaterial,
+      { x: position.x, y: position.y + 0.065, z: position.z },
+      { x: 0.42, y: 0.022, z: 0.42 },
+    );
+    this.effects.push(new PulseEffect(
+      ring,
+      ringMaterial,
+      0.5,
+      0.42,
+      impactRadius * 2.55,
+      0.022,
+    ));
+    // Somente feedback de camera; HP/dano continuam 100% autoritativos.
+    if (targetId === this.net.playerId) this.world.rig.addShake(0.22);
+  }
+
+  private showRuinCleaveWarning(
+    position: Vec3Like,
+    rotationY: number,
+    radius: number,
+    arcDegrees: number,
+    delay: number,
+  ): void {
+    const warningColor = colorFromCss(RUIN_BRUTE_PALETTE.warning);
+    const material = createMaterial(warningColor, {
+      emissive: warningColor,
+      emissiveIntensity: 1.65,
+      opacity: 0.5,
+      additive: true,
+      unlit: true,
+      depthWrite: false,
+    });
+    const sector = makeEntity('ruin-cleave-warning-authoritative-sector', this.world.app);
+    this.world.root.addChild(sector);
+    setEntityPosition(sector, position);
+    // rotationY e a origem pertencem ao evento congelado; a view atual do
+    // Bruto jamais reconstrui o setor depois que o windup comecou.
+    setYaw(sector, rotationY);
+    const halfArcRadians = arcDegrees * Math.PI / 360;
+    const rayCount = 7;
+    for (let index = 0; index < rayCount; index++) {
+      const ratio = rayCount > 1 ? index / (rayCount - 1) : 0.5;
+      const offset = -halfArcRadians + ratio * halfArcRadians * 2;
+      const length = radius * (index === 0 || index === rayCount - 1 ? 0.98 : 0.88);
+      const ray = this.world.createPrimitive(
+        `ruin-cleave-warning-sector-ray-${index}`,
+        'box',
+        material,
+        {
+          x: Math.sin(offset) * length * 0.5,
+          y: 0.065 + (index % 2) * 0.006,
+          z: Math.cos(offset) * length * 0.5,
+        },
+        {
+          x: index === 0 || index === rayCount - 1 ? 0.075 : 0.035,
+          y: 0.018,
+          z: length,
+        },
+        sector,
+      );
+      ray.setLocalEulerAngles(0, offset * 180 / Math.PI, 0);
+    }
+    // Trava curta atras da origem: deixa a retaguarda segura visualmente
+    // separada sem sugerir o circulo completo dos slams.
+    this.world.createPrimitive(
+      'ruin-cleave-warning-rear-stop',
+      'box',
+      material,
+      { x: 0, y: 0.07, z: -0.16 },
+      { x: 1.15, y: 0.022, z: 0.09 },
+      sector,
+    );
+    this.effects.push(new FadingEntityEffect(sector, material, delay, 0.5));
+  }
+
+  private showRuinCleaveImpact(
+    position: Vec3Like,
+    rotationY: number,
+    radius: number,
+    arcDegrees: number,
+  ): void {
+    const halfArcRadians = arcDegrees * Math.PI / 360;
+    const waves: ChargeTrailSegment[] = [];
+    const waveCount = 9;
+    for (let index = 0; index < waveCount; index++) {
+      const ratio = waveCount > 1 ? index / (waveCount - 1) : 0.5;
+      const offset = -halfArcRadians + ratio * halfArcRadians * 2;
+      const yaw = rotationY + offset;
+      const dirX = Math.sin(yaw);
+      const dirZ = Math.cos(yaw);
+      const length = radius * (index === 0 || index === waveCount - 1 ? 0.96 : 0.82);
+      const color = colorFromCss(index % 2 === 0
+        ? RUIN_BRUTE_PALETTE.rustCore
+        : RUIN_BRUTE_PALETTE.dust);
+      const material = createMaterial(color, {
+        emissive: color,
+        emissiveIntensity: 1.35,
+        opacity: 0.68,
+        additive: true,
+        unlit: true,
+        depthWrite: false,
+      });
+      const scale = {
+        x: index === 0 || index === waveCount - 1 ? 0.16 : 0.11,
+        y: 0.045,
+        z: length,
+      };
+      const wave = this.world.createPrimitive(
+        `ruin-cleave-impact-sector-wave-${index}`,
+        'box',
+        material,
+        {
+          x: position.x + dirX * length * 0.5,
+          y: position.y + 0.09 + (index % 3) * 0.014,
+          z: position.z + dirZ * length * 0.5,
+        },
+        scale,
+      );
+      setYaw(wave, yaw);
+      waves.push({ entity: wave, material, opacity: 0.68, scale });
+    }
+    this.effects.push(new ChargeTrailEffect(waves, 0.56));
+
+    for (let index = 0; index < 5; index++) {
+      const ratio = index / 4;
+      const yaw = rotationY - halfArcRadians + ratio * halfArcRadians * 2;
+      const dustColor = colorFromCss(RUIN_BRUTE_PALETTE.dust);
+      const material = createMaterial(dustColor, {
+        emissive: dustColor,
+        emissiveIntensity: 0.85,
+        opacity: 0.52,
+        additive: true,
+        unlit: true,
+        depthWrite: false,
+      });
+      const distance = radius * (0.48 + ratio * 0.4);
+      const dust = this.world.createPrimitive(
+        `ruin-cleave-impact-sector-dust-${index}`,
+        'sphere',
+        material,
+        {
+          x: position.x + Math.sin(yaw) * distance,
+          y: position.y + 0.18 + (index % 2) * 0.12,
+          z: position.z + Math.cos(yaw) * distance,
+        },
+        { x: 0.2, y: 0.09, z: 0.2 },
+      );
+      this.effects.push(new PulseEffect(dust, material, 0.46, 0.2, 1.15, 0.09));
+    }
+  }
+
+  private showRuinBruteExposed(position: Vec3Like, guarderId: string): void {
+    const shards: ChargeTrailSegment[] = [];
+    for (let index = 0; index < 8; index++) {
+      const angle = index * Math.PI / 4;
+      const color = colorFromCss(index % 2 === 0
+        ? RUIN_BRUTE_PALETTE.ironCore
+        : RUIN_BRUTE_PALETTE.rustCore);
+      const material = createMaterial(color, {
+        emissive: color,
+        emissiveIntensity: 2.15,
+        opacity: 0.76,
+        additive: true,
+        unlit: true,
+        depthWrite: false,
+      });
+      const scale = { x: 0.18, y: 0.44, z: 0.08 };
+      const shard = this.world.createPrimitive(
+        `ruin-exposed-event-armor-shard-${index}`,
+        'box',
+        material,
+        {
+          x: position.x + Math.sin(angle) * 0.92,
+          y: position.y + 0.78 + (index % 3) * 0.23,
+          z: position.z + Math.cos(angle) * 0.92,
+        },
+        scale,
+      );
+      shard.setLocalEulerAngles(index % 2 === 0 ? 42 : -42, angle * 180 / Math.PI, index * 17);
+      shards.push({ entity: shard, material, opacity: 0.76, scale });
+    }
+    this.effects.push(new ChargeTrailEffect(shards, 0.62));
+    this.showCombatText('EXPOSTO', position, 'critical');
+    if (guarderId === this.net.playerId) this.world.rig.addShake(0.18);
+  }
+
+  private showBossSealRupture(position: Vec3Like, radius: number, duration: number): void {
+    const ruptureColor = colorFromCss(BOSS_SEAL_PALETTE.rupture);
+    const material = createMaterial(ruptureColor, {
+      emissive: ruptureColor,
+      emissiveIntensity: 2.2,
+      opacity: 0.72,
+      additive: true,
+      unlit: true,
+      depthWrite: false,
+    });
+    const root = makeEntity('boss-seal-rupture-authoritative-transition', this.world.app);
+    this.world.root.addChild(root);
+    setEntityPosition(root, position);
+    for (let index = 0; index < 3; index++) {
+      const ringRadius = radius * (0.34 + index * 0.33);
+      const ring = this.world.createPrimitive(
+        `boss-seal-rupture-transition-ring-${index}`,
+        'torus',
+        material,
+        { x: 0, y: 0.08 + index * 0.025, z: 0 },
+        { x: ringRadius * 2, y: 0.035, z: ringRadius * 2 },
+        root,
+      );
+      ring.setLocalEulerAngles(0, index * 17, 0);
+    }
+    for (let index = 0; index < 12; index++) {
+      const angle = index / 12 * Math.PI * 2;
+      const distance = radius * (0.58 + (index % 2) * 0.18);
+      const shard = this.world.createPrimitive(
+        `boss-seal-rupture-transition-shard-${index}`,
+        'cone',
+        material,
+        {
+          x: Math.sin(angle) * distance,
+          y: 0.72 + (index % 3) * 0.34,
+          z: Math.cos(angle) * distance,
+        },
+        { x: 0.15, y: 0.72, z: 0.15 },
+        root,
+      );
+      shard.setLocalEulerAngles(index % 2 === 0 ? 62 : -62, angle * 180 / Math.PI, index * 11);
+    }
+    this.effects.push(new FadingEntityEffect(root, material, duration, 0.72));
+    this.showCombatText('RUPTURA DO SELO', position, 'critical');
+    this.world.rig.addShake(0.38);
+  }
+
+  private showBossSealPulseWarning(
+    position: Vec3Like,
+    innerRadius: number,
+    radius: number,
+    delay: number,
+  ): void {
+    const dangerColor = colorFromCss(BOSS_SEAL_PALETTE.danger);
+    const dangerMaterial = createMaterial(dangerColor, {
+      emissive: dangerColor,
+      emissiveIntensity: 1.75,
+      opacity: 0.48,
+      additive: true,
+      unlit: true,
+      depthWrite: false,
+    });
+    const dangerRoot = makeEntity('boss-seal-pulse-warning-authoritative-annulus', this.world.app);
+    this.world.root.addChild(dangerRoot);
+    setEntityPosition(dangerRoot, position);
+    const bandWidth = radius - innerRadius;
+    const bandRingCount = 8;
+    for (let index = 0; index < bandRingCount; index++) {
+      const ratio = (index + 1) / (bandRingCount + 1);
+      const ringRadius = innerRadius + bandWidth * ratio;
+      this.world.createPrimitive(
+        `boss-seal-pulse-warning-danger-band-${index}`,
+        'torus',
+        dangerMaterial,
+        { x: 0, y: 0.06 + (index % 2) * 0.008, z: 0 },
+        { x: ringRadius * 2, y: 0.026, z: ringRadius * 2 },
+        dangerRoot,
+      );
+    }
+    this.world.createPrimitive(
+      'boss-seal-pulse-warning-outer-boundary',
+      'torus',
+      dangerMaterial,
+      { x: 0, y: 0.085, z: 0 },
+      { x: radius * 2, y: 0.055, z: radius * 2 },
+      dangerRoot,
+    );
+    this.effects.push(new FadingEntityEffect(dangerRoot, dangerMaterial, delay, 0.48));
+
+    const safeColor = colorFromCss(BOSS_SEAL_PALETTE.safe);
+    const safeMaterial = createMaterial(safeColor, {
+      emissive: safeColor,
+      emissiveIntensity: 2.05,
+      opacity: 0.7,
+      additive: true,
+      unlit: true,
+      depthWrite: false,
+    });
+    const safeRoot = makeEntity('boss-seal-pulse-warning-safe-core', this.world.app);
+    this.world.root.addChild(safeRoot);
+    setEntityPosition(safeRoot, position);
+    this.world.createPrimitive(
+      'boss-seal-pulse-warning-inner-boundary',
+      'torus',
+      safeMaterial,
+      { x: 0, y: 0.1, z: 0 },
+      { x: innerRadius * 2, y: 0.055, z: innerRadius * 2 },
+      safeRoot,
+    );
+    // Escudo geometrico no nucleo: leitura sem texto 3D e sem disco preenchido.
+    const safeSymbol = makeEntity('boss-seal-pulse-safe-core-shield-symbol', this.world.app);
+    safeRoot.addChild(safeSymbol);
+    for (let index = 0; index < 4; index++) {
+      const bar = this.world.createPrimitive(
+        `boss-seal-pulse-safe-core-shield-edge-${index}`,
+        'box',
+        safeMaterial,
+        {
+          x: index < 2 ? (index === 0 ? -0.38 : 0.38) : 0,
+          y: 0.11,
+          z: index >= 2 ? (index === 2 ? -0.38 : 0.38) : 0,
+        },
+        { x: 0.78, y: 0.025, z: 0.085 },
+        safeSymbol,
+      );
+      bar.setLocalEulerAngles(0, index * 90 + 45, 0);
+    }
+    this.effects.push(new FadingEntityEffect(safeRoot, safeMaterial, delay, 0.7));
+    this.showCombatText('NÚCLEO SEGURO', position, 'magic');
+  }
+
+  private showBossSealPulseImpact(
+    position: Vec3Like,
+    innerRadius: number,
+    radius: number,
+  ): void {
+    const impactColor = colorFromCss(BOSS_SEAL_PALETTE.ruptureCore);
+    const material = createMaterial(impactColor, {
+      emissive: impactColor,
+      emissiveIntensity: 2.35,
+      opacity: 0.76,
+      additive: true,
+      unlit: true,
+      depthWrite: false,
+    });
+    const root = makeEntity('boss-seal-pulse-impact-authoritative-annulus', this.world.app);
+    this.world.root.addChild(root);
+    setEntityPosition(root, position);
+    const bandWidth = radius - innerRadius;
+    for (let index = 0; index < 5; index++) {
+      const ratio = index / 4;
+      const ringRadius = innerRadius + bandWidth * ratio;
+      this.world.createPrimitive(
+        `boss-seal-pulse-impact-annular-wave-${index}`,
+        'torus',
+        material,
+        { x: 0, y: 0.09 + index * 0.015, z: 0 },
+        { x: ringRadius * 2, y: index === 0 || index === 4 ? 0.06 : 0.035, z: ringRadius * 2 },
+        root,
+      );
+    }
+    for (let index = 0; index < 18; index++) {
+      const angle = index / 18 * Math.PI * 2;
+      const distance = innerRadius + bandWidth * (index % 2 === 0 ? 0.28 : 0.74);
+      const shard = this.world.createPrimitive(
+        `boss-seal-pulse-impact-annular-shard-${index}`,
+        'box',
+        material,
+        {
+          x: Math.sin(angle) * distance,
+          y: 0.28 + (index % 3) * 0.16,
+          z: Math.cos(angle) * distance,
+        },
+        { x: 0.12, y: 0.38, z: 0.065 },
+        root,
+      );
+      shard.setLocalEulerAngles(index % 2 === 0 ? 52 : -52, angle * 180 / Math.PI, index * 9);
+    }
+    this.effects.push(new FadingEntityEffect(root, material, 0.62, 0.76));
+  }
+
   private showBossSlamWarning(position: Vec3Like, radius: number, delay: number): void {
     const color = colorFromCss('#ff5b4f');
     const material = createMaterial(color, { emissive: color, emissiveIntensity: 1.2, opacity: 0.38, additive: true, unlit: true });
     const entity = this.world.createPrimitive('boss-slam-warning', 'torus', material, { x: position.x, y: position.y + 0.06, z: position.z }, { x: radius * 2, y: 0.035, z: radius * 2 });
     this.effects.push(new PulseEffect(entity, material, Math.max(0.2, delay), radius * 1.8, radius * 2.08, 0.035));
+  }
+
+  private showSealChamberPulse(
+    position: Vec3Like,
+    radius: number,
+    tone: 'arming' | 'wave' | 'complete' | 'reset',
+    duration: number,
+  ): void {
+    const colorCss = tone === 'wave'
+      ? '#ff657c'
+      : tone === 'complete'
+        ? '#ffe08a'
+        : tone === 'reset'
+          ? '#9ca9b5'
+          : '#dc65f2';
+    const color = colorFromCss(colorCss);
+    const material = createMaterial(color, {
+      emissive: color,
+      emissiveIntensity: tone === 'complete' ? 1.85 : 1.5,
+      opacity: tone === 'reset' ? 0.3 : 0.48,
+      additive: true,
+      unlit: true,
+    });
+    const floorY = this.world.groundHeightAt(position.x, position.z);
+    const ring = this.world.createPrimitive(
+      `seal-chamber-${tone}-event-ring`,
+      'torus',
+      material,
+      { x: position.x, y: floorY + 0.1, z: position.z },
+      { x: 0.4, y: 0.035, z: 0.4 },
+    );
+    this.effects.push(new PulseEffect(
+      ring,
+      material,
+      Math.max(0.2, duration),
+      tone === 'reset' ? radius * 2 : 0.5,
+      tone === 'reset' ? 0.4 : radius * 2,
+      0.035,
+    ));
   }
 
   private showBossSlamImpact(position: Vec3Like, radius: number): void {
@@ -5375,6 +11997,107 @@ export class Game {
     this.effects.push(new PulseEffect(entity, material, 0.46, 0.8, radius * 2, 0.08));
     this.world.rig.addShake(0.72);
     this.showHitImpact(position, 'physical');
+  }
+
+  /** Explosão histórica do evento; não descobre alvos nem altera colisão. */
+  private showRunicElitePulse(position: Vec3Like, radius: number, phase: 'fury' | 'defeated'): void {
+    const primaryCss = phase === 'fury' ? RUNIC_ELITE_PALETTE.fury : RUNIC_ELITE_PALETTE.minimap;
+    const coreCss = phase === 'fury' ? RUNIC_ELITE_PALETTE.furyCore : RUNIC_ELITE_PALETTE.aegisCore;
+    const primary = colorFromCss(primaryCss);
+    const core = colorFromCss(coreCss);
+    const ringMaterial = createMaterial(primary, {
+      emissive: primary,
+      emissiveIntensity: 2.2,
+      opacity: 0.72,
+      additive: true,
+      unlit: true,
+      depthWrite: false,
+    });
+    const floorY = this.world.groundHeightAt(position.x, position.z);
+    const ring = this.world.createPrimitive(
+      `runic-elite-${phase}-event-ring`,
+      'torus',
+      ringMaterial,
+      { x: position.x, y: floorY + 0.09, z: position.z },
+      { x: 0.45, y: 0.035, z: 0.45 },
+    );
+    this.effects.push(new PulseEffect(ring, ringMaterial, phase === 'fury' ? 0.68 : 0.92, 0.45, radius * 2, 0.035));
+
+    for (let index = 0; index < 6; index++) {
+      const angle = index / 6 * Math.PI * 2;
+      const shardMaterial = createMaterial(index % 2 === 0 ? primary : core, {
+        emissive: index % 2 === 0 ? primary : core,
+        emissiveIntensity: 2.35,
+        opacity: 0.78,
+        additive: true,
+        unlit: true,
+        depthWrite: false,
+      });
+      const shard = this.world.createPrimitive(
+        `runic-elite-${phase}-event-shard-${index}`,
+        phase === 'fury' ? 'cone' : 'box',
+        shardMaterial,
+        {
+          x: position.x + Math.sin(angle) * radius * 0.44,
+          y: floorY + 0.42 + (index % 2) * 0.24,
+          z: position.z + Math.cos(angle) * radius * 0.44,
+        },
+        phase === 'fury' ? { x: 0.15, y: 0.55, z: 0.15 } : { x: 0.12, y: 0.42, z: 0.055 },
+      );
+      shard.setLocalEulerAngles(0, angle * 180 / Math.PI, phase === 'fury' ? 18 : 36);
+      this.effects.push(new FadingEntityEffect(shard, shardMaterial, phase === 'fury' ? 0.55 : 0.78, 0.78));
+    }
+  }
+
+  private showMiningPerfectStrike(position: Vec3Like, radius: number, kind: OreNodeState['kind']): void {
+    const oreCss = kind === 'copper'
+      ? ADVANCED_MINING_PALETTE.copper
+      : kind === 'iron'
+        ? ADVANCED_MINING_PALETTE.iron
+        : ADVANCED_MINING_PALETTE.mithril;
+    const ore = colorFromCss(oreCss);
+    const perfect = colorFromCss(ADVANCED_MINING_PALETTE.perfect);
+    const ringMaterial = createMaterial(perfect, {
+      emissive: perfect,
+      emissiveIntensity: 2.55,
+      opacity: 0.82,
+      additive: true,
+      unlit: true,
+      depthWrite: false,
+    });
+    const floorY = this.world.groundHeightAt(position.x, position.z);
+    const ring = this.world.createPrimitive(
+      'mining-perfect-authoritative-ring',
+      'torus',
+      ringMaterial,
+      { x: position.x, y: floorY + 0.1, z: position.z },
+      { x: 0.32, y: 0.035, z: 0.32 },
+    );
+    this.effects.push(new PulseEffect(ring, ringMaterial, 0.62, 0.32, radius * 2, 0.035));
+    for (let index = 0; index < 8; index++) {
+      const angle = index / 8 * Math.PI * 2;
+      const material = createMaterial(index % 2 === 0 ? perfect : ore, {
+        emissive: index % 2 === 0 ? perfect : ore,
+        emissiveIntensity: 2.25,
+        opacity: 0.8,
+        additive: true,
+        unlit: true,
+        depthWrite: false,
+      });
+      const shard = this.world.createPrimitive(
+        `mining-perfect-authoritative-shard-${index}`,
+        kind === 'mithril' ? 'cone' : 'box',
+        material,
+        {
+          x: position.x + Math.sin(angle) * radius * 0.48,
+          y: floorY + 0.32 + (index % 3) * 0.16,
+          z: position.z + Math.cos(angle) * radius * 0.48,
+        },
+        kind === 'mithril' ? { x: 0.11, y: 0.42, z: 0.11 } : { x: 0.13, y: 0.28, z: 0.07 },
+      );
+      shard.setLocalEulerAngles(22, angle * 180 / Math.PI, index % 2 === 0 ? 32 : -32);
+      this.effects.push(new FadingEntityEffect(shard, material, 0.52, 0.8));
+    }
   }
 
   private updateDamageTexts(dt: number): void {
@@ -5389,6 +12112,156 @@ export class Game {
       if (!this.effects[i].update(dt)) continue;
       this.effects.splice(i, 1);
     }
+  }
+
+  private syncSealChamberPresentation(value: unknown, zone: WorldZone): void {
+    const state = sealChamberStatePresentationGate(value, zone);
+    if (!state) {
+      this.clearSealChamberPresentation();
+      return;
+    }
+    if (!this.sealChamberVisual) this.sealChamberVisual = this.createSealChamberPresentation(state);
+    const visual = this.sealChamberVisual;
+    visual.state = state;
+    const floorY = this.world.groundHeightAt(state.center.x, state.center.z);
+    visual.root.setLocalPosition(state.center.x, floorY, state.center.z);
+    visual.barrierRoot.enabled = state.barrierActive;
+  }
+
+  /** Visual puro: nenhum collider, rigidbody, comando ou predicao da barreira. */
+  private createSealChamberPresentation(state: EncounterState): SealChamberVisual {
+    const root = makeEntity('seal-chamber-authoritative-presentation', this.world.app);
+    const markerColor = colorFromCss('#d68dec');
+    const coreColor = colorFromCss('#f2d4ff');
+    const barrierColor = colorFromCss('#dc65f2');
+    const markerMaterial = createMaterial(markerColor, {
+      emissive: markerColor,
+      emissiveIntensity: 1.35,
+      opacity: 0.44,
+      additive: true,
+      unlit: true,
+    });
+    const coreMaterial = createMaterial(coreColor, {
+      emissive: coreColor,
+      emissiveIntensity: 1.5,
+      opacity: 0.5,
+      additive: true,
+      unlit: true,
+    });
+    const barrierMaterial = createMaterial(barrierColor, {
+      emissive: barrierColor,
+      emissiveIntensity: 1.65,
+      opacity: 0.34,
+      additive: true,
+      unlit: true,
+      twoSided: true,
+    });
+
+    const marker = this.world.createPrimitive(
+      'seal-chamber-dormant-marker',
+      'torus',
+      markerMaterial,
+      { x: 0, y: 0.08, z: 0 },
+      { x: 1.65, y: 0.04, z: 1.65 },
+      root,
+    );
+    const sigil = makeEntity('seal-chamber-sigil', this.world.app);
+    root.addChild(sigil);
+    this.world.createPrimitive(
+      'seal-chamber-sigil-axis-a',
+      'box',
+      coreMaterial,
+      { x: 0, y: 0.07, z: 0 },
+      { x: 1.55, y: 0.025, z: 0.11 },
+      sigil,
+    );
+    const axisB = this.world.createPrimitive(
+      'seal-chamber-sigil-axis-b',
+      'box',
+      coreMaterial,
+      { x: 0, y: 0.07, z: 0 },
+      { x: 1.55, y: 0.025, z: 0.11 },
+      sigil,
+    );
+    axisB.setLocalEulerAngles(0, 90, 0);
+    this.world.createPrimitive(
+      'seal-chamber-sigil-core',
+      'cylinder',
+      coreMaterial,
+      { x: 0, y: 0.06, z: 0 },
+      { x: 0.42, y: 0.035, z: 0.42 },
+      sigil,
+    );
+
+    const barrierRoot = makeEntity('seal-chamber-presentation-only-barrier', this.world.app);
+    root.addChild(barrierRoot);
+    this.world.createPrimitive(
+      'seal-chamber-barrier-ring',
+      'torus',
+      barrierMaterial,
+      { x: 0, y: 0.1, z: 0 },
+      { x: state.barrierRadius * 2, y: 0.035, z: state.barrierRadius * 2 },
+      barrierRoot,
+    );
+    const segmentCount = 28;
+    for (let index = 0; index < segmentCount; index++) {
+      const angle = index / segmentCount * Math.PI * 2;
+      const segment = this.world.createPrimitive(
+        `seal-chamber-barrier-segment-${index}`,
+        'box',
+        barrierMaterial,
+        {
+          x: Math.cos(angle) * state.barrierRadius,
+          y: 1.18,
+          z: Math.sin(angle) * state.barrierRadius,
+        },
+        { x: 1.72, y: 2.25, z: 0.055 },
+        barrierRoot,
+      );
+      segment.setLocalEulerAngles(0, -angle * 180 / Math.PI, 0);
+    }
+    this.world.dungeon.addChild(root);
+    barrierRoot.enabled = state.barrierActive;
+    return {
+      root,
+      marker,
+      sigil,
+      barrierRoot,
+      markerMaterial,
+      coreMaterial,
+      barrierMaterial,
+      state,
+      age: 0,
+    };
+  }
+
+  private updateSealChamberPresentation(dt: number): void {
+    const visual = this.sealChamberVisual;
+    if (!visual) return;
+    visual.age += dt;
+    const active = visual.state.phase === 'arming'
+      || visual.state.phase === 'wave'
+      || visual.state.phase === 'intermission';
+    const pulse = (Math.sin(visual.age * (active ? 5.6 : 2.2)) + 1) * 0.5;
+    const markerScale = 1.58 + pulse * (active ? 0.22 : 0.08);
+    visual.marker.setLocalScale(markerScale, 0.04, markerScale);
+    visual.sigil.setLocalEulerAngles(0, (visual.age * (active ? 28 : 10)) % 360, 0);
+    visual.markerMaterial.opacity = (active ? 0.42 : 0.24) + pulse * 0.2;
+    visual.coreMaterial.opacity = (visual.state.completed ? 0.5 : 0.34) + pulse * 0.16;
+    visual.barrierMaterial.opacity = visual.state.barrierActive ? 0.22 + pulse * 0.24 : 0;
+    visual.markerMaterial.update();
+    visual.coreMaterial.update();
+    visual.barrierMaterial.update();
+  }
+
+  private clearSealChamberPresentation(): void {
+    const visual = this.sealChamberVisual;
+    if (!visual) return;
+    destroyEntity(visual.root);
+    visual.markerMaterial.destroy();
+    visual.coreMaterial.destroy();
+    visual.barrierMaterial.destroy();
+    this.sealChamberVisual = null;
   }
 
   private updateOverlays(): void {
@@ -5455,6 +12328,51 @@ export class Game {
       if (distance < best) {
         best = distance;
         id = lootId;
+      }
+    }
+    return id;
+  }
+
+  private findOreNear(point: Vec3Like): string | null {
+    let id: string | null = null;
+    let best = ORE_CLICK_RADIUS * 1.25;
+    for (const [nodeId, view] of this.oreNodeViews) {
+      if (view.state.depleted) continue;
+      const p = view.state.position;
+      const distance = Math.hypot(p.x - point.x, p.z - point.z);
+      if (distance < best) {
+        best = distance;
+        id = nodeId;
+      }
+    }
+    return id;
+  }
+
+  private findDisplacerNear(point: Vec3Like): string | null {
+    let id: string | null = null;
+    let best = 1.7;
+    for (const [nodeId, view] of this.displacerViews) {
+      if (view.state.zone !== this.zone) continue;
+      const position = view.state.position;
+      const distance = Math.hypot(position.x - point.x, position.z - point.z);
+      if (distance < best) {
+        best = distance;
+        id = nodeId;
+      }
+    }
+    return id;
+  }
+
+  private nearestMineableOre(): string | null {
+    let id: string | null = null;
+    let best = Infinity;
+    for (const [nodeId, view] of this.oreNodeViews) {
+      if (view.state.depleted) continue;
+      const maxDistance = Math.max(0.75, view.state.interactRange - ORE_INTERACT_SAFETY_MARGIN);
+      const distance = this.localPlayerDistanceTo(view.state.position.x, view.state.position.z);
+      if (distance <= maxDistance && distance < best) {
+        best = distance;
+        id = nodeId;
       }
     }
     return id;
@@ -5576,7 +12494,7 @@ export class Game {
       { x: playerPosition.x, y: 0, z: playerPosition.z },
       { x: approach.x, y: approach.y, z: approach.z },
       this.localNavigationBlockers(),
-      this.moveBound,
+      this.activeNavigationBound(),
     ).map((point) => ({
       x: point.x,
       y: this.heightForMove(point.x, point.z),
@@ -5727,6 +12645,19 @@ export class Game {
     this.autorunActive = false;
     this.cancelAutomoveIntent();
     this.closeNpcPanels();
+    this.clearProjectileViews();
+    this.clearControlZoneViews();
+    this.clearCooperativeReviveViews();
+    this.clearSealChamberPresentation();
+    this.clearTreasureLodePresentation();
+    this.clearUtraeanRelayPresentation();
+    for (const view of this.views.values()) this.clearBossSealPhaseVisual(view);
+    for (const view of this.views.values()) {
+      this.clearArcaneResonanceVisual(view);
+      this.clearStormOrbVisual(view);
+      this.clearReviveProtectionVisual(view);
+      this.clearGuardianRetaliationVisual(view);
+    }
     // Overworld e dungeon compartilham coordenadas: um efeito/texto ainda vivo
     // da zona anterior apareceria flutuando na zona nova. Descarta tudo.
     for (const effect of this.effects) effect.dispose();

@@ -1,83 +1,74 @@
-# Cenário 3D — do plano ao mundo de Aranna
+# Cenário 3D de Aranna
 
-Como o chão plano virou um cenário de verdade, e como ajustá-lo/expandi-lo.
+O mapa usa um mundo procedural determinístico para gameplay e uma camada
+artística client-side para transformar os pontos importantes em lugares
+reconhecíveis. A mesma seed continua gerando o mesmo relevo, props e blockers;
+a composição visual não altera os contratos autoritativos do servidor.
 
-## O que mudou
+## Composição atual
 
-O chão antigo (um plano) virou um **mundo procedural com relevo**, vegetação,
-rochas, ruínas, água, céu e uma entrada de masmorra. Tudo é gerado a partir de
-uma **seed** (determinístico): a mesma seed sempre produz o mesmo mundo, e o
-cliente regenera o terreno visual a partir da seed enviada pelo servidor.
+- **Santuário central:** praça circular em camadas, anéis de bronze, mosaico,
+  sigilo central, caminhos radiais e estações organizadas para os nove NPCs.
+- **Estrada principal:** trilha de terra spawn → portal, pedras de borda e
+  waystones luminosos que mantêm a direção legível durante a exploração.
+- **Biomas visuais:** bordos no campo aberto, bétulas no bosque do noroeste e
+  árvores mortas na região corrompida em torno do portal.
+- **Natureza:** cinco variações de rocha, dez variações de árvores mortas,
+  gramíneas, arbustos e flores distribuídos em manchas determinísticas.
+- **Água:** base profunda com uma segunda lâmina translúcida para brilho.
+- **Marcos distantes:** pedreira de cristais e poço lunar substituem visualmente
+  dois rochedos existentes, preservando exatamente os blockers desses props.
+- **Santuário do portal:** plataforma ritual, escadaria, arco, cristais, véus e
+  partículas, alinhado com a chegada da estrada.
+- **Câmara das Sombras:** piso modular, círculos rituais de boss/tesouro,
+  contrafortes, escombros de borda, cristais, luzes e portal de saída próprio.
 
-### Novos arquivos
+## Arquivos responsáveis
 
-| Arquivo | Papel |
+| Arquivo | Responsabilidade |
 | --- | --- |
-| `src/shared/rng.ts` | PRNG determinístico + hash para o ruído. |
-| `src/shared/Terrain.ts` | Relevo procedural. `heightAt(x, z)` é usado pelo render **e** pela lógica. |
-| `src/shared/worldgen.ts` | Gera props (árvores/rochas/ruínas), obstáculos e a entrada da masmorra. |
-| `src/world/TerrainMesh.ts` | Constrói a malha 3D do terreno, colorida por altura/inclinação. |
-| `src/world/Props.ts` | Desenha os props com `InstancedMesh` + o pórtico da masmorra. |
-| `src/world/ModelRegistry.ts` | Encaixe para modelos `.glb` reais (GLTFLoader). |
+| `src/shared/Terrain.ts` | Função determinística de altura e inclinação. |
+| `src/shared/worldgen.ts` | Seed, tamanho, água, props, blockers, spawn e portal. |
+| `src/playcanvas/PcWorld.ts` | Terreno, iluminação, materiais, água, modelos e biomas. |
+| `src/playcanvas/MapArt.ts` | Composição artística do acampamento, estrada, landmarks, portal e dungeon. |
+| `src/core/Game.ts` | Integração das entidades e altura visual de elementos interativos. |
 
-`World.ts` ganhou céu (`Sky`), névoa, água e um sol que segue o herói (sombras
-nítidas perto da ação). A simulação do backend mantém as entidades **sobre o
-relevo** e faz **colisão** com os obstáculos.
+`MapArt` prefere malhas combinadas para mosaicos, pedras e arquitetura repetida.
+Isso permite dezenas de elementos organizados com poucas draw calls adicionais.
+Partículas e luzes são animadas por zona; o restante da arquitetura é estático.
 
-## Como funciona
+## Regras para expandir sem quebrar gameplay
 
-O segredo é uma única fonte de verdade: `Terrain.heightAt(x, z)`. A malha 3D
-amostra essa função em cada vértice para ganhar relevo, e a simulação amostra a
-mesma função para colocar herói e inimigos na altura certa do chão. Visual e
-lógica nunca discordam. Os obstáculos (`blockers`) são círculos com raio que a
-simulação usa para empurrar as entidades para fora — colisão simples e barata.
+1. O cliente recebe a seed e reconstrói o mundo. Qualquer mudança em relevo,
+   props ou blockers deve continuar idêntica no TypeScript e no Go.
+2. Decoração baixa e atravessável pode existir somente no cliente.
+3. Uma peça sólida nova precisa de colisão equivalente no servidor e no cliente.
+   Não use apenas uma parede visual: isso cria dessincronização de movimento.
+4. Preserve as áreas livres do santuário, da trilha e da entrada do portal.
+5. Landmarks apoiados em props existentes devem caber no blocker que substituem.
+6. Na dungeon, mantenha livres o spawn, Riven, os três baús, o boss e a saída.
 
-## Ajustes rápidos (tuning)
+## Ajustes rápidos
 
-Quase tudo é um número num lugar óbvio:
+- Paleta e materiais: `PcWorld.createTerrainEntity()` e `MapArt`.
+- Luz do overworld: `AMBIENT_OVERWORLD`, `SUN_INTENSITY`, `FILL_INTENSITY`.
+- Densidade de névoa: `FOG_DENSITY_OVERWORLD`.
+- Distribuição dos biomas: `PcWorld.buildNatureProps()`.
+- Quantidade de decoração: presets de qualidade que chamam
+  `preloadEnvironment(decorCount)`.
+- Posição do portal: `src/shared/worldgen.ts` (`dungeon`).
+- Novas composições: mantenha-as em `MapArt` e use `createBoxCluster()` ou
+  `createFlatRing()` quando houver repetição.
 
-- **Trocar o mundo inteiro:** a seed fixa do servidor em `back/game/world.go`.
-  Cada número gera um mapa diferente.
-- **Relevo mais/menos acidentado:** `src/shared/Terrain.ts` → `amplitude`
-  (altura dos morros, padrão 11) e `baseScale` (tamanho dos morros, padrão 0.03;
-  menor = morros mais largos).
-- **Densidade de vegetação:** `src/shared/worldgen.ts` → o limite `props.length < 270`
-  e as probabilidades (`r < 0.62` árvore, etc.).
-- **Nível da água:** `src/shared/worldgen.ts` → `waterLevel` (padrão −2.2).
-- **Posição da masmorra:** `src/shared/worldgen.ts` → `dungeon = { x: 46, z: -34 }`.
-- **Cores do terreno:** `src/world/TerrainMesh.ts` → `cSand`, `cGrass`, `cGrassDark`, `cRock`.
-- **Hora do dia / céu:** `src/world/World.ts` → `setupSky()` (`elevation`, `azimuth`)
-  e a névoa (`FogExp2`).
+## Validação recomendada
 
-## Plugar modelos 3D reais (.glb)
+Após alterar o cenário:
 
-Por padrão os props são formas geométricas. Para usar arte de verdade:
+```bash
+npm run build
+npm run verify:movement
+```
 
-1. Baixe modelos gratuitos (low-poly combinam com o estilo):
-   [Kenney](https://kenney.nl/assets), [Quaternius](https://quaternius.com),
-   [Poly Pizza](https://poly.pizza).
-2. Coloque os `.glb` em `public/models/` (crie a pasta).
-3. Em `src/core/Game.ts`, descomente e ajuste:
-
-   ```ts
-   import { ModelRegistry } from '../world/ModelRegistry';
-
-   const registry = new ModelRegistry();
-   registry.register('tree', '/models/arvore.glb');
-   registry.register('rock', '/models/pedra.glb');
-   this.world = new World(canvas, worldData, registry);
-   ```
-
-O sistema carrega o modelo e o posiciona em cada ponto daquele tipo. Onde houver
-modelo registrado, ele substitui o prop procedural; o resto continua procedural.
-(Para muitas cópias, vale evoluir de `clone()` para `InstancedMesh` da geometria
-do modelo — fica como otimização futura.)
-
-## Próximos passos sugeridos
-
-- **Texturas no terreno** (splatmap): misturar texturas de grama/terra/rocha por
-  altura/inclinação no lugar das cores por vértice.
-- **Personagens em .glb** com animação (`GLTFLoader` + `AnimationMixer`) para herói e zumbis.
-- **Pathfinding A\*** para o herói contornar obstáculos ao receber uma ordem de movimento.
-- **Interior da masmorra:** a primeira câmara escura é carregada ao clicar no pórtico; ampliar com salas e props próprios é o próximo passo.
-- **Água animada:** usar o shader `Water` dos addons do Three.js.
+Também valide no navegador o percurso completo: spawn → Edrik → portal →
+entrada da dungeon → baús → saída. Verifique especialmente se elementos visuais
+não cobrem NPCs, marcadores, inimigos ou áreas interativas.
